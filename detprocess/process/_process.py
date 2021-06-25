@@ -46,7 +46,7 @@ def process_data(raw_file, path_to_yaml, nevents=0, savepath=None):
     """
 
     if savepath is None:
-        warnings.warn('savepath has not been set, the extracted features will be returned, but not saved to file.')
+        warnings.warn('savepath has not been set, the extracted features will be returned, but not saved to a file.')
 
     with open(path_to_yaml) as f:
         yaml_dict = yaml.safe_load(f)
