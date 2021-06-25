@@ -53,6 +53,7 @@ setup(
         'scipy',
         'matplotlib',
         'qetpy',
+        'pandas',
         'pytesdaq',
     ]
 )
