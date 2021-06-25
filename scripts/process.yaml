@@ -1,0 +1,26 @@
+PD2:
+    template_path: /sdata/users/swatkins/repos/detprocess/scripts/template.txt
+    psd_path: /sdata/users/swatkins/repos/detprocess/scripts/psd.txt
+    of_nodelay:
+        run: False
+    of_unconstrained:
+        run: False
+    of_constrained:
+        run: False
+        window_center: 0
+        nconstrain: 100
+    baseline:
+        run: True
+        end_index: 16000
+    integral:
+        run: True
+        start_index: 0
+        end_index: 16000
+    max:
+        run: True
+        start_index: 0
+        end_index: 16000
+    min:
+        run: True
+        start_index: 0
+        end_index: 16000
