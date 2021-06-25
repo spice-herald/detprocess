@@ -71,6 +71,13 @@ def repack_h5info_dict(h5info_dict):
     return retdict
 
 class SingleChannelExtractors(object):
+    """
+    A class that contains all of the possible feature extractors
+    for a given trace, assuming processing on a single channel.
+    Each feature extraction function is a staticmethod for processing
+    convenience.
+
+    """
 
     @staticmethod
     def extract_of_nodelay(trace, template, psd, fs, **kwargs):

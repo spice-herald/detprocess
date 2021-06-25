@@ -1,10 +1,12 @@
 import numpy as np
+import pandas as pd
 
 import pytesdaq.io.hdf5 as h5io
 
 
 __all__ = [
     'load_traces',
+    'load_features',
 ]
 
 
@@ -45,3 +47,27 @@ def load_traces(filename, channels=None, nevents=0):
     traces = np.divide(traces, close_loop_norm_arr[:, np.newaxis])
     
     return traces, info_dict
+
+
+def load_features(filename):
+    """
+    Function for loading the features from an HDF5 that was created by detprocess.
+
+    Parameters
+    ----------
+    filename : str
+        The full path and filename for the detprocess HDF5 file to open.
+
+    Returns
+    -------
+    df : Pandas.DataFrame
+        A DataFrame that contains all of the extracted features for the specified file.
+    
+    """
+    df = pd.read_hdf(
+        filename,
+        'detprocess_df',
+    )
+
+    return df
+
