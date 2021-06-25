@@ -88,8 +88,8 @@ class SingleChannelExtractors(object):
 
         Returns
         -------
-        of_nodelay : float
-            The no delay optimum filter amplitude.
+        retdict : dict
+            Dictionary containing the various extracted features.
 
         """
 
@@ -99,8 +99,12 @@ class SingleChannelExtractors(object):
             psd,
             fs,
         )
-        of_nodelay, chi2_nodelay = OF.ofamp_nodelay()
+        ofamp_nodelay, ofchi2_nodelay = OF.ofamp_nodelay()
 
+        retdict = {
+            'ofamp_nodelay': ofamp_nodelay,
+            'ofchi2_nodelay': ofchi2_nodelay,
+        }
         return of_nodelay
 
 
@@ -120,8 +124,8 @@ class SingleChannelExtractors(object):
 
         Returns
         -------
-        of_unconstrained : float
-            The unconstrained optimum filter amplitude.
+        retdict : dict
+            Dictionary containing the various extracted features.
 
         """
 
@@ -131,9 +135,15 @@ class SingleChannelExtractors(object):
             psd,
             fs,
         )
-        of_unconstrained, t0_unconstrained, chi2_unconstrained = OF.ofamp_withdelay()
+        ofamp_unconstrained, oft0_unconstrained, ofchi2_unconstrained = OF.ofamp_withdelay()
 
-        return of_unconstrained
+        retdict = {
+            'ofamp_unconstrained': ofamp_unconstrained,
+            'oft0_unconstrained': oft0_unconstrained,
+            'ofchi2_unconstrained': ofchi2_unconstrained,
+        }
+
+        return retdict
 
 
     @staticmethod
@@ -156,8 +166,8 @@ class SingleChannelExtractors(object):
 
         Returns
         -------
-        of_constrained : float
-            The constrained optimum filter amplitude.
+        retdict : dict
+            Dictionary containing the various extracted features.
 
         """
 
@@ -167,12 +177,18 @@ class SingleChannelExtractors(object):
             psd,
             fs,
         )
-        of_constrained, t0_constrained, chi2_unconstrained = OF.ofamp_withdelay(
+        ofamp_constrained, oft0_constrained, ofchi2_constrained = OF.ofamp_withdelay(
             nconstrain=nconstrain,
             windowcenter=windowcenter,
         )
 
-        return of_constrained
+        retdict = {
+            'ofamp_constrained': ofamp_constrained,
+            'oft0_constrained': oft0_constrained,
+            'ofchi2_constrained': ofchi2_constrained,
+        }
+
+        return retdict
 
 
     @staticmethod
@@ -189,14 +205,18 @@ class SingleChannelExtractors(object):
 
         Returns
         -------
-        baseline : float
-            The calculated baseline of the trace.
+        retdict : dict
+            Dictionary containing the various extracted features.
 
         """
 
         baseline = np.mean(trace[:end_index])
 
-        return baseline
+        retdict = {
+            'baseline': baseline,
+        }
+
+        return retdict
 
 
 
@@ -216,14 +236,18 @@ class SingleChannelExtractors(object):
 
         Returns
         -------
-        integral : float
-            The calculated integral of the trace.
+        retdict : dict
+            Dictionary containing the various extracted features.
 
         """
 
         integral = np.trapz(trace[start_index:end_index]) / fs
 
-        return integral
+        retdict = {
+            'integral': integral,
+        }
+
+        return retdict
 
 
     @staticmethod
@@ -242,14 +266,18 @@ class SingleChannelExtractors(object):
 
         Returns
         -------
-        max_trace : float
-            The calculated maximum of the trace.
+        retdict : dict
+            Dictionary containing the various extracted features.
 
         """
 
         max_trace = np.amax(trace[start_index:end_index])
 
-        return max_trace
+        retdict = {
+            'max': max_trace,
+        }
+
+        return retdict
 
 
     @staticmethod
@@ -268,13 +296,17 @@ class SingleChannelExtractors(object):
 
         Returns
         -------
-        min_trace : float
-            The calculated minimum of the trace.
+        retdict : dict
+            Dictionary containing the various extracted features.
 
         """
 
         min_trace = np.amin(trace[start_index:end_index])
 
-        return min_trace
+        retdict = {
+            'min': min_trace,
+        }
+
+        return retdict
 
 

@@ -18,11 +18,8 @@ def _get_single_channel_feature_names(chan_dict):
             feature_list.append(feature)
     return feature_list
 
-def _initialize_features(feature_list, chan, array_length):
-    feature_dict = dict()
-    for feat in feature_list:
-        feature_dict[f'{feat}_{chan}'] = np.zeros(array_length)
-    return feature_dict
+
+
 
 def process_data(raw_file, path_to_yaml, nevents=0):
     with open(path_to_yaml) as f:
@@ -39,16 +36,21 @@ def process_data(raw_file, path_to_yaml, nevents=0):
         template = np.loadtxt(chan_dict['template_path'])
         psd = np.loadtxt(chan_dict['psd_path'])
         feature_list = _get_single_channel_feature_names(chan_dict)
-        feature_dict = _initialize_features(feature_list, chan, len(traces))
+        feature_dict = {}
 
         for ii, trace in enumerate(traces[:, 0]):
-            for feature_chan, feature in zip(feature_dict, feature_list):
+            for feature in feature_list:
                 kwargs = {key: value for (key, value) in chan_dict[feature].items() if key!='run'}
                 kwargs['template'] = template
                 kwargs['psd'] = psd
                 kwargs['fs'] = fs
                 extractor = getattr(SingleChannelExtractors, f"extract_{feature}")
-                feature_dict[feature_chan][ii] = extractor(trace, **kwargs)
+                extracted_dict = extractor(trace, **kwargs)
+                for ex_feature in extracted_dict:
+                    ex_feature_name = f'{ex_feature}_{chan}'
+                    if ex_feature_name not in feature_dict:
+                        feature_dict[ex_feature_name] = np.zeros(len(traces))
+                    feature_dict[ex_feature_name][ii] = extracted_dict[ex_feature]
 
         for feature in feature_dict:
             feature_df[feature] = feature_dict[feature]
