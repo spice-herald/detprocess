@@ -52,6 +52,7 @@ setup(
         'numpy',
         'scipy',
         'matplotlib',
+        'pyyaml',
         'qetpy',
         'pandas',
         'pytesdaq',
