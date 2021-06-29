@@ -80,7 +80,7 @@ class SingleChannelExtractors(object):
     """
 
     @staticmethod
-    def extract_of_nodelay(trace, template, psd, fs, **kwargs):
+    def of_nodelay(trace, template, psd, fs, **kwargs):
         """
         Feature extraction for the no delay Optimum Filter.
 
@@ -116,7 +116,7 @@ class SingleChannelExtractors(object):
 
 
     @staticmethod
-    def extract_of_unconstrained(trace, template, psd, fs, **kwargs):
+    def of_unconstrained(trace, template, psd, fs, **kwargs):
         """
         Feature extraction for the unconstrained Optimum Filter.
 
@@ -154,7 +154,7 @@ class SingleChannelExtractors(object):
 
 
     @staticmethod
-    def extract_of_constrained(trace, template, psd, fs, nconstrain, window_center, **kwargs):
+    def of_constrained(trace, template, psd, fs, nconstrain, window_center, **kwargs):
         """
         Feature extraction for the constrained Optimum Filter.
 
@@ -199,7 +199,7 @@ class SingleChannelExtractors(object):
 
 
     @staticmethod
-    def extract_baseline(trace, end_index, **kwargs):
+    def baseline(trace, end_index, **kwargs):
         """
         Feature extraction for the trace baseline.
 
@@ -228,7 +228,7 @@ class SingleChannelExtractors(object):
 
 
     @staticmethod
-    def extract_integral(trace, start_index, end_index, fs, **kwargs):
+    def integral(trace, start_index, end_index, fs, **kwargs):
         """
         Feature extraction for the pulse integral.
 
@@ -258,7 +258,7 @@ class SingleChannelExtractors(object):
 
 
     @staticmethod
-    def extract_max(trace, start_index, end_index, **kwargs):
+    def maximum(trace, start_index, end_index, **kwargs):
         """
         Feature extraction for the maximum pulse value.
 
@@ -288,7 +288,7 @@ class SingleChannelExtractors(object):
 
 
     @staticmethod
-    def extract_min(trace, start_index, end_index, **kwargs):
+    def minimum(trace, start_index, end_index, **kwargs):
         """
         Feature extraction for the minimum pulse value.
 

@@ -70,7 +70,7 @@ def process_data(raw_file, path_to_yaml, nevents=0, savepath=None):
                 kwargs['template'] = template
                 kwargs['psd'] = psd
                 kwargs['fs'] = fs
-                extractor = getattr(SingleChannelExtractors, f"extract_{feature}")
+                extractor = getattr(SingleChannelExtractors, feature)
                 extracted_dict = extractor(trace, **kwargs)
                 for ex_feature in extracted_dict:
                     ex_feature_name = f'{ex_feature}_{chan}'
