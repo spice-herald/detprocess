@@ -46,16 +46,20 @@ def repack_h5info_dict(h5info_dict):
         eventtime_arr[i] = h5info_dict[i]['event_time']
         if h5info_dict[i]['data_mode'] == 'threshold':
             triggertype_arr[i] = 1
-            triggeramp_arr[i] = h5info_dict[i]['trigger_amplitude']
-            triggertime_arr[i] = h5info_dict[i]['trigger_time']
         elif h5info_dict[i]['data_mode'] == 'rand':
             triggertype_arr[i] = 0
-            triggeramp_arr[i] = h5info_dict[i]['trigger_amplitude']
-            triggertime_arr[i] = h5info_dict[i]['trigger_time']
         else:
             triggertype_arr[i] = None
-            triggeramp_arr[i] = None
-            triggertime_arr[i] = None
+
+        if 'trigger_amplitude' in h5info_dict[i]:
+            triggeramp_arr[i] = h5info_dict[i]['trigger_amplitude']
+        else:
+            triggeramp_arr[i] = np.nan
+
+        if 'trigger_time' in h5info_dict[i]:
+            triggertime_arr[i] = h5info_dict[i]['trigger_time']
+        else:
+            triggertime_arr[i] = np.nan
 
     retdict = {
         'eventnumber': eventnumber_arr,
@@ -112,7 +116,7 @@ class SingleChannelExtractors(object):
             'ofamp_nodelay': ofamp_nodelay,
             'ofchi2_nodelay': ofchi2_nodelay,
         }
-        return of_nodelay
+        return retdict
 
 
     @staticmethod
@@ -154,7 +158,7 @@ class SingleChannelExtractors(object):
 
 
     @staticmethod
-    def of_constrained(trace, template, psd, fs, nconstrain, window_center, **kwargs):
+    def of_constrained(trace, template, psd, fs, nconstrain, windowcenter, **kwargs):
         """
         Feature extraction for the constrained Optimum Filter.
 
@@ -168,7 +172,7 @@ class SingleChannelExtractors(object):
             The PSD to use for the optimum filter.
         nconstrain : int
             The constraint window set by the processing file.
-        window_center : int
+        windowcenter : int
             The window center of the constraint window.
 
         Returns
