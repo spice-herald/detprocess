@@ -96,6 +96,8 @@ class SingleChannelExtractors(object):
             The template to use for the optimum filter.
         psd : ndarray
             The PSD to use for the optimum filter.
+        fs : float
+            The digitization rate of the data in trace.
 
         Returns
         -------
@@ -132,6 +134,8 @@ class SingleChannelExtractors(object):
             The template to use for the optimum filter.
         psd : ndarray
             The PSD to use for the optimum filter.
+        fs : float
+            The digitization rate of the data in trace.
 
         Returns
         -------
@@ -170,6 +174,8 @@ class SingleChannelExtractors(object):
             The template to use for the optimum filter.
         psd : ndarray
             The PSD to use for the optimum filter.
+        fs : float
+            The digitization rate of the data in trace.
         nconstrain : int
             The constraint window set by the processing file.
         windowcenter : int
@@ -244,6 +250,8 @@ class SingleChannelExtractors(object):
             The index of the trace to start the integration.
         end_index : ndarray
             The index of the trace to end the integration.
+        fs : float
+            The digitization rate of the data in trace.
 
         Returns
         -------
@@ -320,4 +328,46 @@ class SingleChannelExtractors(object):
 
         return retdict
 
+    @staticmethod
+    def energyabsorbed(trace, start_index, end_index, fs, vb, i0, rl,
+                       **kwargs):
+        """
+        Feature extraction for the minimum pulse value.
+
+        Parameters
+        ----------
+        trace : ndarray
+            An ndarray containing the raw data to extract the feature from.
+        start_index : ndarray
+            The index of the trace to start the integration.
+        end_index : ndarray
+            The index of the trace to end the integration.
+        fs : float
+            The digitization rate of the data in trace.
+        vb : float
+            Bias voltage applied to the TES.
+        i0 : float
+            Quiescent operating current of the TES.
+        rl : float
+            Load resistance in the TES circuit.
+
+        Returns
+        -------
+        retdict : dict
+            Dictionary containing the various extracted features.
+
+        """
+
+        baseline = trace[:start_index].mean()
+        i_trace = trace[start_index:end_index] - baseline
+
+        p0 = i_trace * (vb - 2*i0*rl) - i_trace**2 * rl
+
+        en_abs = np.trapz(p0, dx=1/fs, axis=-1)
+
+        retdict = {
+            'energyabsorbed': en_abs,
+        }
+
+        return retdict
 
