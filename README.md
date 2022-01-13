@@ -82,7 +82,9 @@ detector1:
         end_index: 16000
 ```
 
-In this YAML file, we have supplied absolute paths to both the pulse template and the current-referenced power spectral density (PSD) to be used by the optimum filters. The pulse template should be a single array that contains the expected pulse shape, normalized to have a pulse amplitude of 1 and have a baseline of 0. The current-referenced PSD should be a single array that contains the two-sided in units of <img src="https://render.githubusercontent.com/render/math?math=%5Cmathrm%7BA%7D%5E2%20%2F%20%5Cmathrm%7BHz%7D">. Note that both of these will should have the same digitization rate and length as the data that will be processed to be able to calculate the optimum filter features.
+
+
+In this YAML file, we first specify which channel will be processed, in this case `detector1`. This should match the channel name in the corresponding `pytesdaq` file. We have supplied absolute paths to both the pulse template and the current-referenced power spectral density (PSD) to be used by the optimum filters. The pulse template should be a single array that contains the expected pulse shape, normalized to have a pulse amplitude of 1 and have a baseline of 0. The current-referenced PSD should be a single array that contains the two-sided PSD in units of <img src="https://render.githubusercontent.com/render/math?math=%5Cmathrm%7BA%7D%5E2%20%2F%20%5Cmathrm%7BHz%7D">. Note that both of these will should have the same digitization rate and/or length as the data that will be processed to be able to calculate the optimum filter features.
 
 We have also specified to extract 3 different features from each event: `of_nodelay`, `baseline`, and `integral`. This is done by specifying `run: True` in the file, as compared to `run: False` for `of_unconstrained` and `of_constrained`. Note that it is fine to simple exclude features from the YAML file, as they simply will not be calculated (e.g. `energyabsorbed` is not included in this example).
 
