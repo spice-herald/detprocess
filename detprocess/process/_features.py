@@ -12,19 +12,21 @@ __all__ = [
 def repack_h5info_dict(h5info_dict):
     """
 
-    Helper function to repackage the hdf5 file event info (metadata)  dictionaries into a dictionary
-    with a format that can be used in the rq dataframe
+    Helper function to repackage the hdf5 file event info (metadata)
+    dictionaries into a dictionary with a format that can be used in
+    the rq dataframe
 
     Parameters
     ----------
     h5dict : list
-        A list of dictionaries (one dictionary per event) with format as output by the pytesdaq
-        function read_many_events
+        A list of dictionaries (one dictionary per event) with format
+        as output by the pytesdaq function read_many_events
 
     Returns
     -------
     retdict : dict
-        A dictionary of numpy arrays containing event metadata (eventnumber, seriesnumber, etc.)
+        A dictionary of numpy arrays containing event metadata
+        (eventnumber, seriesnumber, etc.)
 
     """
 
@@ -91,7 +93,8 @@ class SingleChannelExtractors(object):
         Parameters
         ----------
         trace : ndarray
-            An ndarray containing the raw data to extract the feature from.
+            An ndarray containing the raw data to extract the feature
+            from.
         template : ndarray
             The template to use for the optimum filter.
         psd : ndarray
@@ -118,6 +121,7 @@ class SingleChannelExtractors(object):
             'ofamp_nodelay': ofamp_nodelay,
             'ofchi2_nodelay': ofchi2_nodelay,
         }
+
         return retdict
 
 
@@ -129,7 +133,8 @@ class SingleChannelExtractors(object):
         Parameters
         ----------
         trace : ndarray
-            An ndarray containing the raw data to extract the feature from.
+            An ndarray containing the raw data to extract the feature
+            from.
         template : ndarray
             The template to use for the optimum filter.
         psd : ndarray
@@ -169,7 +174,8 @@ class SingleChannelExtractors(object):
         Parameters
         ----------
         trace : ndarray
-            An ndarray containing the raw data to extract the feature from.
+            An ndarray containing the raw data to extract the feature
+            from.
         template : ndarray
             The template to use for the optimum filter.
         psd : ndarray
@@ -216,8 +222,9 @@ class SingleChannelExtractors(object):
         Parameters
         ----------
         trace : ndarray
-            An ndarray containing the raw data to extract the feature from.
-        end_index : ndarray
+            An ndarray containing the raw data to extract the feature
+            from.
+        end_index : int
             The index of the trace to average the trace up to.
 
         Returns
@@ -245,10 +252,11 @@ class SingleChannelExtractors(object):
         Parameters
         ----------
         trace : ndarray
-            An ndarray containing the raw data to extract the feature from.
-        start_index : ndarray
+            An ndarray containing the raw data to extract the feature
+            from.
+        start_index : int
             The index of the trace to start the integration.
-        end_index : ndarray
+        end_index : int
             The index of the trace to end the integration.
         fs : float
             The digitization rate of the data in trace.
@@ -277,10 +285,11 @@ class SingleChannelExtractors(object):
         Parameters
         ----------
         trace : ndarray
-            An ndarray containing the raw data to extract the feature from.
-        start_index : ndarray
+            An ndarray containing the raw data to extract the feature
+            from.
+        start_index : int
             The index of the trace to start searching for the max.
-        end_index : ndarray
+        end_index : int
             The index of the trace to end searching for the max.
 
         Returns
@@ -307,10 +316,11 @@ class SingleChannelExtractors(object):
         Parameters
         ----------
         trace : ndarray
-            An ndarray containing the raw data to extract the feature from.
-        start_index : ndarray
+            An ndarray containing the raw data to extract the feature
+            from.
+        start_index : int
             The index of the trace to start searching for the min.
-        end_index : ndarray
+        end_index : int
             The index of the trace to end searching for the min.
 
         Returns
@@ -337,10 +347,11 @@ class SingleChannelExtractors(object):
         Parameters
         ----------
         trace : ndarray
-            An ndarray containing the raw data to extract the feature from.
-        start_index : ndarray
+            An ndarray containing the raw data to extract the feature
+            from.
+        start_index : int
             The index of the trace to start the integration.
-        end_index : ndarray
+        end_index : int
             The index of the trace to end the integration.
         fs : float
             The digitization rate of the data in trace.
