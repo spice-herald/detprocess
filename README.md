@@ -234,7 +234,7 @@ To create a new feature, we would follow the format of the above features. Let's
 
 This feature must be added as one of the static methods in the class `SingleChannelExtractors`, located in `detprocess/process/_features.py`. After adding the code, the user must then recompile the package via `pip install .`, and the feature can be extracted by `detprocess`.
 
-If we added this feature to our example [YAML file](#yaml-file), the corresponding entry should be of the form:
+If we added this feature to our example [YAML file](#yaml-file), the corresponding entry should be of the form (where we are currently passing dummy values to the dummy parameters):
 
 ```yaml
     example_feature:
