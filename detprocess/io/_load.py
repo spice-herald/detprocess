@@ -26,9 +26,11 @@ def load_traces(filename, channels=None, nevents=0):
     Returns
     -------
     traces : ndarray
-        A numpy array of traces of shape (number of traces, number of channels, length of individual trace.
+        A numpy array of traces of shape (number of traces, number of
+        channels, length of individual trace.
     info_dict : dict
-        A dictionary containing information that comes directly from the loaded file.
+        A dictionary containing information that comes directly from
+        the loaded file.
 
     """
 
@@ -59,9 +61,9 @@ def load_features(file_or_folder):
     Parameters
     ----------
     file_or_folder : str
-        The full path and filename for the detprocess HDF5 file to open, or
-        the full path to the folder containing a number of detprocess HDF5
-        files to open.
+        The full path and filename for the detprocess HDF5 file to
+        open, or the full path to the folder containing a number of
+        detprocess HDF5 files to open.
 
     Returns
     -------
@@ -70,7 +72,6 @@ def load_features(file_or_folder):
         specified file.
 
     """
-
     
     if Path(file_or_folder).is_dir():
         df = pd.concat(

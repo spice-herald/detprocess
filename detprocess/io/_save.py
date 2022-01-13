@@ -13,7 +13,8 @@ def save_features(df, filename):
     Parameters
     ----------
     df : Pandas.DataFrame
-        A DataFrame that contains all of the extracted features for a file.
+        A DataFrame that contains all of the extracted features for a
+        file.
     filename : str
         The full path and file name to save the DataFrame as.
 
@@ -22,6 +23,7 @@ def save_features(df, filename):
     None
 
     """
+
     df.to_hdf(
         filename,
         key='detprocess_df',
