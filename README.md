@@ -10,7 +10,10 @@
   - [Available Features](#available-features)
   - [YAML File](#yaml-file)
   - [Extracting Features](#extracting-features)
+  - [Loading Features](#loading-features)
 - [Advanced Usage](#advanced-usage)
+  - [Adding New Features](#adding-new-features)
+  - [High-Performance Computing](#high-performance-computing)
 
 ## Installation
 
@@ -98,6 +101,12 @@ After feature extraction is complete (assuming that the user chose to save the p
 
 ## Advanced Usage
 
+Beyond the basic functionality of `detprocess`, advanced users may want to do more, such as adding new features or interfacing with a high-performance computing (HPC) cluster. In this section, we detail how to do these.
+
+### Adding New Features
+
 For advanced users, there may be a need to add new features for extraction which are not currently included. To do this, the user must add a new feature as a `staticmethod` in `detprocess.SingleChannelExtractors`.
 
+### High-Performance Computing
 
+Detailing this usage is a work-in-progress.
