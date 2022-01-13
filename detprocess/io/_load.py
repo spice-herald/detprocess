@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+from glob import glob
+from pathlib import Path
 
 import pytesdaq.io.hdf5 as h5io
 
@@ -49,25 +51,41 @@ def load_traces(filename, channels=None, nevents=0):
     return traces, info_dict
 
 
-def load_features(filename):
+def load_features(file_or_folder):
     """
-    Function for loading the features from an HDF5 that was created by detprocess.
+    Function for loading the features from an HDF5 that was created by
+    detprocess.
 
     Parameters
     ----------
-    filename : str
-        The full path and filename for the detprocess HDF5 file to open.
+    file_or_folder : str
+        The full path and filename for the detprocess HDF5 file to open, or
+        the full path to the folder containing a number of detprocess HDF5
+        files to open.
 
     Returns
     -------
     df : Pandas.DataFrame
-        A DataFrame that contains all of the extracted features for the specified file.
-    
+        A DataFrame that contains all of the extracted features for the
+        specified file.
+
     """
-    df = pd.read_hdf(
-        filename,
-        'detprocess_df',
-    )
+
+    
+    if Path(file_or_folder).is_dir():
+        df = pd.concat(
+            [
+                pd.read_hdf(
+                    f,
+                    'detprocess_df',
+                ) for f in sorted(glob(f"{file_or_folder}/*.hdf5"))
+            ],
+        )
+    else:
+        df = pd.read_hdf(
+            file_or_folder,
+            'detprocess_df',
+        )
 
     return df
 
