@@ -26,7 +26,7 @@ One of the goals of this package is to keep the feature extraction pipeline simp
 1. Know what features you want to extract, see: [Available Features](#available-features)
 2. Create a YAML file specifying feature extraction options, see: [YAML File](#yaml-file)
 3. Run the feature extraction code on your data, see: [Extracting Features](#extracting-features)
-4. Analyze the features that you have extracted
+4. Analyze the features that you have extracted, see: [Loading Features](#loading-features)
 
 
 ### Available Features
@@ -82,8 +82,6 @@ detector1:
         end_index: 16000
 ```
 
-
-
 In this YAML file, we first specify which channel will be processed, in this case `detector1`. This should match the channel name in the corresponding `pytesdaq` file. We have supplied absolute paths to both the pulse template and the current-referenced power spectral density (PSD) to be used by the optimum filters. The pulse template should be a single array that contains the expected pulse shape, normalized to have a pulse amplitude of 1 and have a baseline of 0. The current-referenced PSD should be a single array that contains the two-sided PSD in units of <img src="https://render.githubusercontent.com/render/math?math=%5Cmathrm%7BA%7D%5E2%20%2F%20%5Cmathrm%7BHz%7D">. Note that both of these will should have the same digitization rate and/or length as the data that will be processed to be able to calculate the optimum filter features.
 
 We have also specified to extract 3 different features from each event: `of_nodelay`, `baseline`, and `integral`. This is done by specifying `run: True` in the file, as compared to `run: False` for `of_unconstrained` and `of_constrained`. Note that it is fine to simple exclude features from the YAML file, as they simply will not be calculated (e.g. `energyabsorbed` is not included in this example).
@@ -92,8 +90,14 @@ For the features themselves, the functions to extract them may require extra arg
 
 ### Extracting Features
 
-Feature extraction is meant to be very easy once we have our features and our YAML file. Essentially all of the work is done by `detprocess.process_data`. This function takes the absolute path to the file to be processed and the absolute path to the YAML file, and then will return a DataFrame containing all of the extracted features.
+Feature extraction is meant to be very easy once we have our features and our YAML file. Essentially all of the work is done by `detprocess.process_data`. This function takes the absolute path to the file to be processed and the absolute path to the YAML file, and then will return a DataFrame containing all of the extracted features. The user can ensure these are automatically saved to a folder of their choice by also passing a path to the `savepath` optional argument. An example of the expected workflow is shown in [`examples/run_detprocess.ipynb`](examples/run_detprocess.ipynb).
+
+### Loading Features
+
+After feature extraction is complete (assuming that the user chose to save the processed data), it is simple to load the features. As part of the IO functionality, `detprocess` has a function to load the extracted features into a Pandas DataFrame. This is done by `detprocess.io.load_features`, the example notebook [`examples/run_detprocess.ipynb`](examples/run_detprocess.ipynb) shows usage of this function.
 
 ## Advanced Usage
+
+For advanced users, there may be a need to add new features for extraction which are not currently included. To do this, the user must add a new feature as a `staticmethod` in `detprocess.SingleChannelExtractors`.
 
 
