@@ -118,6 +118,7 @@ class SingleChannelExtractors(object):
             'ofamp_nodelay': ofamp_nodelay,
             'ofchi2_nodelay': ofchi2_nodelay,
         }
+
         return retdict
 
 
@@ -217,7 +218,7 @@ class SingleChannelExtractors(object):
         ----------
         trace : ndarray
             An ndarray containing the raw data to extract the feature from.
-        end_index : ndarray
+        end_index : int
             The index of the trace to average the trace up to.
 
         Returns
@@ -246,9 +247,9 @@ class SingleChannelExtractors(object):
         ----------
         trace : ndarray
             An ndarray containing the raw data to extract the feature from.
-        start_index : ndarray
+        start_index : int
             The index of the trace to start the integration.
-        end_index : ndarray
+        end_index : int
             The index of the trace to end the integration.
         fs : float
             The digitization rate of the data in trace.
@@ -278,9 +279,9 @@ class SingleChannelExtractors(object):
         ----------
         trace : ndarray
             An ndarray containing the raw data to extract the feature from.
-        start_index : ndarray
+        start_index : int
             The index of the trace to start searching for the max.
-        end_index : ndarray
+        end_index : int
             The index of the trace to end searching for the max.
 
         Returns
@@ -308,9 +309,9 @@ class SingleChannelExtractors(object):
         ----------
         trace : ndarray
             An ndarray containing the raw data to extract the feature from.
-        start_index : ndarray
+        start_index : int
             The index of the trace to start searching for the min.
-        end_index : ndarray
+        end_index : int
             The index of the trace to end searching for the min.
 
         Returns
@@ -338,9 +339,9 @@ class SingleChannelExtractors(object):
         ----------
         trace : ndarray
             An ndarray containing the raw data to extract the feature from.
-        start_index : ndarray
+        start_index : int
             The index of the trace to start the integration.
-        end_index : ndarray
+        end_index : int
             The index of the trace to end the integration.
         fs : float
             The digitization rate of the data in trace.
