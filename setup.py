@@ -56,5 +56,7 @@ setup(
         'qetpy',
         'pandas',
         'pytesdaq',
+        'scikit-image',
+        'iminuit',
     ]
 )
