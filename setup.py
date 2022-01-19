@@ -58,5 +58,6 @@ setup(
         'pytesdaq',
         'scikit-image',
         'iminuit',
+        'seaborn',
     ]
 )
