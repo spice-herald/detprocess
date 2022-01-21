@@ -35,14 +35,15 @@ class CleanCommand(Command):
                 shutil.rmtree(path)
 
 setup(
-    name="detprocess", 
-    version="0.0.2", 
-    description="Detector Data Processing Package", 
+    name="detprocess",
+    version="0.0.2",
+    description="Detector Data Processing Package",
     long_description=long_description,
     long_description_content_type='text/markdown',
-    author="Samuel Watkins", 
-    author_email="samwatkins@berkeley.edu", 
-    url="https://github.com/slwatkins/detprocess", 
+    author="Samuel Watkins",
+    author_email="samwatkins@berkeley.edu",
+    url="https://github.com/slwatkins/detprocess",
+    license_files = ('LICENSE', ),
     packages=find_packages(), 
     zip_safe=False,
     cmdclass={
@@ -56,5 +57,5 @@ setup(
         'qetpy',
         'pandas',
         'pytesdaq',
-    ]
+    ],
 )
