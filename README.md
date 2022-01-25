@@ -103,6 +103,8 @@ Feature extraction is meant to be very easy once we have our features and our YA
 
 After feature extraction is complete (assuming that the user chose to save the processed data), it is simple to load the features. As part of the IO functionality, `detprocess` has a function to load the extracted features into a Pandas DataFrame. This is done by `detprocess.io.load_features`, the example notebook [`examples/run_detprocess.ipynb`](examples/run_detprocess.ipynb) shows usage of this function.
 
+After loading features, `detprocess` includes many helpful core functions for [applying data quality cuts](detprocess/core/_cut.py), [plotting features](detprocess/core/_plotting.py), and doing [maximum likelihood fits of energy spectra](detprocess/core/_fitting.py). We have also written an example notebook for using the maximum likelihood fitting routines: [`examples/max_likelihood.ipynb`](examples/max_likelihood.ipynb).
+
 ## Advanced Usage
 
 Beyond the basic functionality of `detprocess`, advanced users may want to do more, such as adding new features or interfacing with a high-performance computing (HPC) cluster. In this section, we detail how to do these.
