@@ -58,7 +58,7 @@ setup(
         'pandas',
         'pytesdaq',
         'scikit-image',
-        'iminuit',
+        'iminuit>=2',
         'seaborn',
     ],
 )
