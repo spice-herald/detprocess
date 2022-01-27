@@ -46,29 +46,20 @@ def ext_max_llhd(x, func, guess, guess_err=None, limits=None):
 
     """
 
-    fit_dict = {f'p{ii}': g for ii, g in enumerate(guess)}
-
     if guess_err is None:
-        err_dict = {f'error_p{ii}': g for ii, g in enumerate(guess)}
-    else:
-        err_dict = {f'error_p{ii}': g for ii, g in enumerate(guess_err)}
+        guess_err = [g for ii, g in enumerate(guess)]
 
     if limits is None:
-        limit_dict = {
-            f'limit_p{ii}': (None, None) for ii in range(len(guess))
-        }
-    else:
-        limit_dict = {f'limit_p{ii}': l for ii, l in enumerate(limits)}
-
-    input_dict = {**fit_dict, **err_dict, **limit_dict}
+        limits = [(-np.inf, np.inf) for ii in range(len(guess))]
 
     m = iminuit.Minuit(
         lambda p: func(x, p),
-        use_array_call=True,
-        errordef=1,
-        forced_parameters=[f'p{ii}' for ii in range(len(guess))],
-        **input_dict,
+        guess,
+        name=[f'p{ii}' for ii in range(len(guess))],
     )
+    m.limits = limits
+    m.errors = guess_err
+    m.errordef = 1
 
     m.migrad()
     m.hesse()
