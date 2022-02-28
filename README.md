@@ -19,7 +19,7 @@
 
 To install the most recent release of `detprocess`, type the following line into your command line
 
-`pip install detprocess`
+`pip install detprocess --upgrade`
 
 To install the most recent development version of `detprocess`, clone this repo, then from the top-level directory of the repo, type the following line into your command line
 
