@@ -274,6 +274,32 @@ class SingleChannelExtractors(object):
 
         return retdict
 
+    @staticmethod
+    def baseline_stdev(trace, end_index, **kwargs):
+        """
+        Feature extraction for the standard deviation of the trace baseline.
+
+        Parameters
+        ----------
+        trace : ndarray
+            An ndarray containing the raw data to extract the feature from.
+        end_index : ndarray
+            The index of the trace to average the trace up to.
+
+        Returns
+        -------
+        retdict : dict
+            Dictionary containing the various extracted features.
+
+        """
+
+        baseline_stdev = np.std(trace[:end_index])
+
+        retdict = {
+            'baseline_stdev': baseline_stdev,
+        }
+
+        return retdict
 
 
     @staticmethod
