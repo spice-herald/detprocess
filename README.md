@@ -12,7 +12,8 @@
   - [Extracting Features](#extracting-features)
   - [Loading Features](#loading-features)
 - [Advanced Usage](#advanced-usage)
-  - [Adding New Features](#adding-new-features)
+  - [Adding New Default Features](#adding-new-default-features)
+  - [Developing Features](#developing-features)
   - [High-Performance Computing](#high-performance-computing)
 
 ## Installation
@@ -89,7 +90,7 @@ detector1:
         end_index: 16000
 ```
 
-In this YAML file, we first specify which channel will be processed, in this case `detector1`. This should match the channel name in the corresponding `pytesdaq` file. We have supplied absolute paths to both the pulse template and the current-referenced power spectral density (PSD) to be used by the optimum filters. The pulse template should be a single array that contains the expected pulse shape, normalized to have a pulse amplitude of 1 and have a baseline of 0. The current-referenced PSD should be a single array that contains the two-sided PSD in units of <img src="https://render.githubusercontent.com/render/math?math=%5Cmathrm%7BA%7D%5E2%20%2F%20%5Cmathrm%7BHz%7D">. Note that both of these will should have the same digitization rate and/or length as the data that will be processed to be able to calculate the optimum filter features.
+In this YAML file, we first specify which channel will be processed, in this case `detector1`. This should match the channel name in the corresponding `pytesdaq` file. We have supplied absolute paths to both the pulse template and the current-referenced power spectral density (PSD) to be used by the optimum filters. The pulse template should be a single array that contains the expected pulse shape, normalized to have a pulse amplitude of 1 and have a baseline of 0. The current-referenced PSD should be a single array that contains the two-sided PSD in units of $\mathrm{A}^2/\mathrm{Hz}$. Note that both of these will should have the same digitization rate and/or length as the data that will be processed to be able to calculate the optimum filter features.
 
 We have also specified to extract 3 different features from each event: `of_nodelay`, `baseline`, and `integral`. This is done by specifying `run: True` in the file, as compared to `run: False` for `of_unconstrained` and `of_constrained`. Note that it is fine to simple exclude features from the YAML file, as they simply will not be calculated (e.g. `energyabsorbed` is not included in this example).
 
@@ -107,11 +108,11 @@ After loading features, `detprocess` includes many helpful core functions for [a
 
 ## Advanced Usage
 
-Beyond the basic functionality of `detprocess`, advanced users may want to do more, such as adding new features or interfacing with a high-performance computing (HPC) cluster. In this section, we detail how to do these.
+Beyond the basic functionality of `detprocess`, advanced users may want to do more, such as adding new default features, fast development of new features, or interfacing with a high-performance computing (HPC) cluster. In this section, we detail how to do these.
 
-### Adding New Features
+### Adding New Default Features
 
-For advanced users, there may be a need to add new features for extraction which are not currently included. To do this, the user must add a new feature as a `staticmethod` in `detprocess.SingleChannelExtractors`. To understand how to do this, let's look at a couple of the currently-supported features. Below we show an excerpt of the feature definitions, showing how `of_nodelay` and `integral` are defined in `detprocess/process/_features.py`.
+For advanced users, there may be a need to add new default features for extraction which are not currently included (see [Developing Features](#developing-features) for more on one-off or fast development of features). To do this, the user must add a new feature as a `staticmethod` in `detprocess.SingleChannelExtractors`. To understand how to do this, let's look at a couple of the currently-supported features. Below we show an excerpt of the feature definitions, showing how `of_nodelay` and `integral` are defined in `detprocess/process/_features.py`.
 
 ```python
 class SingleChannelExtractors(object):
@@ -207,7 +208,7 @@ To create a new feature, we would follow the format of the above features. Let's
     @staticmethod
     def example_feature(trace, param1, param2, fs, **kwargs):
         """
-        Feature extraction for the pulse integral.
+        Feature extraction for some example feature.
 
         Parameters
         ----------
@@ -250,6 +251,75 @@ If we added this feature to our example [YAML file](#yaml-file), the correspondi
 ```
 
 When running `detprocess.process_data`, the outputted Pandas DataFrame would then have the keys `example_feature1_detector1` and `example_feature2_detector1`, which can then be accessed by the user in their analysis.
+
+### Developing Features
+
+When developing new features or creating one-off features for a specific dataset, it can be inefficient to need to rebuild the package each time a feature is changed. In this scenario, the `detprocess.process_data` function has a keyword argument called `external_file`. The user can pass the path to a custom version of the `detprocess/process/_features.py` file, where the same formatting must be followed (i.e. the functions must be added to a class called `SingleChannelExtractors`). Below, we show an example of such a file.
+
+
+```python
+import numpy as np
+
+class SingleChannelExtractors(object):
+    """
+    A class that contains all of the possible feature extractors
+    for a given trace, assuming processing on a single channel.
+    Each feature extraction function is a staticmethod for processing
+    convenience.
+
+    """
+
+    @staticmethod
+    def example_feature(trace, param1, param2, fs, **kwargs):
+        """
+        Feature extraction for some example feature.
+
+        Parameters
+        ----------
+        trace : ndarray
+            An ndarray containing the raw data to extract the feature from.
+        param1 : float
+            The first parameter to pass to our feature extraction.
+        param2 : float
+            The first parameter to pass to our feature extraction.
+        fs : float
+            The digitization rate of the data in trace.
+
+        Returns
+        -------
+        retdict : dict
+            Dictionary containing the various extracted features.
+
+        """
+
+        output1, output2 = some_function(trace, param1, param2, fs)
+
+        retdict = {
+            'example_feature1': output1,
+            'example_feature2': output2,
+        }
+
+        return retdict
+
+```
+
+This is simply using the `example_feature` feature from the previous section on [Adding New Default Features](#adding-new-default-features). When using `detprocess.process_data`, we would simply pass the location of this file to `external_file`. The processing code would then ignore the default features to extract, and use the features in this example file instead. Note that this means that none of the default features will be calculated, so if those are desired, they should be included in this file being passed to `external_file`.
+
+The corresponding YAML file should then have the below form, where only this `example_feature` should be calculated, as it is the only feature in the external file.
+
+```yaml
+detector1:
+    template_path: /path/to/template.txt
+    psd_path: /path/to/psd.txt
+    example_feature:
+        run: True
+        param1: 0
+        param2: 1
+```
+
+Note that, because the OF is so ubiquitous in our processing, `detprocess` still asks for a template and a psd. This is because every time we carry out feature extraction with data from a detector, the OF will almost certainly be calculated to extract OF amplitudes.
+
+After a feature has been developed, and it seems to be a useful features for general analyses, then it should be added to the default features for this package, which can be done by following the steps in [Adding New Default Features](#adding-new-default-features).
 
 ### High-Performance Computing
 
