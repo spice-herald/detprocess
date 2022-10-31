@@ -1,26 +1,130 @@
-PD2:
-    template_path: /sdata/users/swatkins/repos/detprocess/scripts/template.txt
-    psd_path: /sdata/users/swatkins/repos/detprocess/scripts/psd.txt
+# ==============================================================
+# Processing configuration R20
+# version: development
+#
+#
+# Available window parameters:
+#
+#   window_min_from_start_usec
+#   window_max_from_start_usec
+#   window_min_to_end_usec
+#   window_max_to_end_usec
+#   window_min_from_trig_usec
+#   window_max_from_trig_usec
+# 
+# ==============================================================
+
+filter_file: /home/serfass/workspace/processing/filter_r20_dev.hdf5
+
+# -------------------------
+# Feature configuration
+# for ALL channels
+# -------------------------
+
+all:
     of_nodelay:
-        run: True
+        run: False
+
     of_unconstrained:
         run: False
+
     of_constrained:
         run: False
-        windowcenter: 0
-        nconstrain: 100
-    baseline:
+        window_min_from_trig_usec: -400
+        window_max_from_trig_usec: 400
+
+    baseline_pre:
         run: True
-        end_index: 16000
+        base_algorithm: baseline
+        window_min_from_start_usec: 0
+        window_max_from_trig_usec: -500
+
+    baseline_post:   
+        run: False
+        base_algorithm: baseline
+        window_min_from_trig_usec: 3000
+        window_max_to_end_usec: 0
+
+
     integral:
         run: True
-        start_index: 0
-        end_index: 16000
+        window_min_from_trig_usec: -500
+        window_max_from_trig_usec: 500
+
     maximum:
         run: True
-        start_index: 0
-        end_index: 16000
+        window_min_from_trig_usec: -500
+        window_max_from_trig_usec: 500
+
     minimum:
         run: True
-        start_index: 0
-        end_index: 16000
+        window_min_from_trig_usec: -500
+        window_max_from_trig_usec: 500
+       
+# -------------------------
+# Feature configuration
+# for specific channels
+# -------------------------
+
+
+CPDv21Ge:
+ 
+    of_unconstrained_glitch:
+        run: True
+        base_algorithm: of_unconstrained
+        template_tag: glitch
+        psd_tag: strict
+
+    of_nodelay:
+        run: False
+        psd_tag: strict
+
+    of_constrained:
+        run: True
+        window_min_from_trig_usec: -400
+        window_max_from_trig_usec: 400
+
+    energyabsorbed:
+        run: True
+        window_min_from_trig_usec: -100
+        window_max_from_trig_usec: 1500
+        vb: -9.25e-7
+        i0: -11.132e-6
+        rl: 9.4e-3
+
+
+
+IrPtTESSmall,IrPtTESBig:
+    disable: True
+
+    of_nodelay: 
+        run: True
+
+    of_constrained:
+        run: True
+        template_tag: 3poles
+        windowcenter: 0
+        nconstrain: 100
+
+# sum of pulses
+IrPtTESSmall+IrPtTESBig:
+  
+    feature_channel: TotIrPt
+    
+    of_nodelay: 
+        run: True
+
+    of_unconstrained:
+        run: True
+
+    of_constrained:
+        run: True
+        window_min_from_trig_usec: -300
+        window_max_from_trig_usec: 300
+        
+
+# multi-channels algoritm
+IrPtTESSmall|IrPtTESBig:
+      disable: True
+      feature_channel: IrPt2x2
+      
