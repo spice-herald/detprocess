@@ -1,82 +1,15 @@
 import numpy as np
-
 import qetpy as qp
 
 
 __all__ = [
-    'repack_h5info_dict',
-    'SingleChannelExtractors',
+    'FeatureExtractors',
 ]
 
 
-def repack_h5info_dict(h5info_dict):
-    """
 
-    Helper function to repackage the hdf5 file event info (metadata)
-    dictionaries into a dictionary with a format that can be used in
-    the rq dataframe
 
-    Parameters
-    ----------
-    h5dict : list
-        A list of dictionaries (one dictionary per event) with format
-        as output by the pytesdaq function read_many_events
-
-    Returns
-    -------
-    retdict : dict
-        A dictionary of numpy arrays containing event metadata
-        (eventnumber, seriesnumber, etc.)
-
-    """
-
-    len_dict = len(h5info_dict)
-    eventnumber_arr = np.zeros(len_dict, dtype=np.int32)
-    eventindex_arr = np.zeros(len_dict, dtype=np.int16)
-    dumpnum_arr = np.zeros(len_dict, dtype=np.int16)
-    seriesnumber_arr = np.zeros(len_dict, dtype=np.int64)
-    eventtime_arr = np.zeros(len_dict)
-    triggertype_arr = np.ones(len_dict)
-    triggeramp_arr = np.zeros(len_dict)
-    triggertime_arr = np.zeros(len_dict)
-
-    for i in range(len_dict):
-        eventnumber_arr[i] = h5info_dict[i]['event_num']
-        eventindex_arr[i] = h5info_dict[i]['event_index']
-        dumpnum_arr[i] = h5info_dict[i]['dump_num']
-        seriesnumber_arr[i] = h5info_dict[i]['series_num']
-        eventtime_arr[i] = h5info_dict[i]['event_time']
-        if h5info_dict[i]['data_mode'] == 'threshold':
-            triggertype_arr[i] = 1
-        elif h5info_dict[i]['data_mode'] == 'rand':
-            triggertype_arr[i] = 0
-        else:
-            triggertype_arr[i] = None
-
-        if 'trigger_amplitude' in h5info_dict[i]:
-            triggeramp_arr[i] = h5info_dict[i]['trigger_amplitude']
-        else:
-            triggeramp_arr[i] = np.nan
-
-        if 'trigger_time' in h5info_dict[i]:
-            triggertime_arr[i] = h5info_dict[i]['trigger_time']
-        else:
-            triggertime_arr[i] = np.nan
-
-    retdict = {
-        'eventnumber': eventnumber_arr,
-        'eventindex': eventindex_arr,
-        'dumpnumber': dumpnum_arr,
-        'seriesnumber': seriesnumber_arr,
-        'eventtime': eventtime_arr,
-        'triggertype': triggertype_arr,
-        'triggeramp': triggeramp_arr,
-        'triggertime': triggertime_arr,
-    }
-
-    return retdict
-
-class SingleChannelExtractors(object):
+class FeatureExtractors(object):
     """
     A class that contains all of the possible feature extractors
     for a given trace, assuming processing on a single channel.
@@ -86,7 +19,11 @@ class SingleChannelExtractors(object):
     """
 
     @staticmethod
-    def of_nodelay(trace, template, psd, fs, **kwargs):
+    def of_nodelay(OF=None,
+                   trace=None, template=None, psd=None, fs=None,
+                   nb_samples=None, nb_samples_pretrigger=None,
+                   feature_base_name='of_nodelay',
+                   **kwargs):
         """
         Feature extraction for the no delay Optimum Filter.
 
@@ -109,24 +46,38 @@ class SingleChannelExtractors(object):
 
         """
 
-        OF = qp.OptimumFilter(
-            trace,
-            template,
-            psd,
-            fs,
-        )
-        ofamp_nodelay, ofchi2_nodelay = OF.ofamp_nodelay()
+        if OF is None:
+            
+            OF = qp.OptimumFilter(
+                trace,
+                template,
+                psd,
+                fs,
+            )
 
+
+        # window center (relative to 1/2 pulse length)
+        window_center = nb_samples//2 - nb_samples_pretrigger
+  
+
+            
+        ofamp_nodelay, ofchi2_nodelay = OF.ofamp_nodelay(
+            windowcenter= window_center
+        )
+        
         retdict = {
-            'ofamp_nodelay': ofamp_nodelay,
-            'ofchi2_nodelay': ofchi2_nodelay,
+            feature_base_name.replace('of','ofamp'): ofamp_nodelay,
+            feature_base_name.replace('of','ofchi2'): ofchi2_nodelay,
         }
 
         return retdict
 
 
     @staticmethod
-    def of_unconstrained(trace, template, psd, fs, **kwargs):
+    def of_unconstrained(OF=None,
+                         trace=None, template=None, psd=None, fs=None,
+                         feature_base_name='of_unconstrained',
+                         **kwargs):
         """
         Feature extraction for the unconstrained Optimum Filter.
 
@@ -148,26 +99,37 @@ class SingleChannelExtractors(object):
             Dictionary containing the various extracted features.
 
         """
+        
+        if OF is None:
+            OF = qp.OptimumFilter(
+                trace,
+                template,
+                psd,
+                fs,
+            )
 
-        OF = qp.OptimumFilter(
-            trace,
-            template,
-            psd,
-            fs,
+                    
+            
+        ofamp_unconstrained, oft0_unconstrained, ofchi2_unconstrained = (
+            OF.ofamp_withdelay()
         )
-        ofamp_unconstrained, oft0_unconstrained, ofchi2_unconstrained = OF.ofamp_withdelay()
 
         retdict = {
-            'ofamp_unconstrained': ofamp_unconstrained,
-            'oft0_unconstrained': oft0_unconstrained,
-            'ofchi2_unconstrained': ofchi2_unconstrained,
+            feature_base_name.replace('of','ofamp'): ofamp_unconstrained,
+            feature_base_name.replace('of','oft0'): oft0_unconstrained,
+            feature_base_name.replace('of','ofchi2'): ofchi2_unconstrained,
         }
 
         return retdict
 
 
     @staticmethod
-    def of_constrained(trace, template, psd, fs, nconstrain, windowcenter, **kwargs):
+    def of_constrained(OF=None, 
+                       min_index=None, max_index=None ,
+                       nb_samples=None, nb_samples_pretrigger=None,
+                       trace=None, template=None, psd=None,fs=None,
+                       feature_base_name='of_constrained',
+                       **kwargs):
         """
         Feature extraction for the constrained Optimum Filter.
 
@@ -193,29 +155,37 @@ class SingleChannelExtractors(object):
             Dictionary containing the various extracted features.
 
         """
+        if OF is None:
+            OF = qp.OptimumFilter(
+                trace,
+                template,
+                psd,
+                fs,
+            )
 
-        OF = qp.OptimumFilter(
-            trace,
-            template,
-            psd,
-            fs,
-        )
+        # Nb bins window
+        window_center = nb_samples//2 - nb_samples_pretrigger-1
+        nconstrain = max_index-min_index
+                 
+            
         ofamp_constrained, oft0_constrained, ofchi2_constrained = OF.ofamp_withdelay(
             nconstrain=nconstrain,
-            windowcenter=windowcenter,
+            windowcenter=window_center,
         )
 
         retdict = {
-            'ofamp_constrained': ofamp_constrained,
-            'oft0_constrained': oft0_constrained,
-            'ofchi2_constrained': ofchi2_constrained,
+            feature_base_name.replace('of','ofamp'): ofamp_constrained,
+            feature_base_name.replace('of','oft0'): oft0_constrained,
+            feature_base_name.replace('of','ofchi2'): ofchi2_constrained,
         }
 
         return retdict
 
 
     @staticmethod
-    def baseline(trace, end_index, **kwargs):
+    def baseline(trace, min_index, max_index,
+                 feature_base_name='baseline',
+                 **kwargs):
         """
         Feature extraction for the trace baseline.
 
@@ -224,7 +194,7 @@ class SingleChannelExtractors(object):
         trace : ndarray
             An ndarray containing the raw data to extract the feature
             from.
-        end_index : int
+        max_index : int
             The index of the trace to average the trace up to.
 
         Returns
@@ -233,19 +203,21 @@ class SingleChannelExtractors(object):
             Dictionary containing the various extracted features.
 
         """
-
-        baseline = np.mean(trace[:end_index])
+     
+        baseline = np.mean(trace[min_index:max_index])
 
         retdict = {
-            'baseline': baseline,
+            feature_base_name: baseline,
         }
-
+        
         return retdict
 
 
 
     @staticmethod
-    def integral(trace, start_index, end_index, fs, **kwargs):
+    def integral(trace, min_index, max_index, fs,
+                 feature_base_name='integral',
+                 **kwargs):
         """
         Feature extraction for the pulse integral.
 
@@ -254,9 +226,9 @@ class SingleChannelExtractors(object):
         trace : ndarray
             An ndarray containing the raw data to extract the feature
             from.
-        start_index : int
+        min_index : int
             The index of the trace to start the integration.
-        end_index : int
+        max_index : int
             The index of the trace to end the integration.
         fs : float
             The digitization rate of the data in trace.
@@ -267,18 +239,20 @@ class SingleChannelExtractors(object):
             Dictionary containing the various extracted features.
 
         """
-
-        integral = np.trapz(trace[start_index:end_index]) / fs
+                
+        integral = np.trapz(trace[min_index:max_index]) / fs
 
         retdict = {
-            'integral': integral,
+            feature_base_name: integral,
         }
 
         return retdict
 
 
     @staticmethod
-    def maximum(trace, start_index, end_index, **kwargs):
+    def maximum(trace, min_index, max_index,
+                feature_base_name='maximum',
+                **kwargs):
         """
         Feature extraction for the maximum pulse value.
 
@@ -287,9 +261,9 @@ class SingleChannelExtractors(object):
         trace : ndarray
             An ndarray containing the raw data to extract the feature
             from.
-        start_index : int
+        min_index : int
             The index of the trace to start searching for the max.
-        end_index : int
+        max_index : int
             The index of the trace to end searching for the max.
 
         Returns
@@ -299,17 +273,19 @@ class SingleChannelExtractors(object):
 
         """
 
-        max_trace = np.amax(trace[start_index:end_index])
+        max_trace = np.amax(trace[min_index:max_index])
 
         retdict = {
-            'max': max_trace,
+            feature_base_name: max_trace,
         }
 
         return retdict
 
 
     @staticmethod
-    def minimum(trace, start_index, end_index, **kwargs):
+    def minimum(trace, min_index, max_index,
+                feature_base_name='minimum',
+                **kwargs):
         """
         Feature extraction for the minimum pulse value.
 
@@ -318,9 +294,9 @@ class SingleChannelExtractors(object):
         trace : ndarray
             An ndarray containing the raw data to extract the feature
             from.
-        start_index : int
+        min_index : int
             The index of the trace to start searching for the min.
-        end_index : int
+        max_index : int
             The index of the trace to end searching for the min.
 
         Returns
@@ -330,16 +306,17 @@ class SingleChannelExtractors(object):
 
         """
 
-        min_trace = np.amin(trace[start_index:end_index])
+        min_trace = np.amin(trace[min_index:max_index])
 
         retdict = {
-            'min': min_trace,
+            feature_base_name: min_trace,
         }
 
         return retdict
 
     @staticmethod
-    def energyabsorbed(trace, start_index, end_index, fs, vb, i0, rl,
+    def energyabsorbed(trace, min_index, max_index, fs, vb, i0, rl,
+                       feature_base_name='energyabsorbed',
                        **kwargs):
         """
         Feature extraction for the minimum pulse value.
@@ -349,9 +326,9 @@ class SingleChannelExtractors(object):
         trace : ndarray
             An ndarray containing the raw data to extract the feature
             from.
-        start_index : int
+        min_index : int
             The index of the trace to start the integration.
-        end_index : int
+        max_index : int
             The index of the trace to end the integration.
         fs : float
             The digitization rate of the data in trace.
@@ -369,16 +346,16 @@ class SingleChannelExtractors(object):
 
         """
 
-        baseline = trace[:start_index].mean()
-        i_trace = trace[start_index:end_index] - baseline
+        baseline = trace[:min_index].mean()
+        i_trace = trace[min_index:max_index] - baseline
 
         p0 = i_trace * (vb - 2*i0*rl) - i_trace**2 * rl
 
         en_abs = np.trapz(p0, dx=1/fs, axis=-1)
 
         retdict = {
-            'energyabsorbed': en_abs,
+            feature_base_name: en_abs,
         }
-
+            
         return retdict
 
