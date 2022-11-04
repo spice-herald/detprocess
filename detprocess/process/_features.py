@@ -57,9 +57,9 @@ class FeatureExtractors(object):
 
 
         # window center (relative to 1/2 pulse length)
-        window_center = nb_samples//2 - nb_samples_pretrigger
-  
-
+        window_center = nb_samples_pretrigger - nb_samples//2 -1
+        
+        
             
         ofamp_nodelay, ofchi2_nodelay = OF.ofamp_nodelay(
             windowcenter= window_center
@@ -164,7 +164,7 @@ class FeatureExtractors(object):
             )
 
         # Nb bins window
-        window_center = nb_samples//2 - nb_samples_pretrigger-1
+        window_center = nb_samples_pretrigger - nb_samples//2 -1
         nconstrain = max_index-min_index
                  
             
@@ -315,7 +315,8 @@ class FeatureExtractors(object):
         return retdict
 
     @staticmethod
-    def energyabsorbed(trace, min_index, max_index, fs, vb, i0, rl,
+    def energyabsorbed(trace, min_index, max_index,
+                       fs, vb, i0, rl,
                        feature_base_name='energyabsorbed',
                        **kwargs):
         """

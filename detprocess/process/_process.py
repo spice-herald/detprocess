@@ -10,6 +10,9 @@ from glob import glob
 from pprint import pprint
 from multiprocessing import Pool
 from itertools import repeat
+from datetime import datetime
+import stat
+import time
 
 from detprocess.process._features  import FeatureExtractors
 from detprocess.process._processing_data  import ProcessingData
@@ -73,41 +76,40 @@ class Processing:
      
         """
 
-
+        # display
         self._verbose = verbose
 
+        # processing ID 
+        self._processing_id = processing_id
 
-        # Input file list
-        self._input_file_dict, self._input_base_path = (
+        # extract input file list
+        input_file_dict, input_base_path = (
             self._get_file_list(raw_path, series=series)
         )
-        
-        if not self._input_file_dict:
+
+        if not input_file_dict:
             raise ValueError('No files were found! Check configuration...')
+
+        self._input_base_path = input_base_path
+        self._series_list = list(input_file_dict.keys())
         
-          
-        
+             
         # processing configuration
         if not os.path.exists(config_file):
             raise ValueError('Configuration file "' + config_file
                              + '" not found!')
-        config, filter_file, channels = self._read_config(config_file)
-        
-        self._filter_filename = filter_file
+        available_channels = self._get_channel_list(input_file_dict)
+        config, filter_file, selected_channels = (
+            self._read_config(config_file, available_channels)
+        )
         self._processing_config = config
-        self._selected_channels = channels
-
-        # check channels to be processed
-        if not channels:
-            raise ValueError('No channels to be processed! Check configuration...')
-
-        # maximum number of nodes (can only split series, not files)
-        self._nb_nodes_max = len(self._input_file_dict.keys())
-                                  
-        # processing ID 
-        self._processing_id = processing_id
+        self._selected_channels = selected_channels
         
-      
+        # check channels to be processed
+        if not self._selected_channels:
+            raise ValueError('No channels to be processed! Check configuration...')
+        
+        
         # External feature extractors
         self._external_file = None
         if external_file is not None:
@@ -122,24 +124,14 @@ class Processing:
         # get list of available features and check for duplicate
         self._algorithm_list, self._ext_algorithm_list = self._extract_algorithm_list()
 
-            
-        # filter data
-        self._filter_data = None
-        if self._filter_filename is not None:
-            filter_inst = h5io.FilterH5IO(self._filter_filename)
-            self._filter_data = filter_inst.load()
-            if self._verbose:
-                print('INFO: Filter file '
-                      + self._filter_filename
-                      + ' has been loaded!')
 
 
-        # ADC info
-        self._adc_info = self._get_adc_info()
-        
+        # instantiate processing data 
+        self._processing_data = ProcessingData(input_file_dict,
+                                               filter_file=filter_file,
+                                               verbose=verbose)
+                                
 
-                
-                
         
     def process(self, nevents=-1,
                 save_hdf5=True, output_path=None,
@@ -164,35 +156,43 @@ class Processing:
             raise ValueError('ERROR: Multi cores processing only allowed when '
                              + 'processing ALL events!')
         
+        # check number cores allowed
+        if nb_cores>len(self._series_list):
+            nb_cores = len(self._series_list)
+            if self._verbose:
+                print('INFO: Changing number cores to '
+                      + str(nb_cores) + ' (maximum allowed)')
 
-        
+                
         # create output directory
         output_group_path = None
         
         if save_hdf5:
             if  output_path is None:
                 output_path  = self._input_base_path
-                
-            output_group_path = self._create_output_directory(ouput_path,
-                                                              self._processing_id)
+            
+            output_group_path = self._create_output_directory(
+                output_path,
+                self._processing_data.get_facility()
+            )
+            
             if self._verbose:
                 print(f'INFO: Processing output group path: {output_group_path}')
 
                 
-        # check number cores allowed
-        if nb_cores>self._nb_nodes_max:
-            nb_cores = self._nb_nodes_max
-            if self._verbose:
-                print('INFO: Changing number cores to '
-                      + str(nb_cores) + ' (maximum allowed)')
-                    
+        # instantiate OF object
+        # (-> calculate FFT template/noise, optimum filter)
+        self._processing_data.instantiate_OF(self._processing_config)
+        
+                
 
         # initialize output
         output_df = None
         
         # case only 1 node used for processing
         if nb_cores == 1:
-            output_df = self._process(self._input_file_dict,
+            output_df = self._process(-1,
+                                      self._series_list,
                                       nevents,
                                       save_hdf5,
                                       output_group_path,
@@ -201,8 +201,8 @@ class Processing:
         else:
             
             # split data
-            input_file_list = self._split_data(nb_cores)
-             
+            series_list_split = self._split_series(nb_cores)
+            
             # for multi-core processing, we need to decrease the
             # max memory so it fits in RAM
             memory_limit_MB /= nb_cores
@@ -212,16 +212,20 @@ class Processing:
             if self._verbose:
                 print(f'INFO: Processing with be split between {nb_cores} cores!')
 
+            node_nums = list(range(nb_cores+1))[1:]
             pool = Pool(processes=nb_cores)
-            output_df = pool.starmap(self._process,
-                                   zip(input_file_list,
-                                       repeat(nevents),
-                                       repeat(save_hdf5),
-                                       repeat(output_group_path),
-                                       repeat(memory_limit_MB)))
+            output_df_list = pool.starmap(self._process,
+                                          zip(node_nums,
+                                              series_list_split,
+                                              repeat(nevents),
+                                              repeat(save_hdf5),
+                                              repeat(output_group_path),
+                                              repeat(memory_limit_MB)))
             pool.close()
             pool.join()
 
+            # concatenate
+            output_df = pd.concat(output_df_list)
 
         # processing done
         if self._verbose:
@@ -237,7 +241,8 @@ class Processing:
 
             
         
-    def _process(self, file_list, nevents,
+    def _process(self, node_num,
+                 series_list, nevents,
                  save_hdf5, output_group_path,
                  memory_limit_MB):
         """
@@ -248,18 +253,11 @@ class Processing:
 
         """
 
+        # node string (for display)
+        node_num_str = str()
+        if node_num>-1:
+            node_num_str = ' Node #' + str(node_num)
         
-        # instantiate processing data
-        processing_data = ProcessingData(self._processing_config,
-                                         self._filter_data,
-                                         self._selected_channels)
-
-        # instantiate "OptimumFilter" objects
-        # for all channels
-        processing_data.instantiate_OF(
-            sample_rate = self._adc_info['sample_rate']
-        )
-
 
         # feature extractors
         FE = FeatureExtractors
@@ -278,10 +276,17 @@ class Processing:
         feature_df = pd.DataFrame()
             
         # loop series
-        for series, series_files in file_list.items():
+        for series in series_list:
 
+
+            if self._verbose:
+                print('INFO' + node_num_str
+                      + ': starting processing series '
+                      + series)
+
+            
             # set file list
-            processing_data.set_files(series_files)
+            self._processing_data.set_series(series)
 
             # output file name base (if saving data)
             output_base_file = None
@@ -317,17 +322,21 @@ class Processing:
 
                 # display
                 if self._verbose:
-                    if (event_counter % 100 == 0):
-                        print('INFO: Number of events = '
+
+                    if (event_counter % 10==0 and event_counter!=0):
+                        print('INFO' + node_num_str
+                              + ': Local number of events = '
                               + str(event_counter)
-                              + ' (memory = ' + str(memory_usage_MB)
-                              + ' MB)')
-                                        
+                              + ' (memory = ' + str(memory_usage_MB) + ' MB)')
+                        
                 # -----------------------
                 # Read next event
                 # -----------------------
 
-                success = processing_data.read_next_event()
+                success = self._processing_data.read_next_event(
+                    channels=self._selected_channels
+                )
+                
                 if not success:
                     do_stop = True
 
@@ -367,20 +376,20 @@ class Processing:
                     # case maximum number of events reached
                     # -> processing done!
                     if nevents_limit_reached:
-                        print('INFO: Requested nb events reached. '
+                        print('INFO' + node_num_str + ': Requested nb events reached. '
                                       + 'Stopping processing!')
                         return feature_df
 
                     # case memory limit reached and not saving file
                     # -> processing done
                     if memory_limit_reached:
-                        print('INFO: Memory limit reached!')
+                        print('INFO' + node_num_str + ': Memory limit reached!')
                         if save_hdf5:
-                            print('INFO: Starting a new  dump for series '
+                            print('INFO' + node_num_str + ': Starting a new  dump for series '
                                   + series)
                         else:
                             if success:
-                                print('WARNING: Stopping procssing. '
+                                print('WARNING' + node_num_str + ': Stopping procssing. '
                                       +' Not all events have been processed!')
                             return feature_df
 
@@ -392,7 +401,7 @@ class Processing:
                     break
                 else:
                     event_counter += 1
-                
+                    
              
                 # -----------------------
                 # Features calculation
@@ -403,7 +412,7 @@ class Processing:
 
                 # update signa trace in OF objects
                 # -> calculate FFTs, etc.
-                processing_data.update_signal_OF()
+                self._processing_data.update_signal_OF()
 
               
                 # Processing id   
@@ -413,13 +422,13 @@ class Processing:
 
                 # admin data
                 event_features.update(
-                    processing_data.get_event_admin()
+                    self._processing_data.get_event_admin()
                 )
 
                 # Detector settings
                 for channel in self._processing_config.keys():
                     event_features.update(
-                    processing_data.get_channel_settings(channel)
+                    self._processing_data.get_channel_settings(channel)
                     )
 
           
@@ -481,10 +490,12 @@ class Processing:
 
                         # add various parameters that may be needed
                         # by the algoithm
-                        kwargs['fs'] = self._adc_info['sample_rate']
-                        kwargs['nb_samples_pretrigger'] = self._adc_info['nb_samples_pretrigger']-1
-                        kwargs['nb_samples'] = self._adc_info['nb_samples']
-
+                        kwargs['fs'] = self._processing_data.get_sample_rate()
+                        kwargs['nb_samples_pretrigger'] = (
+                            self._processing_data.get_nb_samples_pretrigger()-1
+                        )
+                        kwargs['nb_samples'] = self._processing_data.get_nb_samples()
+                        
                         kwargs['min_index'], kwargs['max_index'] = (
                             self._get_window_indices(**kwargs)
                         )
@@ -496,7 +507,7 @@ class Processing:
                         extracted_features = dict()
                         
                         # case OF 1x1
-                        if  base_algorithm in processing_data.get_algorithms_OF(
+                        if  base_algorithm in self._processing_data.get_OF_algorithms(
                                 of_type='1x1'):
                             
                             # get psd/template tag
@@ -509,14 +520,15 @@ class Processing:
 
                             # get OF object
                             tag = psd_tag + '_' + template_tag
-                            OF1x1 =  processing_data.get_OF(channel, tag, of_type='1x1')
+                            OF1x1 =  self._processing_data.get_OF(channel, tag,
+                                                                  of_type='1x1')
                                                    
                             # extract
                             extracted_features = extractor(OF1x1, **kwargs)
                         
                         # other pulse algorithms
                         else:
-                            trace = processing_data.get_channel_trace(channel)
+                            trace = self._processing_data.get_channel_trace(channel)
                             extracted_features = extractor(trace, **kwargs)
 
                             
@@ -680,7 +692,7 @@ class Processing:
 
 
     
-    def _read_config(self, yaml_file):
+    def _read_config(self, yaml_file, available_channels):
         """
         Read and check yaml configuration
         file 
@@ -690,15 +702,8 @@ class Processing:
         processing_config = dict()
         filter_file = None
         selected_channels = list()
-           
-        # let's get list of channels available in file
-        # first file
-        file_name = str()
-        for key, val in self._input_file_dict.items():
-            file_name = val[0]
-            break
-        available_channel_list  = self._get_channel_list(file_name)
-            
+
+
         # open configuration file
         yaml_dict = dict()
         with open(yaml_file) as f:
@@ -737,7 +742,7 @@ class Processing:
                 
         # case 'all' channels key available
         if 'all' in yaml_dict.keys():
-            for chan in available_channel_list:
+            for chan in available_channels:
                 processing_config[chan] = yaml_dict['all'].copy()
                 
 
@@ -805,7 +810,7 @@ class Processing:
                 chans.append(key)
                 
             for chan in chans:
-                if chan not in available_channel_list:
+                if chan not in available_channels:
                     raise ValueError('Channel "' + chan
                                      + '" do not exist in '
                                      + 'raw data! Check yaml file!')
@@ -813,7 +818,7 @@ class Processing:
                     channel_list_temp.append(chan)
 
         # make list unique
-        for chan in available_channel_list:
+        for chan in available_channels:
             if chan in channel_list_temp:
                 selected_channels.append(chan)
             
@@ -822,7 +827,7 @@ class Processing:
         return processing_config, filter_file, selected_channels
 
 
-    def _create_output_directory(self, base_path):
+    def _create_output_directory(self, base_path, facility):
         """
         Create series name
     
@@ -833,7 +838,7 @@ class Processing:
         now = datetime.now()
         series_day = now.strftime('%Y') +  now.strftime('%m') + now.strftime('%d') 
         series_time = now.strftime('%H') + now.strftime('%M')
-        series_name = ('I' + str(self._facility) +'_D' + series_day + '_T'
+        series_name = ('I' + str(facility) +'_D' + series_day + '_T'
                        + series_time + now.strftime('%S'))
         
         # prefix
@@ -891,37 +896,31 @@ class Processing:
         return algorithm_list, ext_algorithm_list
 
 
-    def _split_data(self, nb_cores):
+    def _split_series(self, nb_cores):
         """
         Split data in between nodes
         following series
         """
 
-        # get series
-        series_keys =  list(self._input_file_dict.keys())
-        nb_series = len(series_keys)
 
+        output_list = list()
+        
         # split series
-        series_split = np.array_split(series_keys, nb_cores)
+        series_split = np.array_split(self._series_list, nb_cores)
 
-        # build list of dict
-        file_dict_list = list()
-        for series_array in series_split:
-            if series_array.size == 0:
+        # remove empty array
+        for series_sublist in series_split:
+            if series_sublist.size == 0:
                 continue
-            file_dict = dict()
-            for series in series_array:
-                file_dict[str(series)] = self._input_file_dict[str(series)]
+            output_list.append(list(series_sublist))
+            
 
-            # append
-            file_dict_list.append(file_dict)
-
-        return file_dict_list
+        return output_list
 
     
 
     
-    def _get_channel_list(self, file_name):
+    def _get_channel_list(self, file_dict):
         """ 
         Get the list of channels from raw data file
         
@@ -937,35 +936,18 @@ class Processing:
     
         """
 
+        # let's get list of channels available in file
+        # first file
+        file_name = str()
+        for key, val in file_dict.items():
+            file_name = val[0]
+            break
+        
         # get list from configuration
         h5 = h5io.H5Reader()
         detector_settings = h5.get_detector_config(file_name=file_name)
         return list(detector_settings.keys())
 
-
-    def _get_adc_info(self):
-        """
-        Get ADC info
-        """
-
-        adc_info = None
-        
-        if not self._input_file_dict:
-            raise ValueError('No file available to get sample rate!')
-
-        h5 = h5io.H5Reader()
-        for series, files in self._input_file_dict.items():
-            metadata = h5.get_metadata(file_name=files[0],
-                                       include_dataset_metadata=False)
-
-            adc_name = metadata['adc_list'][0]
-            adc_info = metadata['groups'][adc_name]
-            break
-
-        if adc_info is None:
-            raise ValueError('ERROR: No ADC info in file. Something wrong...')
-
-        return adc_info
 
 
 

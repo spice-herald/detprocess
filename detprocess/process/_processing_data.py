@@ -14,6 +14,7 @@ __all__ = [
 
 class ProcessingData:
     """
+
     Class to manage data used for processing,
     in particular  
       - event traces and metadata
@@ -21,8 +22,8 @@ class ProcessingData:
       - Optimal filter objects containing template/PSD FFTs, etc.
     """
 
-    def __init__(self, processing_config, filter_data,
-                 selected_channels, verbose=True):
+    def __init__(self, input_files,
+                 filter_file=None, verbose=True):
         """
         Intialize data processing 
         
@@ -38,35 +39,43 @@ class ProcessingData:
         # verbose
         self._verbose = verbose
 
-        
-        # processing configuration
-        self._processing_config = processing_config
-
+        # input files
+        self._input_file_dict = input_files
+      
         # filter data
-        self._filter_data = filter_data
-                     
-        # channels to be processed
-        self._selected_channels = selected_channels
-        
+        self._filter_data = None
+        if filter_file is not None:
+            filter_inst = h5io.FilterH5IO(filter_file)
+            self._filter_data = filter_inst.load()
+            if self._verbose:
+                print('INFO: Filter file '
+                      + filter_file
+                      + ' has been successfully loaded!')
+                
         
         # initialize OF containers
         self._OF1x1 = dict()
         self._OF1x1_algorithms = list()
         
-
-        
         # initialize raw data reader
         self._h5 = h5io.H5Reader()
 
-        # initialize detector and ADC info
-        # from file
+        # initialize event traces and metadata 
         self._event_traces  = None
         self._event_info = None
-        
+
+        # get ADC and file info
+        self._data_info = self._extract_data_info()
       
+
+
+    @property
+    def verbose(self):
+        return self._verbose
+
+                
         
-        
-    def instantiate_OF(self, channel=None, sample_rate=None):
+    def instantiate_OF(self, processing_config, channel=None):
         """
         Instantiate QETpy OF class, perform pre-calculations such as FFT, etc
         """
@@ -80,13 +89,13 @@ class ProcessingData:
         
         # check channel
         if (channel is not None
-            and channel not in self._processing_config.keys()):
+            and channel not in processing_config.keys()):
             raise ValueError('No channel ' + channel
                              + ' found in configuration file!')
         
         
         # OF instantiations
-        for chan, chan_config in self._processing_config.items():
+        for chan, chan_config in processing_config.items():
 
             # skip if filter file
             if (chan == 'filter_file'
@@ -125,6 +134,7 @@ class ProcessingData:
 
 
                     # check sample rate
+                    sample_rate = self.get_sample_rate()
                     if (psd_fs is not None
                         and  (psd_fs != sample_rate)):
                         raise ValueError('Sample rate for PSD is inconsistent with data!')
@@ -140,7 +150,7 @@ class ProcessingData:
                             template,
                             template,
                             psd,
-                            sample_rate,
+                            sample_rate
                         )
                         
 
@@ -174,7 +184,7 @@ class ProcessingData:
                 
         return  OF 
             
-    def get_algorithms_OF(self, of_type='1x1'):
+    def get_OF_algorithms(self, of_type='1x1'):
         """
         Get list of algorithms
         """
@@ -234,7 +244,7 @@ class ProcessingData:
     
 
 
-    def set_files(self, file_list):
+    def set_series(self, series):
         """
         Set file list, initialize 
         H5 reader 
@@ -248,21 +258,20 @@ class ProcessingData:
 
         """
 
+        file_list = self._input_file_dict[series]
+        
         # Set files
         self._h5.set_files(file_list)
         
-        if self._verbose:
-            print('INFO: settings new file list')
-            
-
+    
         
-    def read_next_event(self):
+    def read_next_event(self, channels=None):
         """
         Read next event
         """
 
         self._event_traces, self._event_info = self._h5.read_next_event(
-            detector_chans=self._selected_channels,
+            detector_chans=channels,
             adctoamp=True,
             include_metadata=True
         )    
@@ -445,4 +454,68 @@ class ProcessingData:
             array =  self._event_traces[trace_indices[0],:]
 
         return array
+
+    def get_facility(self):
+        """
+        """
+        facility = None
+        if 'facility' in self._data_info.keys():
+            facility = self._data_info['facility']
+
+        return facility
+
+    def get_sample_rate(self):
+        """
+        """
+        sample_rate = None
+        if 'sample_rate' in self._data_info.keys():
+            sample_rate = self._data_info['sample_rate']
+
+        return sample_rate
+    
+    def get_nb_samples(self):
+        """
+        """
+        nb_samples = None
+        if 'nb_samples' in self._data_info.keys():
+             nb_samples = self._data_info['nb_samples']
+
+        return nb_samples
+
+    
+    def get_nb_samples_pretrigger(self):
+        """
+        """
+        nb_samples_pretrigger = None
+        if 'nb_samples_pretrigger' in self._data_info.keys():
+             nb_samples_pretrigger = self._data_info['nb_samples_pretrigger']
+
+        return nb_samples_pretrigger
+
+
+    
+    def _extract_data_info(self):
+        """
+        Get ADC info
+        """
+
+        data_info = None
         
+        if not self._input_file_dict:
+            raise ValueError('No file available to get sample rate!')
+
+        for series, files in self._input_file_dict.items():
+            metadata = self._h5.get_metadata(file_name=files[0],
+                                             include_dataset_metadata=False)
+
+            adc_name = metadata['adc_list'][0]
+            data_info = metadata['groups'][adc_name]
+            data_info['comment'] = metadata['comment']
+            data_info['facility'] = metadata['facility']
+            data_info['run_purpose'] = metadata['run_purpose']
+            break
+
+        if data_info is None:
+            raise ValueError('ERROR: No ADC info in file. Something wrong...')
+
+        return data_info
