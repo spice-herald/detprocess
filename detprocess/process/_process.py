@@ -134,7 +134,7 @@ class Processing:
                                  + '" not found!')
             self._external_file = external_file
             if self._verbose:
-                print('INFO: external feature extractor = '
+                print('INFO: External feature extractor = '
                       + self._external_file)
                 
         # get list of available features and check for duplicate
@@ -338,7 +338,7 @@ class Processing:
         FE = FeatureExtractors
         FE_ext = None
         if self._external_file is not None:
-            self._FE_ext = self._load_external_extractors(self._external_file)
+            FE_ext = self._load_external_extractors(self._external_file)
 
             
         # intialize event counter
@@ -548,7 +548,6 @@ class Processing:
                             base_algorithm = algorithm_params['base_algorithm']
 
                      
-                     
                         # get feature extractor
                         extractor = None
                         if base_algorithm in self._algorithm_list:
@@ -556,7 +555,7 @@ class Processing:
                         elif base_algorithm in self._ext_algorithm_list:
                             extractor = getattr(FE_ext, base_algorithm)
                         else:
-                            raise ValueError('Cannot find algorithm "'
+                            raise ValueError('ERROR: Cannot find algorithm "'
                                              + base_algorithm
                                              + '" anywhere. '
                                              + 'Check feature extractor exists!')

@@ -8,7 +8,7 @@ __all__ = [
 
 
 
-class FeatureExtractors(object):
+class FeatureExtractors:
     """
     A class that contains all of the possible feature extractors
     for a given trace, assuming processing on a single channel.
