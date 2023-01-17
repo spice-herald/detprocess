@@ -175,7 +175,7 @@ class Processing:
            Default: True
 
         output_path : str, optional
-           base directory where output feature file will be saved
+           base directory where output group will be saved
            default: same base path as input data
     
         ncores: int, optional
