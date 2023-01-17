@@ -3,6 +3,7 @@ import warnings
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import vaex as vx
 import importlib
 import sys
 import os
@@ -13,6 +14,7 @@ from itertools import repeat
 from datetime import datetime
 import stat
 import time
+import astropy
 
 from detprocess.process._features  import FeatureExtractors
 from detprocess.process._processing_data  import ProcessingData
@@ -30,7 +32,13 @@ __all__ = [
 class Processing:
     """
     Class to manage data processing and 
-    extract features
+    extract features, dataframe can be saved
+    in hdf5 using vaex framework and returned
+    as a pandas dataframe (not both)
+
+    Multiple nodes can be used if data splitted in 
+    different series
+
     """
 
     def __init__(self, raw_path, config_file,
@@ -40,24 +48,23 @@ class Processing:
         """
         Intialize data processing 
         
-        Arguments
+        Parameters
         ---------
     
-        raw_path: str or list of str (required)
+        raw_path : str or list of str 
            raw data group directory OR full path to HDF5  file 
-           (or list of files). Only a single directory 
+           (or list of files). Only a single raw data group 
            allowed 
-        
-        
-        config_file: str (required)
+            
+        config_file : str 
            Full path and file name to the YAML settings for the
            processing.
 
-        output_path: str (optional, default=No saved file)
+        output_path : str, optional (default=No saved file)
            base directory where output feature file will be saved
      
 
-        external_file : str,  (optional,  default=no external files)
+        external_file : str, optional  (default=no external files)
            The path to a .py file with a FeatureExtractors class 
            to add algorithms developed by users. The name of the static
            functions cannot be same as in _features (no duplicate).  This is 
@@ -65,15 +72,23 @@ class Processing:
            needing to rebuild the package.
 
 
-        series: str or list of str (optional)
+        series : str or list of str, optional
             series to be process, disregard other data from raw_path
 
-        processing_id: str (optional)
+        processing_id : str, optional
             an optional processing name. This is used to be build output subdirectory name 
             and is saved as a feature in DetaFrame so it can then be used later during 
             analysis to make a cut on a specific processing when mutliple 
-            datasets/processing are added together. 
-     
+            datasets/processing are added together.
+
+        verbose : bool, optional
+            if True, display info
+
+
+
+        Return
+        ------
+        None
         """
 
         # display
@@ -83,7 +98,7 @@ class Processing:
         self._processing_id = processing_id
 
         # extract input file list
-        input_file_dict, input_base_path = (
+        input_file_dict, input_base_path, group_name = (
             self._get_file_list(raw_path, series=series)
         )
 
@@ -92,8 +107,7 @@ class Processing:
 
         self._input_base_path = input_base_path
         self._series_list = list(input_file_dict.keys())
-        
-             
+                  
         # processing configuration
         if not os.path.exists(config_file):
             raise ValueError('Configuration file "' + config_file
@@ -107,7 +121,8 @@ class Processing:
         
         # check channels to be processed
         if not self._selected_channels:
-            raise ValueError('No channels to be processed! Check configuration...')
+            raise ValueError('No channels to be processed! ' +
+                             'Check configuration...')
         
         
         # External feature extractors
@@ -119,7 +134,8 @@ class Processing:
                                  + '" not found!')
             self._external_file = external_file
             if self._verbose:
-                print('INFO: external feature extractor = ' + self._external_file)
+                print('INFO: external feature extractor = '
+                      + self._external_file)
                 
         # get list of available features and check for duplicate
         self._algorithm_list, self._ext_algorithm_list = self._extract_algorithm_list()
@@ -128,6 +144,7 @@ class Processing:
 
         # instantiate processing data 
         self._processing_data = ProcessingData(input_file_dict,
+                                               group_name=group_name,
                                                filter_file=filter_file,
                                                verbose=verbose)
                                 
@@ -135,33 +152,55 @@ class Processing:
         
     def process(self, nevents=-1,
                 save_hdf5=True, output_path=None,
-                nb_cores=1, memory_limit_MB=2000):
+                ncores=1,
+                memory_limit_MB=2000):
         
         """
-        Process data
+        Process data 
         
-        Arguments
+        Parameters
         ---------
-        
-        output_path: str (optional, default=same base path as input data)
+
+        nevents : int, optional
+           number of events to be processed
+           if not all events, requires ncores = 1
+           Default: all available (=-1)
+            
+
+        save_hdf5 : bool, optional
+           if True, save dataframe in hdf5 files
+           (dataframe not returned)
+           if False, return dataframe (memory limit applies
+           so not all events may be processed)
+           Default: True
+
+        output_path : str, optional
            base directory where output feature file will be saved
-     
-        nb_cores: int (optional, default=1)
+           default: same base path as input data
+    
+        ncores: int, optional
            number of cores that will be used for processing
+           default: 1
+
+        memory_limit_MB : float, optionl
+           memory limit per file  in MB
+           (and/or if saved_hdf5=False, max dataframe size)
+        
+
         """
 
 
         # check input
-        if (nb_cores>1 and nevents>-1):
+        if (ncores>1 and nevents>-1):
             raise ValueError('ERROR: Multi cores processing only allowed when '
                              + 'processing ALL events!')
         
         # check number cores allowed
-        if nb_cores>len(self._series_list):
-            nb_cores = len(self._series_list)
+        if ncores>len(self._series_list):
+            ncores = len(self._series_list)
             if self._verbose:
                 print('INFO: Changing number cores to '
-                      + str(nb_cores) + ' (maximum allowed)')
+                      + str(ncores) + ' (maximum allowed)')
 
                 
         # create output directory
@@ -182,7 +221,10 @@ class Processing:
                 
         # instantiate OF object
         # (-> calculate FFT template/noise, optimum filter)
-        self._processing_data.instantiate_OF(self._processing_config)
+        if self._verbose:
+            print('INFO: Instantiate OF base for each channel!')
+        
+        self._processing_data.instantiate_OF_base(self._processing_config)
         
                 
 
@@ -190,7 +232,7 @@ class Processing:
         output_df = None
         
         # case only 1 node used for processing
-        if nb_cores == 1:
+        if ncores == 1:
             output_df = self._process(-1,
                                       self._series_list,
                                       nevents,
@@ -201,19 +243,19 @@ class Processing:
         else:
             
             # split data
-            series_list_split = self._split_series(nb_cores)
+            series_list_split = self._split_series(ncores)
             
             # for multi-core processing, we need to decrease the
             # max memory so it fits in RAM
-            memory_limit_MB /= nb_cores
+            memory_limit_MB /= ncores
 
               
             # lauch pool processing
             if self._verbose:
-                print(f'INFO: Processing with be split between {nb_cores} cores!')
+                print(f'INFO: Processing with be split between {ncores} cores!')
 
-            node_nums = list(range(nb_cores+1))[1:]
-            pool = Pool(processes=nb_cores)
+            node_nums = list(range(ncores+1))[1:]
+            pool = Pool(processes=ncores)
             output_df_list = pool.starmap(self._process,
                                           zip(node_nums,
                                               series_list_split,
@@ -227,6 +269,9 @@ class Processing:
             # concatenate
             output_df = pd.concat(output_df_list)
 
+
+
+            
         # processing done
         if self._verbose:
             print('INFO: Feature processing done!') 
@@ -248,9 +293,39 @@ class Processing:
         """
         Process data
         
-        Arguments
+        Parameters
         ---------
 
+        node_num :  int
+          node id number, used for display
+        
+        series_list : str
+          list of series name to be processed
+
+        nevents : int, optional
+           number of events to be processed
+           if not all events, requires ncores = 1
+           Default: all available (=-1)
+        
+        save_hdf5 : bool, optional
+           if True, save dataframe in hdf5 files
+           (dataframe not returned)
+           if False, return dataframe (memory limit applies
+           so not all events may be processed)
+           Default: True
+
+        output_path : str, optional
+           base directory where output feature file will be saved
+           default: same base path as input data
+    
+        ncores: int, optional
+           number of cores that will be used for processing
+           default: 1
+
+        memory_limit_MB : float, optionl
+           memory limit per file 
+           (and/or if return_df=True, max dataframe size)
+   
         """
 
         # node string (for display)
@@ -322,8 +397,8 @@ class Processing:
 
                 # display
                 if self._verbose:
-
-                    if (event_counter % 10==0 and event_counter!=0):
+                    
+                    if (event_counter%500==0 and event_counter!=0):
                         print('INFO' + node_num_str
                               + ': Local number of events = '
                               + str(event_counter)
@@ -361,10 +436,15 @@ class Processing:
                         dump_str += str(dump_couter)
                         file_name =  output_base_file +  dump_str + '.hdf5'
                     
-                        # save
-                        feature_df.to_hdf(file_name,
-                                          key='features',
-                                          mode='w')
+                        # convert to vaex
+                        feature_vx = vx.from_pandas(feature_df,
+                                                    copy_index=True)
+
+
+                        # export
+                        feature_vx.export_hdf5(file_name,
+                                               mode='w')
+                        
                         # increment dump
                         dump_couter += 1
 
@@ -410,7 +490,7 @@ class Processing:
                 # initialize event features dictionary
                 event_features = dict()
 
-                # update signa trace in OF objects
+                # update signal trace in OF base objects
                 # -> calculate FFTs, etc.
                 self._processing_data.update_signal_OF()
 
@@ -433,12 +513,12 @@ class Processing:
 
           
                 # Pulse features
-          
+            
                 # loop channels from configuration file (including sum
                 # of channels and multiple channels algoritms)  
                 for channel, algorithms in self._processing_config.items():
 
-                    
+                                        
                     # check channel has any parameters
                     if not isinstance(algorithms, dict):
                         continue
@@ -496,7 +576,7 @@ class Processing:
                         )
                         kwargs['nb_samples'] = self._processing_data.get_nb_samples()
                         
-                        kwargs['min_index'], kwargs['max_index'] = (
+                        kwargs['window_min_index'], kwargs['window_max_index'] = (
                             self._get_window_indices(**kwargs)
                         )
 
@@ -506,32 +586,16 @@ class Processing:
                         # calculate features and get output dictionary 
                         extracted_features = dict()
                         
-                        # case OF 1x1
-                        if  base_algorithm in self._processing_data.get_OF_algorithms(
-                                of_type='1x1'):
-                            
-                            # get psd/template tag
-                            template_tag = 'default'
-                            if 'template_tag' in algorithm_params:
-                                template_tag = algorithm_params['template_tag']
-                            psd_tag = 'default'
-                            if 'psd_tag' in algorithm_params:
-                                psd_tag = algorithm_params['psd_tag']
-
-                            # get OF object
-                            tag = psd_tag + '_' + template_tag
-                            OF1x1 =  self._processing_data.get_OF(channel, tag,
-                                                                  of_type='1x1')
-                                                   
-                            # extract
-                            extracted_features = extractor(OF1x1, **kwargs)
-                        
-                        # other pulse algorithms
+                        # For OF algorithms, get OB base object
+                        OF_base = self._processing_data.get_OF_base(channel,
+                                                                    base_algorithm)
+                        if OF_base is not None:
+                            extracted_features = extractor(OF_base, **kwargs)
                         else:
                             trace = self._processing_data.get_channel_trace(channel)
                             extracted_features = extractor(trace, **kwargs)
 
-                            
+                                                        
                         # append channel name and save in data frame
                         for feature_base_name in extracted_features:
                             feature_name = f'{feature_base_name}_{feature_channel}'
@@ -556,8 +620,32 @@ class Processing:
         
     def _get_file_list(self, file_path, series=None):
         """
-        Get file list from directory
-        path
+        Get file list from path. Return as a dictionary
+        with key=series and value=list of files
+
+        Parameters
+        ----------
+
+        file_path : str or list of str 
+           raw data group directory OR full path to HDF5  file 
+           (or list of files). Only a single raw data group 
+           allowed 
+        
+        series : str or list of str, optional
+            series to be process, disregard other data from raw_path
+
+        Return
+        -------
+        
+        series_dict : dict 
+          list of files for splitted inot series
+
+        base_path :  str
+           base path of the raw data
+
+        group_name : str
+           group name of raw data
+
         """
         
         # loop file path
@@ -567,16 +655,19 @@ class Processing:
         # initialize
         file_list = list()
         base_path = None
-
+        group_name = None
 
         # loop files 
         for a_path in file_path:
-            
+
+                   
             # case path is a directory
             if os.path.isdir(a_path):
 
-                base_path = Path(a_path).parent
-                
+                if base_path is None:
+                    base_path = str(Path(a_path).parent)
+                    group_name = str(Path(a_path).name)
+                            
                 if series is not None:
                     if series == 'even' or series == 'odd':
                         file_name_wildcard = series + '_*.hdf5'
@@ -600,8 +691,9 @@ class Processing:
             elif os.path.isfile(a_path):
 
                 if base_path is None:
-                    base_path = Path(a_path).parents[1]
-                                
+                    base_path = str(Path(a_path).parents[1])
+                    group_name = str(Path(Path(a_path).parent).name)
+                    
                 if a_path.find('.hdf5') != -1:
                     if series is not None:
                         if series == 'even' or series == 'odd':
@@ -666,7 +758,7 @@ class Processing:
                   + ' different series number!')
 
       
-        return series_dict, str(base_path)
+        return series_dict, base_path, group_name
 
 
 
@@ -677,6 +769,18 @@ class Processing:
         Helper function for loading an alternative SingleChannelExtractors
         class.
         
+        Parameters
+        ----------
+
+        external_file :  str
+           external feature file name 
+
+        Return
+        ------
+
+        module : object
+            FeatureExtractors module
+
         """
     
         module_name = 'detprocess.process'
@@ -696,6 +800,31 @@ class Processing:
         """
         Read and check yaml configuration
         file 
+
+        Parameters
+        ----------
+
+        yaml_file : str
+          yaml configuraton file name (full path)
+
+        available_channels : list
+          list of channels available in the file
+
+
+        Return
+        ------
+        
+        processing_config : dict 
+           dictionary with  processing configuration
+
+
+        filter_file : str
+            filter file name (full path)
+        
+        selected_channels : list
+            list of all channels to be processed
+           
+        
         """
 
         # initialize output
@@ -829,10 +958,22 @@ class Processing:
 
     def _create_output_directory(self, base_path, facility):
         """
-        Create series name
+        Create output directory 
+
+        Parameters
+        ----------
+        
+        base_path :  str
+           full path to base directory 
+        
+        facility : int
+           id of facility 
     
         Return
-          Series name: string
+        ------
+          output_dir : str
+            full path to created directory
+
         """
 
         now = datetime.now()
@@ -864,6 +1005,20 @@ class Processing:
     def _extract_algorithm_list(self):
         """
         Extract list for algorithms, check for duplicates
+
+        Parameters
+        ----------
+        None
+
+
+        Return
+        ------
+        algorithm_list : list
+          list of available algorithm from _features.py FeatureExtractors class
+
+        ext_algorithm_list : list
+          list of availble algorithms from external files 
+
         """
 
         algorithm_list = list()
@@ -896,17 +1051,33 @@ class Processing:
         return algorithm_list, ext_algorithm_list
 
 
-    def _split_series(self, nb_cores):
+    def _split_series(self, ncores):
         """
-        Split data in between nodes
+        Split data  between nodes
         following series
+
+
+        Parameters
+        ----------
+
+        ncores : int
+          number of cores
+
+        Return
+        ------
+
+        output_list : list
+           list of dictionaries (length=ncores) containing 
+           data
+         
+
         """
 
 
         output_list = list()
         
         # split series
-        series_split = np.array_split(self._series_list, nb_cores)
+        series_split = np.array_split(self._series_list, ncores)
 
         # remove empty array
         for series_sublist in series_split:
@@ -926,10 +1097,10 @@ class Processing:
         
         Parameters
         ----------
-        file_name : str
-        The full file_name (including path) to the data to be loaded.
-        
-        Returns
+        file_dict  : dict
+           directionary with list of files for each series
+
+        Return
         -------
         channels: list
           List of channels
@@ -961,10 +1132,45 @@ class Processing:
                             window_max_from_trig_usec=None,
                             **kwargs):
         """
-        Calculate window index min and max
+        Calculate window index min and max from various types
+        of window definition
 
-        Arguments:
+        Parameters
         ---------
+
+        nb_samples : int
+          total number of samples 
+
+        nb_samples_pretrigger : int
+           number of pretrigger samples
+
+        window_min_from_start_usec : float, optional
+           OF filter window start in micro seconds defined
+           from beginning of trace
+
+        window_min_to_end_usec : float, optional
+           OF filter window start in micro seconds defined
+           as length to end of trace
+       
+        window_min_from_trig_usec : float, optional
+           OF filter window start in micro seconds from
+           pre-trigger (can be negative if prior pre-trigger)
+
+
+        window_max_from_start_usec : float, optional
+           OF filter window max in micro seconds defined
+           from beginning of trace
+
+        window_max_to_end_usec : float, optional
+           OF filter window max in micro seconds defined
+           as length to end of trace
+
+
+        window_max_from_trig_usec : float, optional
+           OF filter window end in micro seconds from
+           pre-trigger (can be negative if prior pre-trigger)
+         
+
 
 
         Return:

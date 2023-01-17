@@ -14,25 +14,36 @@ __all__ = [
 
 class ProcessingData:
     """
-
     Class to manage data used for processing,
     in particular  
-      - event traces and metadata
+      - raw data filew, event traces and metadata
       - filter file data
-      - Optimal filter objects containing template/PSD FFTs, etc.
+      - optimal filter objects containing template/PSD FFTs, etc.
+
     """
 
-    def __init__(self, input_files,
+    def __init__(self, input_files, group_name=None,
                  filter_file=None, verbose=True):
         """
         Intialize data processing 
         
-        Arguments
-        ---------
-        
-        config_file: str (required)
-           Full path and file name to the YAML settings for the
-           processing.
+        Parameters
+        -----------
+
+        input_files : list
+           list of raw data files to be processed
+
+        group_name : str, optional
+           raw data group name
+           default: None
+
+        filter_file : str, optional
+          full path to filter file
+          default: None
+
+        verbose :  bool, optional 
+          if True, display info
+           Default: True
     
         """
 
@@ -41,7 +52,10 @@ class ProcessingData:
 
         # input files
         self._input_file_dict = input_files
-      
+
+        # group_name
+        self._group_name = group_name
+        
         # filter data
         self._filter_data = None
         if filter_file is not None:
@@ -54,8 +68,8 @@ class ProcessingData:
                 
         
         # initialize OF containers
-        self._OF1x1 = dict()
-        self._OF1x1_algorithms = list()
+        self._OF_base_objs = dict()
+        self._OF_algorithms = dict()
         
         # initialize raw data reader
         self._h5 = h5io.H5Reader()
@@ -75,9 +89,22 @@ class ProcessingData:
 
                 
         
-    def instantiate_OF(self, processing_config, channel=None):
+    def instantiate_OF_base(self, processing_config, channel=None):
         """
-        Instantiate QETpy OF class, perform pre-calculations such as FFT, etc
+        Instantiate QETpy OF base class, perform pre-calculations 
+        such as FFT, etc
+
+        Parameters
+        ----------
+        
+        processing_config : dict
+         disctionary with processing user config (loaded
+         from yaml file)
+
+        channel : str. optional
+          channel name
+          Default: all channels from config
+        
         """
 
         # check if filter file data available
@@ -94,7 +121,7 @@ class ProcessingData:
                              + ' found in configuration file!')
         
         
-        # OF instantiations
+        # loop channels
         for chan, chan_config in processing_config.items():
 
             # skip if filter file
@@ -108,94 +135,158 @@ class ProcessingData:
                 continue
 
             
-            # loop configuration
+            # loop configuration and get list of templates
             for alg, alg_config in chan_config.items():
 
-                # Case OF 1x1
-                # FIXME: find better way to identity single pulse OF
-                # especially when adding OF, OF NxM, N nsnb, etc.
-                if alg.find('of_') != -1:
+                if alg.find('of1x')==-1:
+                    continue
+                
+                # psd
+                psd_tag = 'default'
+                if 'psd_tag' in alg_config.keys():
+                    psd_tag = alg_config['psd_tag']
+
+                # check if OF already instantiated
+                if chan not in self._OF_base_objs.keys():
+                    self._OF_base_objs[chan] = dict()
+
+                # instantiate
+                if psd_tag not in self._OF_base_objs[chan].keys():
                     
-                    self._OF1x1_algorithms.append(alg)
-                    
-                    # template
-                    template_tag = 'default'
-                    if 'template_tag' in alg_config:
-                        template_tag = alg_config['template_tag']
-
-                    template = self.get_template(chan, template_tag)
-
-                    # psd
-                    psd_tag = 'default'
-                    if 'psd_tag' in alg_config:
-                        psd_tag = alg_config['psd_tag']
-
+                    # get psd
                     psd, psd_fs = self.get_psd(chan, psd_tag)
-
-
+                    
+                    # coupling
+                    coupling = 'AC'
+                    if 'coupling' in alg_config.keys():
+                        coupling = alg_config['coupling']
+                        
+                        
                     # check sample rate
                     sample_rate = self.get_sample_rate()
                     if (psd_fs is not None
                         and  (psd_fs != sample_rate)):
-                        raise ValueError('Sample rate for PSD is inconsistent with data!')
-                        
-                    
-                    # instantiate OF 
-                    of_tag = psd_tag + '_' + template_tag
-                    if chan not in self._OF1x1:
-                        self._OF1x1[chan] = dict()
+                        raise ValueError('Sample rate for PSD is '
+                                         + 'inconsistent with data!')
+                       
 
-                    if of_tag not in self._OF1x1[chan]:
-                        self._OF1x1[chan][of_tag] = qp.OptimumFilter(
-                            template,
-                            template,
-                            psd,
-                            sample_rate
+                    # get pretrigger samples
+                    pretrigger_samples = self.get_nb_samples_pretrigger()
+
+
+                    # instantiate
+                    self._OF_base_objs[chan][psd_tag] = qp.OFBase(
+                        chan, sample_rate,
+                        pretrigger_samples=pretrigger_samples
+                    )
+
+
+                    # set psd
+                    self._OF_base_objs[chan][psd_tag].set_psd(
+                        psd,
+                        coupling=coupling,
+                        psd_tag=psd_tag)
+                        
+                                                
+
+                # check if there are template tag(s)
+                tag_list = list()
+                for key in alg_config.keys():
+                    if key.find('template_tag')!=-1:
+                        tag_list.append(
+                            alg_config[key]
                         )
-                        
 
-                    
+                if not tag_list:
+                    tag_list = ['default']
+
+                integralnorm=False
+                if 'integralnorm' in alg_config.keys():
+                    integralnorm = alg_config['integralnorm']
                         
-    def get_OF(self, channel, tag=None, of_type='1x1'):
+                for tag in tag_list:
+                    template_list = self._OF_base_objs[chan][psd_tag].template_tags()
+                    if tag not in template_list:
+                        # get template from filter file
+                        template = self.get_template(chan, tag)
+
+                        #  add
+                        self._OF_base_objs[chan][psd_tag].add_template(
+                            template,
+                            template_tag=tag,
+                            integralnorm=integralnorm
+                        )
+                            
+                        
+                # save algorithm name and psd/signal tag
+                if chan not in self._OF_algorithms:
+                    self._OF_algorithms[chan] = dict()
+                self._OF_algorithms[chan][alg] = psd_tag
+
+            # calculate phi
+            if chan in self._OF_base_objs.keys():
+                for tag in self._OF_base_objs[chan].keys():
+                    self._OF_base_objs[chan][tag].calc_phi()
+                        
+    def get_OF_base(self, channel, alg_name):
         """
         Get OF object 
+
+        Parameters
+        ----------
+
+        channel : str
+          channel name 
+
+        alg_name : str
+          algorithm name 
+
+        Return
+        ------
+        
+        OF : object 
+          optiomal filter base instance
+
         """
         
         OF = None
-        
-        # check if available
-        if tag is None:
-            tag = 'default_defaut'
 
-        # case OF 1x1
-        if of_type == '1x1':
-        
-            if (channel not in self._OF1x1
-                or (channel in self._OF1x1
-                    and tag not in self._OF1x1[channel])):
-                raise ValueError('OF1x1 object not available for channel='
-                                 + channel + ', tag='
-                                 + tag)
-            else:
-                OF = self._OF1x1[channel][tag]
+        # get OF base
+        tag = str()
+        if (channel in self._OF_algorithms.keys()
+            and alg_name in self._OF_algorithms[channel].keys()):
 
-        # other case not implemented
-        
-                
-        return  OF 
-            
-    def get_OF_algorithms(self, of_type='1x1'):
-        """
-        Get list of algorithms
-        """
-        if of_type == '1x1':
-            return self._OF1x1_algorithms
+            tag = self._OF_algorithms[channel][alg_name]
+
+            OF = self._OF_base_objs[channel][tag]
+
+        return OF
+
         
                 
                     
     def get_template(self, channel, tag=None):
         """
         Get template from filter file
+        
+        Parameters
+        ----------
+
+        channel : str
+          channel name 
+
+
+        tag : str
+          tag/ID of the template
+          Default: None
+
+        Return
+        ------
+
+        template : ndarray
+          array with template values
+
+
         """
         
         # check if channel in filter_file
@@ -220,6 +311,29 @@ class ProcessingData:
     def get_psd(self, channel, tag=None):
         """
         Get psd from filter file
+
+          
+        Parameters
+        ----------
+
+        channel : str
+          channel name 
+
+
+        tag : str
+          tag/ID of the PSD
+          Default: None
+
+        Return
+        ------
+
+        psd : ndarray
+          array with psd values
+
+        freq : ndarray
+          array with psd frequencies
+
+
         """
         
         # check if channel in filter_file
@@ -246,15 +360,18 @@ class ProcessingData:
 
     def set_series(self, series):
         """
-        Set file list, initialize 
-        H5 reader 
+        Set file list for a specific 
+        series
 
-        Argument:
-        --------
+        Parameters
+        ----------
 
-        file_list : str or list of str 
-          List of HDF5 files (full path) 
-        
+        series : str
+          series name
+
+        Return
+        ------
+        None
 
         """
 
@@ -286,14 +403,23 @@ class ProcessingData:
 
     def update_signal_OF(self):
         """
-        Update OF with traces
+        Update OF base object with traces
+
+        Parameters
+        ---------
+        None
+
+        Return
+        ------
+        None
+
         """
         
-        # loop OF1x1 and update traces
-        for channel, channel_dict in self._OF1x1.items():
+        # loop OF and update traces
+        for channel, channel_dict in self._OF_base_objs.items():
             trace = self.get_channel_trace(channel)
-            for tag, OF1x1 in channel_dict.items():
-                OF1x1.update_signal(trace)
+            for tag, OF_base in channel_dict.items():
+                OF_base.update_signal(trace)
                 
                 
 
@@ -301,7 +427,7 @@ class ProcessingData:
         """
         Get event admin info
 
-        Arguments
+        Parameters
         ---------
         None
 
@@ -316,38 +442,41 @@ class ProcessingData:
 
         if self._event_info is None:
             return admin_dict
-
         
         # fill dictionary
-        admin_dict['eventnumber'] = np.int64(self._event_info['event_num'])
-        admin_dict['eventindex'] = np.int32(self._event_info['event_index'])
-        admin_dict['dumpnumber'] = np.int16(self._event_info['dump_num'])
-        admin_dict['seriesnumber'] = np.int64(self._event_info['series_num'])
-        admin_dict['eventid'] = np.int32(self._event_info['event_id'])
-        admin_dict['eventtime'] = self._event_info['event_time']
-        admin_dict['runtype'] = np.int16(self._event_info['run_type'])
-      
-        
+        admin_dict['event_number'] = np.int64(self._event_info['event_num'])
+        admin_dict['event_index'] = np.int32(self._event_info['event_index'])
+        admin_dict['dump_number'] = np.int16(self._event_info['dump_num'])
+        admin_dict['series_number'] = np.int64(self._event_info['series_num'])
+        admin_dict['event_id'] = np.int32(self._event_info['event_id'])
+        admin_dict['event_time'] = self._event_info['event_time']
+        admin_dict['run_type'] = np.int16(self._event_info['run_type'])
+
+        if self._group_name is not None:
+            admin_dict['group_name'] = self._group_name
+        else:
+            admin_dict['group_name'] = np.nan
+            
         # trigger info
         if 'trigger_type' in self._event_info:
-            admin_dict['triggertype'] = np.int16(self._event_info['trigger_type'])
+            admin_dict['trigger_type'] = np.int16(self._event_info['trigger_type'])
         else:
             data_mode =  self._event_info['data_mode']
             data_modes = ['cont', 'trig-ext', 'rand', 'threshold']
             if  data_mode  in data_modes:
-                admin_dict['triggertype'] = data_modes.index(data_mode)+1
+                admin_dict['trigger_type'] = data_modes.index(data_mode)+1
             else:
-                admin_dict['triggertype'] = np.nan
+                admin_dict['trigger_type'] = np.nan
         
         if  'trigger_amplitude' in self._event_info:
-            admin_dict['triggeramp'] = self._event_info['trigger_amplitude']
+            admin_dict['trigger_amplitude'] = self._event_info['trigger_amplitude']
         else:
-            admin_dict['triggeramp'] = np.nan
+            admin_dict['trigger_amplitude'] = np.nan
 
         if  'trigger_time' in self._event_info:
-            admin_dict['triggertime'] = self._event_info['trigger_time']
+            admin_dict['trigger_time'] = self._event_info['trigger_time']
         else:
-            admin_dict['triggertime'] = np.nan 
+            admin_dict['trigger_time'] = np.nan 
 
 
         return admin_dict
@@ -358,7 +487,7 @@ class ProcessingData:
         """
         Get channel settings dictionary
 
-        Arguments
+        Parameters
         ---------
         
         channel : str
@@ -408,7 +537,7 @@ class ProcessingData:
         """
         Get trace (s)
 
-        Arguments
+        Parameters
         ----------
 
         channel : str
@@ -418,8 +547,8 @@ class ProcessingData:
    
         Return:
         -------
-
         array : ndarray
+          array with trace values
 
         """
 
@@ -457,6 +586,19 @@ class ProcessingData:
 
     def get_facility(self):
         """
+        Function to extract facility # from
+        metadata
+
+        Parameters
+        ----------
+        None
+
+        Return
+        ------
+
+        facility : int
+         facility number    
+
         """
         facility = None
         if 'facility' in self._data_info.keys():
@@ -466,6 +608,20 @@ class ProcessingData:
 
     def get_sample_rate(self):
         """
+        Function to extract sample rate from
+        metadata
+
+        Parameters
+        ----------
+        None
+
+        Return
+        ------
+
+        sample_rate : float
+         ADC sample rate used to take data 
+
+
         """
         sample_rate = None
         if 'sample_rate' in self._data_info.keys():
@@ -475,6 +631,19 @@ class ProcessingData:
     
     def get_nb_samples(self):
         """
+        Function to extract number of samples information 
+        from metadata
+
+        Parameters
+        ----------
+        None
+
+        Return
+        ------
+
+        nb_samples : int
+         number of samples of the traces
+
         """
         nb_samples = None
         if 'nb_samples' in self._data_info.keys():
@@ -485,6 +654,21 @@ class ProcessingData:
     
     def get_nb_samples_pretrigger(self):
         """
+        Function to extract number of pretrigger samples 
+        information  from metadata
+
+        Parameters
+        ----------
+        None
+
+        Return
+        ------
+
+        nb_samples : int
+         number of pretrigger samples
+
+
+
         """
         nb_samples_pretrigger = None
         if 'nb_samples_pretrigger' in self._data_info.keys():
@@ -496,7 +680,20 @@ class ProcessingData:
     
     def _extract_data_info(self):
         """
-        Get ADC info
+        Function to extract all metadata
+        from raw data
+
+        Parameters
+        ----------
+        None
+
+        Return
+        ------
+
+        data_info : dict
+         dictionary with ADC/data information
+
+
         """
 
         data_info = None

@@ -22,13 +22,15 @@ filter_file: /home/serfass/workspace/processing/filter_r20_dev.hdf5
 # -------------------------
 
 all:
-    of_nodelay:
+   
+    
+    of1x1_nodelay:
         run: False
 
-    of_unconstrained:
+    of1x1_unconstrained:
         run: False
 
-    of_constrained:
+    of1x1_constrained:
         run: False
         window_min_from_trig_usec: -400
         window_max_from_trig_usec: 400
@@ -69,17 +71,19 @@ all:
 
 CPDv21Ge:
  
-    of_unconstrained_glitch:
+    of1x1_unconstrained_glitch:
         run: True
         base_algorithm: of_unconstrained
         template_tag: glitch
-        psd_tag: strict
+        template_tag_slow: dadasd
+        template_tag_fast: fast
+           
 
-    of_nodelay:
+    of1x1_nodelay:
         run: False
-        psd_tag: strict
+   
 
-    of_constrained:
+    of1x1_constrained:
         run: True
         window_min_from_trig_usec: -400
         window_max_from_trig_usec: 400
@@ -97,10 +101,10 @@ CPDv21Ge:
 IrPtTESSmall,IrPtTESBig:
     disable: True
 
-    of_nodelay: 
+    of1x1_nodelay: 
         run: True
 
-    of_constrained:
+    of1x1_constrained:
         run: True
         template_tag: 3poles
         windowcenter: 0
@@ -111,13 +115,13 @@ IrPtTESSmall+IrPtTESBig:
   
     feature_channel: TotIrPt
     
-    of_nodelay: 
+    of1x1_nodelay: 
         run: True
 
-    of_unconstrained:
+    of1x1_unconstrained:
         run: True
 
-    of_constrained:
+    of1x1_constrained:
         run: True
         window_min_from_trig_usec: -300
         window_max_from_trig_usec: 300

@@ -8,7 +8,6 @@ __all__ = [
 
 
 
-
 class FeatureExtractors(object):
     """
     A class that contains all of the possible feature extractors
@@ -19,25 +18,75 @@ class FeatureExtractors(object):
     """
 
     @staticmethod
-    def of_nodelay(OF=None,
-                   trace=None, template=None, psd=None, fs=None,
-                   nb_samples=None, nb_samples_pretrigger=None,
-                   feature_base_name='of_nodelay',
-                   **kwargs):
+    def of1x1_nodelay(of_base=None,  template_tag='default',
+                      trace=None, template=None, psd=None,
+                      fs=None, nb_samples_pretrigger=None,
+                      coupling='AC', integralnorm=False,
+                      feature_base_name='of1x1_nodelay',
+                      **kwargs):
         """
-        Feature extraction for the no delay Optimum Filter.
+        Feature extraction for the no delay Optimum Filter. 
+        
+        The arguments "trace", "template", "psd"
+        (and associated parameters "fs", "nb_samples_pretrigger") 
+        should only be used if  not already added in OF base object. 
+        Otherwise keep as None
+
 
         Parameters
         ----------
-        trace : ndarray
+        of_base : OFBase object, optional
+           OFBase  if it has been instantiated independently
+
+
+        template_tag : str, option
+           tag of the template to be used for OF calculation,
+           Default: 'default'
+        
+       
+        trace : ndarray, optional
             An ndarray containing the raw data to extract the feature
-            from.
-        template : ndarray
-            The template to use for the optimum filter.
-        psd : ndarray
-            The PSD to use for the optimum filter.
-        fs : float
-            The digitization rate of the data in trace.
+            from. It is required if trace not already added in OFbase,
+            otherwise keep it as None
+
+        template : ndarray, optional
+            The template to use for the optimum filter. It is required 
+            if template not already added in OFbase,
+            otherwise keep it as None
+
+        psd : ndarray, optional
+            The PSD to use for the optimum filter.It is required 
+            if psd not already added in OFbase,
+            otherwise keep it as None
+
+        fs : float, optional
+            The digitization rate of the data in trace, required
+            if  "of_base" argument  is None, otherwise set to None
+
+        nb_samples_pretrigger : int, optional
+            Number of pre-trigger samples, required
+            if "of_base" argument is None, otherwise set to None
+        
+        coupling : str, optional
+            Only used if "psd" argument is not None. 
+            "coupling" string etermines if the zero 
+            frequency bin of the psd should be ignored (i.e. set to infinity) 
+            when calculating the optimum amplitude. If set to 'AC', then ths zero
+            frequency bin is ignored. If set to anything else, then the
+            zero frequency bin is kept. O
+
+        integralnorm : bool, optional
+            Only used if "template" argument is not None. 
+            If set to True, then  template will be normalized 
+            to an integral of 1, and any optimum filters will
+            instead return the optimum integral in units of Coulombs.
+            If set to False, then the usual optimum filter amplitudes
+            will be returned (in units of Amps).
+
+        feature_base_name : str, option
+            output feature base name 
+
+
 
         Returns
         -------
@@ -46,52 +95,111 @@ class FeatureExtractors(object):
 
         """
 
-        if OF is None:
-            
-            OF = qp.OptimumFilter(
-                trace,
-                template,
-                psd,
-                fs,
-            )
 
-
-        # window center (relative to 1/2 pulse length)
-        window_center = nb_samples_pretrigger - nb_samples//2 -1
-        
-        
-            
-        ofamp_nodelay, ofchi2_nodelay = OF.ofamp_nodelay(
-            windowcenter= window_center
+        # instantiate OF 1x1
+        OF = qp.OF1x1(
+            'unknown',
+            of_base=of_base,
+            template_tag=template_tag,
+            template=template,
+            psd=psd,
+            sample_rate=fs,
+            pretrigger_samples=nb_samples_pretrigger,
+            coupling=coupling,
+            integralnorm=integralnorm,
         )
+            
+
+        # calc (signal needs to be None if set already)
+        OF.calc_nodelay(signal=trace)
         
+        # get results
+        amp, t0, chisq = OF.get_result_nodelay()
+        
+        # store features
         retdict = {
-            feature_base_name.replace('of','ofamp'): ofamp_nodelay,
-            feature_base_name.replace('of','ofchi2'): ofchi2_nodelay,
+            ('amp_' + feature_base_name): amp,
+            ('chi2_' + feature_base_name): chisq
         }
 
         return retdict
 
 
+    
     @staticmethod
-    def of_unconstrained(OF=None,
-                         trace=None, template=None, psd=None, fs=None,
-                         feature_base_name='of_unconstrained',
-                         **kwargs):
+    def of1x1_unconstrained(of_base=None, template_tag='default',
+                            interpolate=False,
+                            trace=None, template=None, psd=None,
+                            fs=None, nb_samples_pretrigger=None,
+                            coupling='AC', integralnorm=False,
+                            feature_base_name='of1x1_unconstrained',
+                            **kwargs):
         """
         Feature extraction for the unconstrained Optimum Filter.
+ 
+        The arguments "trace", "template", "psd"
+        (and associated parameters "fs", "nb_samples_pretrigger") 
+        should only be used if  not already added in OF base object. 
+        Otherwise keep as None
 
+        
         Parameters
         ----------
-        trace : ndarray
+        of_base : OFBase object, optional
+           OFBase  if it has been instantiated independently
+
+
+        template_tag : str, option
+           tag of the template to be used for OF calculation,
+           Default: 'default'
+        
+       interpolate : bool, optional
+           if True, do delay interpolation
+           default: False
+        
+        trace : ndarray, optional
             An ndarray containing the raw data to extract the feature
-            from.
-        template : ndarray
-            The template to use for the optimum filter.
-        psd : ndarray
-            The PSD to use for the optimum filter.
-        fs : float
-            The digitization rate of the data in trace.
+            from. It is required if trace not already added in OFbase,
+            otherwise keep it as None
+
+        template : ndarray, optional
+            The template to use for the optimum filter. It is required 
+            if template not already added in OFbase,
+            otherwise keep it as None
+
+        psd : ndarray, optional
+            The PSD to use for the optimum filter.It is required 
+            if psd not already added in OFbase,
+            otherwise keep it as None
+
+        fs : float, optional
+            The digitization rate of the data in trace, required
+            if  "of_base" argument  is None, otherwise set to None
+
+        nb_samples_pretrigger : int, optional
+            Number of pre-trigger samples, required
+            if "of_base" argument is None, otherwise set to None
+        
+        coupling : str, optional
+            Only used if "psd" argument is not None. 
+            "coupling" string etermines if the zero 
+            frequency bin of the psd should be ignored (i.e. set to infinity) 
+            when calculating the optimum amplitude. If set to 'AC', then ths zero
+            frequency bin is ignored. If set to anything else, then the
+            zero frequency bin is kept. O
+
+        integralnorm : bool, optional
+            Only used if "template" argument is not None. 
+            If set to True, then  template will be normalized 
+            to an integral of 1, and any optimum filters will
+            instead return the optimum integral in units of Coulombs.
+            If set to False, then the usual optimum filter amplitudes
+            will be returned (in units of Amps).
+
+        feature_base_name : str, option
+            output feature base name 
+
+
 
         Returns
         -------
@@ -99,55 +207,154 @@ class FeatureExtractors(object):
             Dictionary containing the various extracted features.
 
         """
-        
-        if OF is None:
-            OF = qp.OptimumFilter(
-                trace,
-                template,
-                psd,
-                fs,
-            )
 
-                    
-            
-        ofamp_unconstrained, oft0_unconstrained, ofchi2_unconstrained = (
-            OF.ofamp_withdelay()
+
+        # instantiate OF1x1
+        OF = qp.OF1x1(
+            'unknown',
+            of_base=of_base,
+            template_tag=template_tag,
+            template=template,
+            psd=psd,
+            sample_rate=fs,
+            pretrigger_samples=nb_samples_pretrigger,
+            coupling=coupling,
+            integralnorm=integralnorm,
         )
+            
+                    
 
+        # calc (signal needs to be None if set already)
+        OF.calc(signal=trace,
+                interpolate_t0=interpolate,
+                lgc_fit_nodelay=False,
+                lgc_plot=False)
+        
+        # get results
+        amp, t0, chisq = OF.get_result_withdelay()
+        
+
+        # store features
         retdict = {
-            feature_base_name.replace('of','ofamp'): ofamp_unconstrained,
-            feature_base_name.replace('of','oft0'): oft0_unconstrained,
-            feature_base_name.replace('of','ofchi2'): ofchi2_unconstrained,
+            ('amp_' + feature_base_name): amp,
+            ('t0_' + feature_base_name): t0,
+            ('chi2_' + feature_base_name): chisq
         }
 
         return retdict
 
 
     @staticmethod
-    def of_constrained(OF=None, 
-                       min_index=None, max_index=None ,
-                       nb_samples=None, nb_samples_pretrigger=None,
-                       trace=None, template=None, psd=None,fs=None,
-                       feature_base_name='of_constrained',
-                       **kwargs):
+    def of1x1_constrained(of_base=None, template_tag='default',
+                          window_min_from_trig_usec=None,
+                          window_max_from_trig_usec=None,
+                          window_min_index=None,
+                          window_max_index=None,
+                          lgc_outside_window=False,
+                          interpolate=False,
+                          trace=None, template=None, psd=None,
+                          fs=None, nb_samples_pretrigger=None,
+                          coupling='AC', integralnorm=False,
+                          feature_base_name='of1x1_constrained',
+                          **kwargs):
         """
         Feature extraction for the constrained Optimum Filter.
 
+        The arguments "trace", "template", "psd"
+        (and associated parameters "fs", "nb_samples_pretrigger") 
+        should only be used if  not already added in OF base object. 
+        Otherwise keep as None
+
+        
         Parameters
         ----------
-        trace : ndarray
+        of_base : OFBase object, optional
+           OFBase  if it has been instantiated independently
+        
+        
+        template_tag : str, optional
+           tag of the template to be used for OF calculation,
+           Default: 'default'
+        
+        window_min_from_trig_usec : float, optional
+           OF filter window start in micro seconds from
+           pre-trigger (can be negative if prior pre-trigger)
+           Default: use "window_min_index"  or 
+                    or set to 0 if both parameters are None
+
+        window_max_from_trig_usec : float, optional
+           OF filter window end in micro seconds from
+           pre-trigger (can be negative if prior pre-trigger)
+           Default: use "window_max_index"  or set to end trace
+                    if  "window_max_index" also None
+
+        
+        window_min_index : int, optional
+           ADC index OF filter window start (alternative 
+           to "window_min_from_trig_usec")
+
+           Default: use "window_min_from_trig_usec"  or 
+                    set to 0 if both parameters are None
+
+        window_max_index : int, optional
+           ADC index OF filter window end (alternative 
+           to "window_min_from_trig_usec")
+
+           Default: use "window_max_from_trig_usec"  or 
+                    set to end of trace if both parameters 
+                     are None
+       
+        lgc_outside_window : bool, optional
+           If True, define window to be outside [min:max]
+           Default: False
+
+        interpolate : bool, optional
+           if True, do delay interpolation
+           default: False
+        
+        trace : ndarray, optional
             An ndarray containing the raw data to extract the feature
-            from.
-        template : ndarray
-            The template to use for the optimum filter.
-        psd : ndarray
-            The PSD to use for the optimum filter.
-        fs : float
-            The digitization rate of the data in trace.
-        nconstrain : int
-            The constraint window set by the processing file.
-        windowcenter : int
-            The window center of the constraint window.
+            from. It is required if trace not already added in OFbase,
+            otherwise keep it as None
+
+        template : ndarray, optional
+            The template to use for the optimum filter. It is required 
+            if template not already added in OFbase,
+            otherwise keep it as None
+
+        psd : ndarray, optional
+            The PSD to use for the optimum filter.It is required 
+            if psd not already added in OFbase,
+            otherwise keep it as None
+
+        fs : float, optional
+            The digitization rate of the data in trace, required
+            if  "of_base" argument  is None, otherwise set to None
+
+        nb_samples_pretrigger : int, optional
+            Number of pre-trigger samples, required
+            if "of_base" argument is None, otherwise set to None
+        
+        coupling : str, optional
+            Only used if "psd" argument is not None. 
+            "coupling" string etermines if the zero 
+            frequency bin of the psd should be ignored (i.e. set to infinity) 
+            when calculating the optimum amplitude. If set to 'AC', then ths zero
+            frequency bin is ignored. If set to anything else, then the
+            zero frequency bin is kept. O
+
+        integralnorm : bool, optional
+            Only used if "template" argument is not None. 
+            If set to True, then  template will be normalized 
+            to an integral of 1, and any optimum filters will
+            instead return the optimum integral in units of Coulombs.
+            If set to False, then the usual optimum filter amplitudes
+            will be returned (in units of Amps).
+
+        feature_base_name : str, optional
+            output feature base name 
+
+
 
         Returns
         -------
@@ -155,35 +362,52 @@ class FeatureExtractors(object):
             Dictionary containing the various extracted features.
 
         """
-        if OF is None:
-            OF = qp.OptimumFilter(
-                trace,
-                template,
-                psd,
-                fs,
-            )
 
-        # Nb bins window
-        window_center = nb_samples_pretrigger - nb_samples//2 -1
-        nconstrain = max_index-min_index
-                 
-            
-        ofamp_constrained, oft0_constrained, ofchi2_constrained = OF.ofamp_withdelay(
-            nconstrain=nconstrain,
-            windowcenter=window_center,
+        
+        # instantiate OF1x1
+        OF = qp.OF1x1(
+            'unknown',
+            of_base=of_base,
+            template_tag=template_tag,
+            template=template,
+            psd=psd,
+            sample_rate=fs,
+            pretrigger_samples=nb_samples_pretrigger,
+            coupling=coupling,
+            integralnorm=integralnorm,
         )
+        
+            
+            
+        # calc (signal needs to be None if set already)
+        OF.calc(signal=trace,
+                window_min_from_trig_usec=window_min_from_trig_usec,
+                window_max_from_trig_usec=window_max_from_trig_usec,
+                window_min_index=window_min_index,
+                window_max_index=window_max_index,
+                interpolate_t0=interpolate,
+                lgc_outside_window=lgc_outside_window,
+                lgc_fit_nodelay=False,
+                lgc_plot=False)
+        
+      
+        # get results
+        amp, t0, chisq = OF.get_result_withdelay()
+        
+        
 
         retdict = {
-            feature_base_name.replace('of','ofamp'): ofamp_constrained,
-            feature_base_name.replace('of','oft0'): oft0_constrained,
-            feature_base_name.replace('of','ofchi2'): ofchi2_constrained,
+            ('amp_' + feature_base_name): amp,
+            ('t0_' + feature_base_name): t0,
+            ('chi2_' + feature_base_name): chisq
         }
 
         return retdict
 
 
     @staticmethod
-    def baseline(trace, min_index, max_index,
+    def baseline(trace,
+                 window_min_index=None, window_max_index=None,
                  feature_base_name='baseline',
                  **kwargs):
         """
@@ -194,8 +418,17 @@ class FeatureExtractors(object):
         trace : ndarray
             An ndarray containing the raw data to extract the feature
             from.
-        max_index : int
-            The index of the trace to average the trace up to.
+
+        window_min_index : int, optional
+            The minium index of the window used to average the trace.
+            Default: 0
+
+        window_max_index : int, optional
+            The maximum index of the window used to average the trace.
+            Default: end of trace
+
+        feature_base_name : str, optional
+            output feature base name 
 
         Returns
         -------
@@ -203,8 +436,15 @@ class FeatureExtractors(object):
             Dictionary containing the various extracted features.
 
         """
-     
-        baseline = np.mean(trace[min_index:max_index])
+
+        if window_min_index is None:
+            window_min_index = 0
+
+        if window_max_index is None:
+            window_max_index = trace.shape[-1] - 1
+
+        
+        baseline = np.mean(trace[window_min_index:window_max_index])
 
         retdict = {
             feature_base_name: baseline,
@@ -215,7 +455,8 @@ class FeatureExtractors(object):
 
 
     @staticmethod
-    def integral(trace, min_index, max_index, fs,
+    def integral(trace, fs,
+                 window_min_index=None, window_max_index=None,
                  feature_base_name='integral',
                  **kwargs):
         """
@@ -226,12 +467,20 @@ class FeatureExtractors(object):
         trace : ndarray
             An ndarray containing the raw data to extract the feature
             from.
-        min_index : int
-            The index of the trace to start the integration.
-        max_index : int
-            The index of the trace to end the integration.
+
         fs : float
             The digitization rate of the data in trace.
+
+        window_min_index : int, optional
+            The minium index of the window used to integrate the trace.
+            Default: 0
+
+        window_max_index : int, optional
+            The maximum index of the window used to integrate the trace.
+            Default: end of trace
+
+        feature_base_name : str, optional
+            output feature base name 
 
         Returns
         -------
@@ -239,8 +488,15 @@ class FeatureExtractors(object):
             Dictionary containing the various extracted features.
 
         """
+        
+        if window_min_index is None:
+            window_min_index = 0
+            
+        if window_max_index is None:
+            window_max_index = trace.shape[-1] - 1
+        
                 
-        integral = np.trapz(trace[min_index:max_index]) / fs
+        integral = np.trapz(trace[window_min_index:window_max_index]) / fs
 
         retdict = {
             feature_base_name: integral,
@@ -250,7 +506,8 @@ class FeatureExtractors(object):
 
 
     @staticmethod
-    def maximum(trace, min_index, max_index,
+    def maximum(trace,
+                window_min_index=None, window_max_index=None,
                 feature_base_name='maximum',
                 **kwargs):
         """
@@ -261,10 +518,18 @@ class FeatureExtractors(object):
         trace : ndarray
             An ndarray containing the raw data to extract the feature
             from.
-        min_index : int
-            The index of the trace to start searching for the max.
-        max_index : int
-            The index of the trace to end searching for the max.
+   
+        window_min_index : int, optional
+            The minium index of the window used to find  maximum
+            Default: 0
+
+        window_max_index : int, optional
+            The maximum index of the window used to find maximum
+            Default: end of trace
+
+        feature_base_name : str, optional
+            output feature base name 
+
 
         Returns
         -------
@@ -273,7 +538,13 @@ class FeatureExtractors(object):
 
         """
 
-        max_trace = np.amax(trace[min_index:max_index])
+        if window_min_index is None:
+            window_min_index = 0
+            
+        if window_max_index is None:
+            window_max_index = trace.shape[-1] - 1
+
+        max_trace = np.amax(trace[window_min_index:window_max_index])
 
         retdict = {
             feature_base_name: max_trace,
@@ -283,7 +554,8 @@ class FeatureExtractors(object):
 
 
     @staticmethod
-    def minimum(trace, min_index, max_index,
+    def minimum(trace,
+                window_min_index=None, window_max_index=None,
                 feature_base_name='minimum',
                 **kwargs):
         """
@@ -294,10 +566,19 @@ class FeatureExtractors(object):
         trace : ndarray
             An ndarray containing the raw data to extract the feature
             from.
-        min_index : int
-            The index of the trace to start searching for the min.
-        max_index : int
-            The index of the trace to end searching for the min.
+
+
+        window_min_index : int, optional
+            The minium index of the window used to find  minimum
+            Default: 0
+
+        window_max_index : int, optional
+            The maximum index of the window used to find minimum
+            Default: end of trace
+
+        feature_base_name : str, optional
+            output feature base name 
+
 
         Returns
         -------
@@ -305,8 +586,14 @@ class FeatureExtractors(object):
             Dictionary containing the various extracted features.
 
         """
+        if window_min_index is None:
+            window_min_index = 0
+            
+        if window_max_index is None:
+            window_max_index = trace.shape[-1] - 1
 
-        min_trace = np.amin(trace[min_index:max_index])
+            
+        min_trace = np.amin(trace[window_min_index:window_max_index])
 
         retdict = {
             feature_base_name: min_trace,
@@ -315,8 +602,9 @@ class FeatureExtractors(object):
         return retdict
 
     @staticmethod
-    def energyabsorbed(trace, min_index, max_index,
+    def energyabsorbed(trace,
                        fs, vb, i0, rl,
+                       window_min_index=None, window_max_index=None,
                        feature_base_name='energyabsorbed',
                        **kwargs):
         """
@@ -327,10 +615,6 @@ class FeatureExtractors(object):
         trace : ndarray
             An ndarray containing the raw data to extract the feature
             from.
-        min_index : int
-            The index of the trace to start the integration.
-        max_index : int
-            The index of the trace to end the integration.
         fs : float
             The digitization rate of the data in trace.
         vb : float
@@ -340,6 +624,16 @@ class FeatureExtractors(object):
         rl : float
             Load resistance in the TES circuit.
 
+        window_min_index : int, optional
+            The index of the trace to start the integration.
+             Default: 0
+        window_max_index : int, optional
+            The index of the trace to end the integration.
+            Default: end of trace
+ 
+        feature_base_name : str, optional
+            output feature base name 
+
         Returns
         -------
         retdict : dict
@@ -347,8 +641,8 @@ class FeatureExtractors(object):
 
         """
 
-        baseline = trace[:min_index].mean()
-        i_trace = trace[min_index:max_index] - baseline
+        baseline = trace[:window_min_index].mean()
+        i_trace = trace[window_min_index:window_max_index] - baseline
 
         p0 = i_trace * (vb - 2*i0*rl) - i_trace**2 * rl
 
