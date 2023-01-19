@@ -98,7 +98,6 @@ class FeatureExtractors:
 
         # instantiate OF 1x1
         OF = qp.OF1x1(
-            'unknown',
             of_base=of_base,
             template_tag=template_tag,
             template=template,
@@ -211,7 +210,6 @@ class FeatureExtractors:
 
         # instantiate OF1x1
         OF = qp.OF1x1(
-            'unknown',
             of_base=of_base,
             template_tag=template_tag,
             template=template,
@@ -366,7 +364,6 @@ class FeatureExtractors:
         
         # instantiate OF1x1
         OF = qp.OF1x1(
-            'unknown',
             of_base=of_base,
             template_tag=template_tag,
             template=template,

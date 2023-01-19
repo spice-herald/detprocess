@@ -176,8 +176,9 @@ class ProcessingData:
 
                     # instantiate
                     self._OF_base_objs[chan][psd_tag] = qp.OFBase(
-                        chan, sample_rate,
-                        pretrigger_samples=pretrigger_samples
+                        sample_rate,
+                        pretrigger_samples=pretrigger_samples,
+                        channel_name=chan
                     )
 
 
