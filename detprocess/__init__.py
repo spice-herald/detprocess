@@ -1,5 +1,5 @@
 from . import process
-from .process import process_data, SingleChannelExtractors
+from .process import Processing, FeatureExtractors
 from . import io
 from .core import *
 
