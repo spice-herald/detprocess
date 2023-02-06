@@ -95,7 +95,7 @@ CPDv21Ge:
       
 
     of1x1_nodelay:
-        run: False
+        run: True
      
 
     of1x1_constrained:
