@@ -109,17 +109,17 @@ class FeatureExtractors:
             psd=psd,
             sample_rate=fs,
             pretrigger_samples=nb_samples_pretrigger,
-            fcutoff=fcutoff,
             coupling=coupling,
             integralnorm=integralnorm,
         )
             
 
         # calc (signal needs to be None if set already)
-        OF.calc_nodelay(signal=trace)
+        OF.calc_nodelay(signal=trace,
+                       fcutoff=fcutoff)
         
         # get results
-        amp, t0, chisq, lowchi2 = OF.get_result_nodelay(fcutoff=fcutoff)
+        amp, t0, chisq, lowchi2 = OF.get_result_nodelay()
         # store features
         retdict = {
             ('amp_' + feature_base_name): amp,
@@ -227,7 +227,6 @@ class FeatureExtractors:
             psd=psd,
             sample_rate=fs,
             pretrigger_samples=nb_samples_pretrigger,
-            fcutoff=fcutoff,
             coupling=coupling,
             integralnorm=integralnorm,
         )
@@ -236,12 +235,13 @@ class FeatureExtractors:
 
         # calc (signal needs to be None if set already)
         OF.calc(signal=trace,
+                fcutoff=fcutoff,
                 interpolate_t0=interpolate,
                 lgc_fit_nodelay=False,
                 lgc_plot=False)
         
         # get results
-        amp, t0, chisq, lowchi2 = OF.get_result_withdelay(fcutoff=fcutoff)
+        amp, t0, chisq, lowchi2 = OF.get_result_withdelay()
         
 
         # store features
@@ -388,7 +388,6 @@ class FeatureExtractors:
             psd=psd,
             sample_rate=fs,
             pretrigger_samples=nb_samples_pretrigger,
-            fcutoff=fcutoff,
             coupling=coupling,
             integralnorm=integralnorm,
         )
@@ -401,6 +400,7 @@ class FeatureExtractors:
                 window_max_from_trig_usec=window_max_from_trig_usec,
                 window_min_index=window_min_index,
                 window_max_index=window_max_index,
+                fcutoff=fcutoff,
                 interpolate_t0=interpolate,
                 lgc_outside_window=lgc_outside_window,
                 lgc_fit_nodelay=False,
@@ -408,7 +408,7 @@ class FeatureExtractors:
         
       
         # get results
-        amp, t0, chisq, lowchi2 = OF.get_result_withdelay(fcutoff=fcutoff)
+        amp, t0, chisq, lowchi2 = OF.get_result_withdelay()
         
         
 
