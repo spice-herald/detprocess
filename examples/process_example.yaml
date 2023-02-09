@@ -92,16 +92,18 @@ CPDv21Ge:
         run: True
         base_algorithm: of1x1_unconstrained
         template_tag: glitch
+        lowchi2_fcutoff: 1000
       
 
     of1x1_nodelay:
-        run: False
+        run: True
      
 
     of1x1_constrained:
         run: True
         window_min_from_trig_usec: -400
         window_max_from_trig_usec: 400
+        lowchi2_fcutoff: 1000
 
     energyabsorbed:
         run: True

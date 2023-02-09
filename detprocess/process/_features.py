@@ -21,6 +21,7 @@ class FeatureExtractors:
     def of1x1_nodelay(of_base=None,  template_tag='default',
                       trace=None, template=None, psd=None,
                       fs=None, nb_samples_pretrigger=None,
+                      lowchi2_fcutoff=10000,
                       coupling='AC', integralnorm=False,
                       feature_base_name='of1x1_nodelay',
                       **kwargs):
@@ -66,12 +67,16 @@ class FeatureExtractors:
         nb_samples_pretrigger : int, optional
             Number of pre-trigger samples, required
             if "of_base" argument is None, otherwise set to None
+            
+        lowchi2_fcutoff : float, optional
+            The frequency (in Hz) that we should cut off the chi^2 when
+            calculating the low frequency chi^2. Default is 10 kHz.
         
         coupling : str, optional
             Only used if "psd" argument is not None. 
             "coupling" string etermines if the zero 
             frequency bin of the psd should be ignored (i.e. set to infinity) 
-            when calculating the optimum amplitude. If set to 'AC', then ths zero
+            when calculating the optimum amplitude. If set to 'AC', then the zero
             frequency bin is ignored. If set to anything else, then the
             zero frequency bin is kept. O
 
@@ -110,15 +115,16 @@ class FeatureExtractors:
             
 
         # calc (signal needs to be None if set already)
-        OF.calc_nodelay(signal=trace)
+        OF.calc_nodelay(signal=trace,
+                       lowchi2_fcutoff=lowchi2_fcutoff)
         
         # get results
-        amp, t0, chisq = OF.get_result_nodelay()
-        
+        amp, t0, chisq, lowchi2 = OF.get_result_nodelay()
         # store features
         retdict = {
             ('amp_' + feature_base_name): amp,
-            ('chi2_' + feature_base_name): chisq
+            ('chi2_' + feature_base_name): chisq,
+            ('lowchi2_' + feature_base_name): lowchi2
         }
 
         return retdict
@@ -130,6 +136,7 @@ class FeatureExtractors:
                             interpolate=False,
                             trace=None, template=None, psd=None,
                             fs=None, nb_samples_pretrigger=None,
+                            lowchi2_fcutoff=10000,
                             coupling='AC', integralnorm=False,
                             feature_base_name='of1x1_unconstrained',
                             **kwargs):
@@ -178,6 +185,10 @@ class FeatureExtractors:
         nb_samples_pretrigger : int, optional
             Number of pre-trigger samples, required
             if "of_base" argument is None, otherwise set to None
+            
+        lowchi2_fcutoff : float, optional
+            The frequency (in Hz) that we should cut off the chi^2 when
+            calculating the low frequency chi^2. Default is 10 kHz.
         
         coupling : str, optional
             Only used if "psd" argument is not None. 
@@ -224,19 +235,21 @@ class FeatureExtractors:
 
         # calc (signal needs to be None if set already)
         OF.calc(signal=trace,
+                lowchi2_fcutoff=lowchi2_fcutoff,
                 interpolate_t0=interpolate,
                 lgc_fit_nodelay=False,
                 lgc_plot=False)
         
         # get results
-        amp, t0, chisq = OF.get_result_withdelay()
+        amp, t0, chisq, lowchi2 = OF.get_result_withdelay()
         
 
         # store features
         retdict = {
             ('amp_' + feature_base_name): amp,
             ('t0_' + feature_base_name): t0,
-            ('chi2_' + feature_base_name): chisq
+            ('chi2_' + feature_base_name): chisq,
+            ('lowchi2_' + feature_base_name): lowchi2
         }
 
         return retdict
@@ -252,6 +265,7 @@ class FeatureExtractors:
                           interpolate=False,
                           trace=None, template=None, psd=None,
                           fs=None, nb_samples_pretrigger=None,
+                          lowchi2_fcutoff=10000,
                           coupling='AC', integralnorm=False,
                           feature_base_name='of1x1_constrained',
                           **kwargs):
@@ -332,6 +346,10 @@ class FeatureExtractors:
         nb_samples_pretrigger : int, optional
             Number of pre-trigger samples, required
             if "of_base" argument is None, otherwise set to None
+            
+        lowchi2_fcutoff : float, optional
+            The frequency (in Hz) that we should cut off the chi^2 when
+            calculating the low frequency chi^2. Default is 10 kHz.
         
         coupling : str, optional
             Only used if "psd" argument is not None. 
@@ -382,6 +400,7 @@ class FeatureExtractors:
                 window_max_from_trig_usec=window_max_from_trig_usec,
                 window_min_index=window_min_index,
                 window_max_index=window_max_index,
+                lowchi2_fcutoff=lowchi2_fcutoff,
                 interpolate_t0=interpolate,
                 lgc_outside_window=lgc_outside_window,
                 lgc_fit_nodelay=False,
@@ -389,14 +408,15 @@ class FeatureExtractors:
         
       
         # get results
-        amp, t0, chisq = OF.get_result_withdelay()
+        amp, t0, chisq, lowchi2 = OF.get_result_withdelay()
         
         
 
         retdict = {
             ('amp_' + feature_base_name): amp,
             ('t0_' + feature_base_name): t0,
-            ('chi2_' + feature_base_name): chisq
+            ('chi2_' + feature_base_name): chisq,
+            ('lowchi2_' + feature_base_name): lowchi2
         }
 
         return retdict
