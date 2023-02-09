@@ -21,7 +21,7 @@ class FeatureExtractors:
     def of1x1_nodelay(of_base=None,  template_tag='default',
                       trace=None, template=None, psd=None,
                       fs=None, nb_samples_pretrigger=None,
-                      fcutoff=10000,
+                      lowchi2_fcutoff=10000,
                       coupling='AC', integralnorm=False,
                       feature_base_name='of1x1_nodelay',
                       **kwargs):
@@ -68,7 +68,7 @@ class FeatureExtractors:
             Number of pre-trigger samples, required
             if "of_base" argument is None, otherwise set to None
             
-        fcutoff : float, optional
+        lowchi2_fcutoff : float, optional
             The frequency (in Hz) that we should cut off the chi^2 when
             calculating the low frequency chi^2. Default is 10 kHz.
         
@@ -116,7 +116,7 @@ class FeatureExtractors:
 
         # calc (signal needs to be None if set already)
         OF.calc_nodelay(signal=trace,
-                       fcutoff=fcutoff)
+                       lowchi2_fcutoff=lowchi2_fcutoff)
         
         # get results
         amp, t0, chisq, lowchi2 = OF.get_result_nodelay()
@@ -136,7 +136,7 @@ class FeatureExtractors:
                             interpolate=False,
                             trace=None, template=None, psd=None,
                             fs=None, nb_samples_pretrigger=None,
-                            fcutoff=10000,
+                            lowchi2_fcutoff=10000,
                             coupling='AC', integralnorm=False,
                             feature_base_name='of1x1_unconstrained',
                             **kwargs):
@@ -186,7 +186,7 @@ class FeatureExtractors:
             Number of pre-trigger samples, required
             if "of_base" argument is None, otherwise set to None
             
-        fcutoff : float, optional
+        lowchi2_fcutoff : float, optional
             The frequency (in Hz) that we should cut off the chi^2 when
             calculating the low frequency chi^2. Default is 10 kHz.
         
@@ -235,7 +235,7 @@ class FeatureExtractors:
 
         # calc (signal needs to be None if set already)
         OF.calc(signal=trace,
-                fcutoff=fcutoff,
+                lowchi2_fcutoff=lowchi2_fcutoff,
                 interpolate_t0=interpolate,
                 lgc_fit_nodelay=False,
                 lgc_plot=False)
@@ -265,7 +265,7 @@ class FeatureExtractors:
                           interpolate=False,
                           trace=None, template=None, psd=None,
                           fs=None, nb_samples_pretrigger=None,
-                          fcutoff=10000,
+                          lowchi2_fcutoff=10000,
                           coupling='AC', integralnorm=False,
                           feature_base_name='of1x1_constrained',
                           **kwargs):
@@ -347,7 +347,7 @@ class FeatureExtractors:
             Number of pre-trigger samples, required
             if "of_base" argument is None, otherwise set to None
             
-        fcutoff : float, optional
+        lowchi2_fcutoff : float, optional
             The frequency (in Hz) that we should cut off the chi^2 when
             calculating the low frequency chi^2. Default is 10 kHz.
         
@@ -400,7 +400,7 @@ class FeatureExtractors:
                 window_max_from_trig_usec=window_max_from_trig_usec,
                 window_min_index=window_min_index,
                 window_max_index=window_max_index,
-                fcutoff=fcutoff,
+                lowchi2_fcutoff=lowchi2_fcutoff,
                 interpolate_t0=interpolate,
                 lgc_outside_window=lgc_outside_window,
                 lgc_fit_nodelay=False,
