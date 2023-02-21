@@ -9,12 +9,6 @@
 - [Usage](#usage)
   - [Available Features](#available-features)
   - [YAML File](#yaml-file)
-  - [Extracting Features](#extracting-features)
-  - [Loading Features](#loading-features)
-- [Advanced Usage](#advanced-usage)
-  - [Adding New Default Features](#adding-new-default-features)
-  - [Developing Features](#developing-features)
-  - [High-Performance Computing](#high-performance-computing)
 
 ## Installation
 
@@ -83,28 +77,28 @@ detector1:
         run: False
     of1x1_constrained:
         run: False
-	window_min_from_trig_usec: -400
+        window_min_from_trig_usec: -400
         window_max_from_trig_usec: 400
    of1x1_constrained_glitch
         run: True
-	window_min_from_trig_usec: -400
+        window_min_from_trig_usec: -400
         window_max_from_trig_usec: 400
         base_algorithm: of1x1_unconstrained
         template_tag: glitch	
     baseline_pre:
         run: True
-	base_algorithm: baseline
-	window_min_from_start_usec: 0
+        base_algorithm: baseline
+        window_min_from_start_usec: 0
         window_max_from_trig_usec: -1000
     integral:
         run: True
         start_index: 0
-	window_min_from_trig_usec: -500
+        window_min_from_trig_usec: -500
         window_max_from_trig_usec: 500
 ```
 
 In this YAML file, we first specify the filter file, which contains the PSD and templates for each channels. The pulse template should be a single array that contains the expected pulse shape, normalized to have a pulse amplitude of 1 and have a baseline of 0. The current-referenced PSD should be a single array that contains the two-sided PSD in units of $\mathrm{A}^2/\mathrm{Hz}$. Note that both of these will should have the same digitization rate and/or length as the data that will be processed to be able to calculate the optimum filter features. We must then specify which channel will be processed, in this case `detector1`. This should match the channel name in the corresponding `pytesdaq` file. the optimum filter features.
 
-We have also specified to extract different features from each event: `of1x1_nodelay`, `baseline`, and `integral`. This is done by specifying `run: True` in the file, as compared to `run: False` for `of_unconstrained` and `of_constrained`. Note that it is fine to simple exclude features from the YAML file, as they simply will not be calculated (e.g. `energyabsorbed` is not included in this example).
+We have also specified to extract different features from each event: `of1x1_nodelay`, `baseline`, and `integral`. This is done by specifying `run: True` in the file, as compared to `run: False` for `of1x1_unconstrained` and `of1x1_constrained`. Note that it is fine to simple exclude features from the YAML file, as they simply will not be calculated (e.g. `energyabsorbed` is not included in this example).
 
 
