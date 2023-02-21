@@ -7,9 +7,9 @@
 ### Table of Contents
 - [Installation](#installation)
 - [Usage](#usage)
-  - [Available Features](#available-features)
+  - [Available Base Features](#available-base-features)
   - [YAML File](#yaml-file)
-
+  - [Extract features](#xtracting-features)
 ## Installation
 
 To install the most recent release of `detprocess`, type the following line into your command line
@@ -25,7 +25,7 @@ If using a shared Python installation, you may want to add the `--user` flag to 
 ## Usage
 
 One of the goals of this package is to keep the feature extraction pipeline simple and modular. The pipeline in mind can be approximated as follows:
-1. Know what features you want to extract, see: [Available Features](#available-features)
+1. Know what features you want to extract, see: [Available Features](#available-base-features)
 2. Create a YAML file specifying feature extraction options, see: [YAML File](#yaml-file)
 3. Run the feature extraction code on your data, see: [Extracting Features](#extracting-features)
 
@@ -33,7 +33,7 @@ One of the goals of this package is to keep the feature extraction pipeline simp
 
 ### Available Base Features
 
-The available features to extract are stored as the static methods of `detprocess.FeatureExtractors`. Each of these methods take your data and extract that specific feature from each event. Th
+The available features to extract are stored as the static methods of `detprocess.FeatureExtractors`. Each of these methods take your data and extract that specific feature from each event.
 
 At this time, the available features are:
 
@@ -49,7 +49,7 @@ At this time, the available features are:
 
 The base features can be used to define new features in the configuration with different settings, for example "baseline_pre" defined in a yaml file (see below) can use the "baseline" based algorithm.
 
-More features can be added either locally, or if there is a feature that is universally useful, then please submit a Pull Request! See [Advanced Usage](#advanced-usage) for instructions on adding features. The base fa
+More features can be added either locally, or if there is a feature that is universally useful, then please submit a Pull Request! 
 
 There are also features that are stored directly in `pytesdaq` files, which `detprocess` will also extract. These are:
 
@@ -102,3 +102,6 @@ In this YAML file, we first specify the filter file, which contains the PSD and 
 We have also specified to extract different features from each event: `of1x1_nodelay`, `baseline`, and `integral`. This is done by specifying `run: True` in the file, as compared to `run: False` for `of1x1_unconstrained` and `of1x1_constrained`. Note that it is fine to simple exclude features from the YAML file, as they simply will not be calculated (e.g. `energyabsorbed` is not included in this example).
 
 
+### Extracting Features
+
+See notebook detprocess/examples/run_detprocess.ipynb
