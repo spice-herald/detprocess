@@ -119,11 +119,11 @@ class FeatureExtractors:
                        lowchi2_fcutoff=lowchi2_fcutoff)
         
         # get results
-        amp, t0, chisq, lowchi2 = OF.get_result_nodelay()
+        amp, t0, chi2, lowchi2 = OF.get_result_nodelay()
         # store features
         retdict = {
             ('amp_' + feature_base_name): amp,
-            ('chi2_' + feature_base_name): chisq,
+            ('chi2_' + feature_base_name): chi2,
             ('lowchi2_' + feature_base_name): lowchi2
         }
 
@@ -241,14 +241,14 @@ class FeatureExtractors:
                 lgc_plot=False)
         
         # get results
-        amp, t0, chisq, lowchi2 = OF.get_result_withdelay()
+        amp, t0, chi2, lowchi2 = OF.get_result_withdelay()
         
 
         # store features
         retdict = {
             ('amp_' + feature_base_name): amp,
             ('t0_' + feature_base_name): t0,
-            ('chi2_' + feature_base_name): chisq,
+            ('chi2_' + feature_base_name): chi2,
             ('lowchi2_' + feature_base_name): lowchi2
         }
 
@@ -408,14 +408,14 @@ class FeatureExtractors:
         
       
         # get results
-        amp, t0, chisq, lowchi2 = OF.get_result_withdelay()
+        amp, t0, chi2, lowchi2 = OF.get_result_withdelay()
         
         
 
         retdict = {
             ('amp_' + feature_base_name): amp,
             ('t0_' + feature_base_name): t0,
-            ('chi2_' + feature_base_name): chisq,
+            ('chi2_' + feature_base_name): chi2,
             ('lowchi2_' + feature_base_name): lowchi2
         }
 
@@ -522,6 +522,8 @@ class FeatureExtractors:
         return retdict
 
 
+    
+
     @staticmethod
     def maximum(trace,
                 window_min_index=None, window_max_index=None,
@@ -569,6 +571,8 @@ class FeatureExtractors:
 
         return retdict
 
+
+    
 
     @staticmethod
     def minimum(trace,
@@ -618,6 +622,8 @@ class FeatureExtractors:
 
         return retdict
 
+
+    
     @staticmethod
     def energyabsorbed(trace,
                        fs, vb, i0, rl,
