@@ -9,7 +9,7 @@
 - [Usage](#usage)
   - [Available Base Features](#available-base-features)
   - [YAML File](#yaml-file)
-  - [Extract features](#xtracting-features)
+  - [Extract features](#extracting-features)
 ## Installation
 
 To install the most recent release of `detprocess`, type the following line into your command line
