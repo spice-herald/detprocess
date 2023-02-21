@@ -35,29 +35,29 @@ filter_file: ./filter_example.hdf5
 # ---------------------------------------
 
 all:
-    of1x1_nodelay:
-        run: False
 
-    of1x1_unconstrained:
-        run: False
 
     of1x1_constrained:
         run: False
         window_min_from_trig_usec: -400
         window_max_from_trig_usec: 400
 
-    baseline_pre:
+    baseline:
+        run: True
+        window_min_from_start_usec: 0
+        window_max_from_trig_usec: -1000
+
+    baseline_start:
         run: True
         base_algorithm: baseline
         window_min_from_start_usec: 0
-        window_max_from_trig_usec: -500
+        window_max_from_start_usec: 1000
 
-    baseline_post:   
-        run: False
+    baseline_end:   
+        run: True
         base_algorithm: baseline
-        window_min_from_trig_usec: 3000
+        window_min_to_end_usec: 1000
         window_max_to_end_usec: 0
-
 
     integral:
         run: True
