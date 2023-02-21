@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/detprocess)](https://pypi.org/project/detprocess/) [![Python 3.6](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/downloads/release/python-360/)
 
-`detprocess` is a Python package meant for feature extraction from raw detector data saved by [`pytesdaq`](https://github.com/berkeleytes/pytesdaq). The main functionality of the code is contained in `detprocess.process`, which contains all the possible features to be extracted and the general pipeline of how features are extracted. This package also contains helper IO functions for loading events from `pytesdaq` and saving the processed data as Pandas DataFrames.
+`detprocess` is a Python package meant for feature extraction from raw detector data saved by [`pytesdaq`](https://github.com/berkeleytes/pytesdaq). The main functionality of the code is contained in `detprocess.process`, which contains all the possible features to be extracted and the general pipeline of how features are extracted. This package also contains helper IO functions for loading events from `pytesdaq` and saving the processed data as Vaex DataFrames.
 
 ### Table of Contents
 - [Installation](#installation)
@@ -28,7 +28,7 @@ One of the goals of this package is to keep the feature extraction pipeline simp
 1. Know what features you want to extract, see: [Available Features](#available-features)
 2. Create a YAML file specifying feature extraction options, see: [YAML File](#yaml-file)
 3. Run the feature extraction code on your data, see: [Extracting Features](#extracting-features)
-4. Analyze the features that you have extracted, see: [Loading Features](#loading-features)
+
 
 
 ### Available Base Features
