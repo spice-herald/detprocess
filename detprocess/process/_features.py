@@ -120,6 +120,9 @@ class FeatureExtractors:
         
         # get results
         amp, t0, chi2, lowchi2 = OF.get_result_nodelay()
+
+
+             
         # store features
         retdict = {
             ('amp_' + feature_base_name): amp,
@@ -410,13 +413,18 @@ class FeatureExtractors:
         # get results
         amp, t0, chi2, lowchi2 = OF.get_result_withdelay()
         
+        # get OF resolution
+        ampres = OF.get_energy_resolution()
+        timeres = OF.get_time_resolution(amp)
         
 
         retdict = {
             ('amp_' + feature_base_name): amp,
             ('t0_' + feature_base_name): t0,
             ('chi2_' + feature_base_name): chi2,
-            ('lowchi2_' + feature_base_name): lowchi2
+            ('lowchi2_' + feature_base_name): lowchi2,
+            ('ampres_' + feature_base_name): ampres,
+            ('timeres_' + feature_base_name): timeres,  
         }
 
         return retdict
