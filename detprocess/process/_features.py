@@ -412,6 +412,11 @@ class FeatureExtractors:
       
         # get results
         amp, t0, chi2, lowchi2 = OF.get_result_withdelay()
+
+
+        # get chi2 no pulse
+        chi2_nopulse = OF.get_chisq_nopulse()
+
         
         # get OF resolution
         ampres = OF.get_energy_resolution()
@@ -423,6 +428,7 @@ class FeatureExtractors:
             ('t0_' + feature_base_name): t0,
             ('chi2_' + feature_base_name): chi2,
             ('lowchi2_' + feature_base_name): lowchi2,
+            ('chi2nopulse_' + feature_base_name): chi2_nopulse,
             ('ampres_' + feature_base_name): ampres,
             ('timeres_' + feature_base_name): timeres,  
         }
