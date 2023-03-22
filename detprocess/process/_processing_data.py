@@ -520,6 +520,8 @@ class ProcessingData:
             channels = channel.split('+')
         elif '|' in channel:
             channels = channel.split('|')
+        elif '-' in channel:
+            channels = channel.split('-')
         else:
             channels = [channel]
 
@@ -562,6 +564,8 @@ class ProcessingData:
             channels = channel.split('+')
         elif '|' in channel:
             channels = channel.split('|')
+        elif '-' in channel:
+            channels = channel.split('-')
         else:
             channels = [channel]
 
@@ -580,6 +584,14 @@ class ProcessingData:
                            axis = 0)
         elif '|' in channel:
             array =  self._event_traces[trace_indices,:]
+            
+        elif '-' in channel:
+            if len(trace_indices) != 2:
+                raise ValueError('ERROR: Unable to calculate subtracted pulse. '
+                                 + ' Two channels needed. Found '
+                                 + str(len(trace_indices)) + ' traces')
+            array = (self._event_traces[trace_indices[0],:]
+                     -self._event_traces[trace_indices[1],:])
         else:
             array =  self._event_traces[trace_indices[0],:]
 

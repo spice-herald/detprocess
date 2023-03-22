@@ -155,3 +155,18 @@ IrPtTESSmall+IrPtTESBig:
         window_min_from_trig_usec: -300
         window_max_from_trig_usec: 300
         
+# example of subtraction channel1-channel2
+IrPtTESSmall-IrPtTESBig:
+  
+    feature_channel: SubIrPt
+    
+    of1x1_nodelay: 
+        run: True
+
+    of1x1_unconstrained:
+        run: True
+
+    of1x1_constrained:
+        run: True
+        window_min_from_trig_usec: -300
+        window_max_from_trig_usec: 300

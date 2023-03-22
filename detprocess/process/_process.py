@@ -934,6 +934,8 @@ class Processing:
                 chans = key.split('|')
             elif '+' in key:
                 chans = key.split('+')
+            elif '-' in key:
+                chans = key.split('-')
             elif key != 'filter_file':
                 chans.append(key)
                 
