@@ -345,6 +345,7 @@ class Randoms:
                                 'trigger_type': list(),
                                 'data_type': list(),
                                 'group_name':list(),
+                                'trigger_id': list(),
                                 'trigger_prod_id': list(),
                                 'trigger_prod_group_name':list(),
                                 'trigger_prod_file_name':list()}
@@ -447,6 +448,7 @@ class Randoms:
                         feature_dict['trigger_type'].append(3)
                         feature_dict['data_type'].append(metadata['run_type'])
                         feature_dict['fridge_run_number'].append(metadata['fridge_run'])
+                        feature_dict['trigger_id'].append(trigger_id)
                         feature_dict['trigger_prod_id'].append(trigger_id)
                         feature_dict['trigger_prod_group_name'].append(trigger_prod_group_name)
                         feature_dict['trigger_prod_file_name'].append(trigger_prod_file_name)
