@@ -588,6 +588,10 @@ class Processing:
                         # For OF algorithms, get OB base object
                         OF_base = self._processing_data.get_OF_base(channel,
                                                                     algorithm)
+                        if algorithm == 'psd_amp':
+                            OF_base = self._processing_data.get_OF_base(channel,
+                                                                    'of1x1_nodelay')
+                        
                         if OF_base is not None:
                             extracted_features = extractor(OF_base, **kwargs)
                         else:
