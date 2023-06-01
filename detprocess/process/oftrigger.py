@@ -1,13 +1,10 @@
 import numpy as np
 import os
 from math import log10, floor
-from datetime import datetime
 import math
 import array
 from scipy.signal import correlate
 from scipy.fft import ifft, fft, next_fast_len
-import matplotlib
-import matplotlib.pyplot as plt
 
 
 __all__ = ['OptimumFilterTrigger']
@@ -318,7 +315,8 @@ class OptimumFilterTrigger:
             'trigger_index': list(),
             'trigger_merge_window_samples': list(),
             'trigger_threshold_sigma': list(),
-            'trigger_types': list()}
+            'trigger_channel': list(),
+            'trigger_type': list()}
         
         # Extra parameters if TTL trigger used
         if (self._filtered_trace_ttl is not None
@@ -329,10 +327,9 @@ class OptimumFilterTrigger:
                  'trigger_amplitude_ttl': list(),
                  'trigger_time_pulse': list(),
                  'trigger_index_pulse': list(),
-                 'trigger_amplitude_pulse': list(),
-                 'trigger_types': list()})
-            
-        
+                 'trigger_amplitude_pulse': list()}
+            )
+               
         # merge window
         merge_window = 0
         if merge_window_msec is not None:
@@ -431,7 +428,9 @@ class OptimumFilterTrigger:
                         trigger_data['trigger_time'].extend([ttl_ind/self._fs])
                         trigger_data['trigger_amplitude'].extend(
                             [self._filtered_trace[ttl_ind]])
+                        trigger_data['trigger_type'].extend([5])
 
+                        
                         # TTL                    
                         trigger_data['trigger_index_ttl'].extend([ttl_ind])
                         trigger_data['trigger_time_ttl'].extend([ttl_ind/self._fs])
@@ -458,7 +457,9 @@ class OptimumFilterTrigger:
                         trigger_data['trigger_time'].extend([evt_ind/self._fs])
                         trigger_data['trigger_amplitude'].extend(
                             [self._filtered_trace[evt_ind]])
+                        trigger_data['trigger_type'].extend([4])
 
+                        
                         # pulse also triggered
                         trigger_data['trigger_index_pulse'].extend([evt_ind])
                         trigger_data['trigger_time_pulse'].extend([evt_ind/self._fs])
@@ -475,8 +476,10 @@ class OptimumFilterTrigger:
                     trigger_data['trigger_index'].extend([evt_ind])
                     trigger_data['trigger_time'].extend([evt_ind/self._fs])
                     trigger_data['trigger_amplitude'].extend([self._filtered_trace[evt_ind]])
-                   
-                trigger_data['trigger_types'].extend([rangetypes[irange]])
+                    trigger_data['trigger_type'].extend([4])
+                    
+                # extra parameter both TTL and pulse threshold
+                trigger_data['trigger_channel'].extend([self._trigger_channel])
                 trigger_data['trigger_threshold_sigma'].extend([thresh])
                 trigger_data['trigger_merge_window_samples'].extend([merge_window])
 
