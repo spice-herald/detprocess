@@ -5,6 +5,8 @@ import math
 import array
 from scipy.signal import correlate
 from scipy.fft import ifft, fft, next_fast_len
+import vaex as vx
+
 
 
 __all__ = ['OptimumFilterTrigger']
@@ -126,7 +128,9 @@ class OptimumFilterTrigger:
         #    trigger_channel = [trigger_channel]
 
         # intitialize trigger data
+        # dictionary 
         self._trigger_data = None
+  
         
         # calculate the time-domain optimum filter
         phi_freq = fft(self._template) / self._noisepsd
@@ -171,6 +175,18 @@ class OptimumFilterTrigger:
         """
 
         return self._trigger_data
+
+    def get_trigger_data_df(self):
+        """
+        Get current filtered trace
+        """
+        df = None
+        if self._trigger_data is not None:
+            df = vx.from_dict(
+                self._trigger_data[self._trigger_channel]
+            )
+        return df
+           
 
     def get_phi(self):
         """
@@ -313,9 +329,8 @@ class OptimumFilterTrigger:
             'trigger_amplitude':list(),
             'trigger_time': list(),
             'trigger_index': list(),
-            'trigger_merge_window_samples': list(),
+            'trigger_pileup_window_samples': list(),
             'trigger_threshold_sigma': list(),
-            'trigger_channel': list(),
             'trigger_type': list()}
         
         # Extra parameters if TTL trigger used
@@ -479,14 +494,25 @@ class OptimumFilterTrigger:
                     trigger_data['trigger_type'].extend([4])
                     
                 # extra parameter both TTL and pulse threshold
-                trigger_data['trigger_channel'].extend([self._trigger_channel])
                 trigger_data['trigger_threshold_sigma'].extend([thresh])
-                trigger_data['trigger_merge_window_samples'].extend([merge_window])
+                trigger_data['trigger_pileup_window_samples'].extend([merge_window])
 
+
+        # duplicate key channel name
         self._trigger_data = dict()
-        self._trigger_data[self._trigger_channel] = trigger_data
-    
-    
+        self._trigger_data[self._trigger_channel] = trigger_data.copy()
+        
+        for key, val in trigger_data.items():
+            newkey = key + '_' + self._trigger_channel
+            self._trigger_data[self._trigger_channel][newkey] = val
+
+        #  add channels
+        nb_events = len(trigger_data['trigger_index'])
+        chan_list = list()
+        if nb_events>0:
+            chan_list = [self._trigger_channel]*nb_events
+        self._trigger_data[self._trigger_channel]['trigger_channel'] = chan_list
+                        
         
         
         
