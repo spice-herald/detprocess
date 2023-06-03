@@ -9,17 +9,48 @@ class EventBuilder:
     finding coincident event,  and constructing event(s) information
     """
 
-    def __init__(self, fs):
+    def __init__(self):
         """
         Intialization
         """
 
-        # sample rate
-        self._fs = fs
+        # trigger id
+        self._current_trigger_id = 0
+        self._current_event_time = 0
+        
 
         # Initialize trigger data 
         self._trigger_df = None
-        self._trigger_channels = list()
+        self._trigger_objects = None
+        self._trigger_channels = None
+
+    def clear_trigger_data(self):
+        """
+        clear 
+        """
+        self._trigger_df = None
+        self._trigger_channels = None
+
+        # FIXME clear object...
+        
+               
+    def add_trigger_object(self, trigger_channel, trigger_object):
+        """
+        Add trigger object 
+        """
+
+        if self._trigger_objects is None:   
+            self._trigger_objects = dict()
+
+
+        if trigger_channel in self._trigger_objects.keys():
+            raise ValueError(
+                'ERROR: Trigger object "' + trigger_channel
+                + ' already stored!')
+
+        # store in dictionary
+        self._trigger_objects[trigger_channel] = trigger_object
+
 
         
     
@@ -29,6 +60,11 @@ class EventBuilder:
         trigger channel
         """
 
+        # intialize if needed
+        if self._trigger_channels is None:
+            self._trigger_channels = list()
+
+        
         # check if trigger channel already saved
         if trigger_channel in self._trigger_channels:
             raise ValueError('ERROR: Trigger data for channel '
@@ -47,34 +83,184 @@ class EventBuilder:
 
         # sort by trigger index
         self._trigger_df = self._trigger_df.sort('trigger_index')
-        
-        
-             
 
-    def merge_coincident(self,
-                         coincident_window_msec=None,
-                         coincident_window_samples=None):
+
+        
+    def acquire_trigger(self, trigger_channel, trace, thresh,
+                        merge_window_msec=None, merge_window_samples=None,
+                        positive_pulses=True):
+        """
+        calc
+        """
+
+        # find trigger object
+        if trigger_channel not in self._trigger_objects.keys():
+            raise ValueError(
+                'ERROR: Trigger object ' + trigger_channel
+                + ' not found!')
+
+        trigger_obj = self._trigger_objects[trigger_channel]
+
+        # update trace
+        trigger_obj.update_trace(trace)
+
+        # find triggers
+        trigger_obj.find_triggers(
+            thresh,
+            merge_window_msec=merge_window_msec,
+            merge_window_samples=merge_window_samples,
+            positive_pulses=positive_pulses)
+
+        # store trigger data
+        df = trigger_obj.get_trigger_data_df()
+        self.add_trigger_data(trigger_channel, df)
+        
+        
+
+    def build_event(self, event_metadata=None,
+                    coincident_window_msec=None,
+                    coincident_window_samples=None):
         """
         Function to merge coincident 
         events based on user defined window (in msec or samples)
         """
 
+        # metadata
+        if event_metadata is None:
+            event_metadata = dict()
+        
+        # sample rate
+        fs = None
+        if 'sample_rate' in event_metadata.keys():
+            fs = event_metadata['sample_rate']
+
+        # trace length in seconds
+        trace_length_sec = 0
+        if (fs is not None
+            and 'nb_samples' in event_metadata.keys()):
+            trace_length_sec = event_metadata['nb_samples']/fs
+            
+        
+        # event time
+        event_time_start = np.nan
+        event_time_end = np.nan
+        if 'event_time' in event_metadata.keys():
+            event_time_data = event_metadata['event_time']
+            if (event_time_data>=self._current_event_time):
+                event_time_start =  event_time_data
+            else:
+                event_time_start = self._current_event_time
+            event_time_end = int(event_time_start + trace_length_sec)
+
+        # store event time
+        self._current_event_time = event_time_end
+        
+        # check if any triggers
+        if (self._trigger_df is None or len(self._trigger_df)==0):
+            return
+    
+        # merge coincident events
+        self._merge_coincident_triggers(
+            coincident_window_msec=coincident_window_msec,
+            coincident_window_samples=coincident_window_samples)
+
+
+        # number of triggers (after merging coincident events)
+        nb_triggers = len(self._trigger_df)
+
+        #  add metadata
+        default_val = np.array([np.nan]*nb_triggers)
+        metadata_dict = {'series_number': default_val,
+                         'event_number': default_val,
+                         'dump_number': default_val,
+                         'series_start_time': default_val,
+                         'group_start_time': default_val,
+                         'fridge_run_start_time': default_val,
+                         'fridge_run_number': default_val,
+                         'data_type': default_val,
+                         'group_name':default_val}
+
+        # replace value if available
+        for key in metadata_dict.keys():
+            if key in event_metadata.keys():
+                metadata_dict[key] = np.array(
+                    [event_metadata[key]]*nb_triggers)
+
+        # some parameters have different names
+        if 'series_num' in event_metadata.keys():
+            metadata_dict['series_number'] = np.array(
+                [event_metadata['series_num']]*nb_triggers)    
+        if 'event_num' in event_metadata.keys():
+            metadata_dict['event_number'] = np.array(
+                [event_metadata['event_num']]*nb_triggers)    
+        if 'dump_num' in event_metadata.keys():
+            metadata_dict['dump_number'] = np.array(
+                [event_metadata['dump_num']]*nb_triggers)    
+        if 'run_type' in event_metadata.keys():
+            metadata_dict['data_type'] = np.array(
+                [event_metadata['run_type']]*nb_triggers)   
+        if 'fridge_run' in event_metadata.keys():
+            metadata_dict['fridge_run_number'] = np.array(
+                [event_metadata['fridge_run']]*nb_triggers)   
+
+                
+        # event times
+        trigger_times = self._trigger_df['trigger_time'].values
+        event_times = trigger_times + event_time_start
+        event_times_int = np.around(event_times).astype(int)
+
+        # add new parameters in dictionary
+        metadata_dict['event_time'] = event_times_int
+        metadata_dict['series_start_time'] = (
+            event_times_int-metadata_dict['series_start_time'])
+        metadata_dict['group_start_time'] = (
+            event_times_int-metadata_dict['group_start_time'])
+        metadata_dict['fridge_run_start_time'] = (
+            event_times_int-metadata_dict['fridge_run_start_time'])
+
+        # trigger id
+        metadata_dict['trigger_id'] = (
+            np.array(range(nb_triggers))
+            + self._current_trigger_id
+            + 1)
+        
+        self._current_trigger_id = metadata_dict['trigger_id'][-1]
+        
+        
+        # add to dataframe
+        for key,val in metadata_dict.items():
+            self._trigger_df[key] = val
+            
+            
+        
+
+                
+    def _merge_coincident_triggers(self, fs=None,
+                                  coincident_window_msec=None,
+                                  coincident_window_samples=None):
+        """
+        Function to merge coincident 
+        events based on user defined window (in msec or samples)
+        """
+        
         # check
         if self._trigger_df is None:
             raise ValueError('ERROR: No trigger data '
                              + 'available')  
-
-        # coincident window
-        if (coincident_window_msec is None
-            and coincident_window_samples is None):
-            print('WARNING: No coincident window defined. '
-                  + 'No merging  will be done')
-            return
         
+
+        # check if any triggers
+        if len(self._trigger_df)==0:
+            return
+                
         # merge window
         merge_window = 0
         if coincident_window_msec is not None:
-            merge_window = int(coincident_window_msec*self._fs/1000)
+            if fs is None:
+                raise ValueError(
+                    'ERROR: sample rate "fs" needs to be provided!'
+                )
+            merge_window = int(coincident_window_msec*fs/1000)
         elif coincident_window_samples is not None:
             merge_window = coincident_window_samples
             
@@ -83,18 +269,16 @@ class EventBuilder:
         # more easily
         df_pandas = self._trigger_df.to_pandas_df()
         
-
             
         # get trigger index and amplitude
         trigger_indices =  np.array(df_pandas['trigger_index'].values)
         trigger_amplitudes =  np.array(df_pandas['trigger_amplitude'].values)
         trigger_channels = np.array(df_pandas['trigger_channel'].values)
     
-        
-
+  
         # find list of indices within merge_window
         # then store in list of index ranges
-        lgc_coincident = np.diff(trigger_indices) <= merge_window
+        lgc_coincident = np.diff(trigger_indices) < merge_window
         lgc_coincident = np.concatenate(([0], lgc_coincident, [0]))
         lgc_coincident_diff = np.abs(np.diff(lgc_coincident))
         coincident_ranges = np.where(lgc_coincident_diff == 1)[0].reshape(-1, 2)
@@ -210,9 +394,11 @@ class EventBuilder:
                 column_inds_to_drop.append(other_index)
                
 
-
+        # drop rows non primary trigger channels 
         if column_inds_to_drop:
             df_pandas = df_pandas.drop(column_inds_to_drop)
+
+        # convert back to vaex
         self._trigger_df = vx.from_pandas(df_pandas, copy_index=False)
                 
             

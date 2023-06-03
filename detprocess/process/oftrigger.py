@@ -329,7 +329,7 @@ class OptimumFilterTrigger:
             'trigger_amplitude':list(),
             'trigger_time': list(),
             'trigger_index': list(),
-            'trigger_pileup_window_samples': list(),
+            'trigger_pileup_merge_window': list(),
             'trigger_threshold_sigma': list(),
             'trigger_type': list()}
         
@@ -352,7 +352,7 @@ class OptimumFilterTrigger:
         elif merge_window_samples is not None:
             merge_window = merge_window_samples
             
-            
+                
         # find where the filtered trace has an optimum amplitude
         # greater than the specified amplitude
         if positive_pulses:
@@ -495,7 +495,7 @@ class OptimumFilterTrigger:
                     
                 # extra parameter both TTL and pulse threshold
                 trigger_data['trigger_threshold_sigma'].extend([thresh])
-                trigger_data['trigger_pileup_window_samples'].extend([merge_window])
+                trigger_data['trigger_pileup_merge_window'].extend([merge_window])
 
 
         # duplicate key channel name
