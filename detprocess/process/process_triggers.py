@@ -17,9 +17,9 @@ import astropy
 import pytesdaq.io as h5io
 import copy
 from humanfriendly import parse_size
-from detprocess.process._processing_data  import ProcessingData
-from detprocess.process.eventbuilder import EventBuilder
-from detprocess.process.oftrigger import OptimumFilterTrigger
+from detprocess.process.processing_data  import ProcessingData
+from detprocess.core.eventbuilder import EventBuilder
+from detprocess.core.oftrigger import OptimumFilterTrigger
 
 __all__ = [
     'TriggerProcessing'

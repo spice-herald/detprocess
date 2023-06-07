@@ -16,20 +16,20 @@ import stat
 import time
 import astropy
 
-from detprocess.process._features  import FeatureExtractors
-from detprocess.process._processing_data  import ProcessingData
+from detprocess.core.features  import FeatureExtractors
+from detprocess.process.processing_data  import ProcessingData
 import pytesdaq.io as h5io
 
 
 
 __all__ = [
-    'Processing'
+    'FeatureProcessing'
 ]
 
 
 
 
-class Processing:
+class FeatureProcessing:
     """
     Class to manage data processing and 
     extract features, dataframe can be saved
