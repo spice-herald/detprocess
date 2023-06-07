@@ -16,7 +16,7 @@ import stat
 import time
 import astropy
 
-from detprocess.core.features  import FeatureExtractors
+from detprocess.core.algorithms  import FeatureExtractors
 from detprocess.process.processing_data  import ProcessingData
 import pytesdaq.io as h5io
 
