@@ -942,7 +942,7 @@ class Processing:
             for chan in chans:
                 if chan not in available_channels:
                     raise ValueError('Channel "' + chan
-                                     + '" do not exist in '
+                                     + '" does not exist in '
                                      + 'raw data! Check yaml file!')
                 else:
                     channel_list_temp.append(chan)

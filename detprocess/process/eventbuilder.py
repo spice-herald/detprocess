@@ -13,28 +13,40 @@ class EventBuilder:
         """
         Intialization
         """
-
+        
         # trigger id
         self._current_trigger_id = 0
         self._current_event_time = 0
+        self._current_nb_samples = None
+        
+        # event dataframe  containing all triggers
+        self._event_df = None
+        
+        # Initialize trigger data 
+        self._trigger_objects = None
+        self._trigger_names = None
         
 
-        # Initialize trigger data 
-        self._trigger_df = None
-        self._trigger_objects = None
-        self._trigger_channels = None
-
-    def clear_trigger_data(self):
+    def clear_event(self):
         """
         clear 
         """
-        self._trigger_df = None
-        self._trigger_channels = None
+        self._event_df = None
+        self._trigger_names = None
 
         # FIXME clear object...
+
+
+    def get_event_df(self):
+        """
+        Get event data frame
+        """
+
+        return self._event_df 
+
         
                
-    def add_trigger_object(self, trigger_channel, trigger_object):
+    def add_trigger_object(self, trigger_name, trigger_object):
         """
         Add trigger object 
         """
@@ -43,83 +55,114 @@ class EventBuilder:
             self._trigger_objects = dict()
 
 
-        if trigger_channel in self._trigger_objects.keys():
+        if trigger_name in self._trigger_objects.keys():
             raise ValueError(
-                'ERROR: Trigger object "' + trigger_channel
+                'ERROR: Trigger object "' + trigger_name
                 + ' already stored!')
 
         # store in dictionary
-        self._trigger_objects[trigger_channel] = trigger_object
+        self._trigger_objects[trigger_name] = trigger_object
 
+        # keep trigger name in list
+        if self._trigger_names is None:
+            self._trigger_names = list()
+
+        self._trigger_names.append(trigger_name)
 
         
+    def get_trigger_object(self, trigger_name):
+        """
+        Get trigger object
+        """
+
+        if trigger_name not in self._trigger_objects.keys():
+            raise ValueError(
+                'ERROR: Trigger object "' + trigger_name
+                + ' does not exist!')
+
+        return self._trigger_object[trigger_name]
+
     
-    def add_trigger_data(self, trigger_channel, trigger_data):
+        
+    def add_trigger_data(self, trigger_name, trigger_data):
         """
         Add trigger data dictionary for a specific
         trigger channel
         """
 
         # intialize if needed
-        if self._trigger_channels is None:
-            self._trigger_channels = list()
+        if self._trigger_names is None:
+            self._trigger_names = list()
 
         
         # check if trigger channel already saved
-        if trigger_channel in self._trigger_channels:
+        if trigger_name in self._trigger_names:
             raise ValueError('ERROR: Trigger data for channel '
-                             + trigger_channel + ' already added!')
+                             + trigger_name + ' already added!')
             
         # add to list 
-        self._trigger_channels.append(trigger_channel)
+        self._trigger_names.append(trigger_name)
 
         # dataframe 
-        if self._trigger_df is None:
-            self._trigger_df = trigger_data
+        if self._event_df is None:
+            self._event_df = trigger_data
         else:
-            self._trigger_df = vx.concat(
-                [self._trigger_df, trigger_data]
+            self._event_df = vx.concat(
+                [self._event_df, trigger_data]
             )
 
         # sort by trigger index
-        self._trigger_df = self._trigger_df.sort('trigger_index')
+        self._event_df = self._event_df.sort('trigger_index')
 
 
         
-    def acquire_trigger(self, trigger_channel, trace, thresh,
-                        merge_window_msec=None, merge_window_samples=None,
-                        positive_pulses=True):
+    def acquire_triggers(self, trigger_name, trace, thresh,
+                         pileup_window_msec=None, pileup_window_samples=None,
+                         positive_pulses=True):
         """
         calc
         """
 
         # find trigger object
-        if trigger_channel not in self._trigger_objects.keys():
+        if trigger_name not in self._trigger_objects.keys():
             raise ValueError(
-                'ERROR: Trigger object ' + trigger_channel
+                'ERROR: Trigger object ' + trigger_name
                 + ' not found!')
 
-        trigger_obj = self._trigger_objects[trigger_channel]
+        trigger_obj = self._trigger_objects[trigger_name]
 
         # update trace
         trigger_obj.update_trace(trace)
-
+        self._current_nb_samples = trace.shape[-1]
+        
         # find triggers
         trigger_obj.find_triggers(
             thresh,
-            merge_window_msec=merge_window_msec,
-            merge_window_samples=merge_window_samples,
+            pileup_window_msec=pileup_window_msec,
+            pileup_window_samples=pileup_window_samples,
             positive_pulses=positive_pulses)
 
-        # store trigger data
+        # append trigger data to event dataframe
+        # sort by trigger index
         df = trigger_obj.get_trigger_data_df()
-        self.add_trigger_data(trigger_channel, df)
+        if df:
+            if self._event_df is None:
+                self._event_df = df
+            else:
+                self._event_df = vx.concat(
+                    [self._event_df, df]
+                )
+            # sort by trigger index
+            self._event_df = self._event_df.sort('trigger_index')
+
         
         
 
     def build_event(self, event_metadata=None,
+                    fs=None,
                     coincident_window_msec=None,
-                    coincident_window_samples=None):
+                    coincident_window_samples=None,
+                    trace_length_continuous_sec=None):
         """
         Function to merge coincident 
         events based on user defined window (in msec or samples)
@@ -128,19 +171,33 @@ class EventBuilder:
         # metadata
         if event_metadata is None:
             event_metadata = dict()
-        
-        # sample rate
-        fs = None
-        if 'sample_rate' in event_metadata.keys():
-            fs = event_metadata['sample_rate']
 
-        # trace length in seconds
-        trace_length_sec = 0
-        if (fs is not None
-            and 'nb_samples' in event_metadata.keys()):
-            trace_length_sec = event_metadata['nb_samples']/fs
+        # sample rate
+        if (fs is None and
+            'sample_rate' in event_metadata.keys()):
+            fs = event_metadata['sample_rate']
             
-        
+
+        # check if fs required
+        if (fs is None and coincident_window_msec is not None):
+            raise ValueError('ERROR: sample rate required ("fs")')
+
+            
+        # trace length in seconds
+        if trace_length_continuous_sec is None:
+            
+            if (self._current_nb_samples is None
+                and 'nb_samples' in event_metadata.keys()):
+                self._current_nb_samples  = (
+                    event_metadata['nb_samples'])
+
+            if (self._current_nb_samples is None or fs is None):
+                raise ValueError('ERROR: "trace_length_continuous_sec" '
+                                 + 'argument required!')
+    
+            trace_length_continuous_sec = (
+                self._current_nb_samples/fs)
+            
         # event time
         event_time_start = np.nan
         event_time_end = np.nan
@@ -150,24 +207,25 @@ class EventBuilder:
                 event_time_start =  event_time_data
             else:
                 event_time_start = self._current_event_time
-            event_time_end = int(event_time_start + trace_length_sec)
+            event_time_end = int(event_time_start + trace_length_continuous_sec)
 
         # store event time
         self._current_event_time = event_time_end
         
         # check if any triggers
-        if (self._trigger_df is None or len(self._trigger_df)==0):
+        if (self._event_df is None or len(self._event_df)==0):
             return
     
         # merge coincident events
         self._merge_coincident_triggers(
+            fs=fs,
             coincident_window_msec=coincident_window_msec,
             coincident_window_samples=coincident_window_samples)
 
 
         # number of triggers (after merging coincident events)
-        nb_triggers = len(self._trigger_df)
-
+        nb_triggers = len(self._event_df)
+        
         #  add metadata
         default_val = np.array([np.nan]*nb_triggers)
         metadata_dict = {'series_number': default_val,
@@ -205,7 +263,7 @@ class EventBuilder:
 
                 
         # event times
-        trigger_times = self._trigger_df['trigger_time'].values
+        trigger_times = self._event_df['trigger_time'].values
         event_times = trigger_times + event_time_start
         event_times_int = np.around(event_times).astype(int)
 
@@ -229,7 +287,7 @@ class EventBuilder:
         
         # add to dataframe
         for key,val in metadata_dict.items():
-            self._trigger_df[key] = val
+            self._event_df[key] = val
             
             
         
@@ -244,13 +302,13 @@ class EventBuilder:
         """
         
         # check
-        if self._trigger_df is None:
+        if self._event_df is None:
             raise ValueError('ERROR: No trigger data '
                              + 'available')  
         
 
         # check if any triggers
-        if len(self._trigger_df)==0:
+        if len(self._event_df)==0:
             return
                 
         # merge window
@@ -267,13 +325,13 @@ class EventBuilder:
 
         # let's convert vaex dataframe to pandas so we can modify it
         # more easily
-        df_pandas = self._trigger_df.to_pandas_df()
+        df_pandas = self._event_df.to_pandas_df()
         
             
         # get trigger index and amplitude
         trigger_indices =  np.array(df_pandas['trigger_index'].values)
         trigger_amplitudes =  np.array(df_pandas['trigger_amplitude'].values)
-        trigger_channels = np.array(df_pandas['trigger_channel'].values)
+        trigger_names = np.array(df_pandas['trigger_channel'].values)
     
   
         # find list of indices within merge_window
@@ -292,7 +350,7 @@ class EventBuilder:
         coincident_indices = list()
         for range_it in coincident_ranges:
             indices = np.arange(range_it[0], range_it[1]+1)
-            channels = trigger_channels[indices]
+            channels = trigger_names[indices]
             channels_unique = np.unique(channels)
             
             # case single channel -> pileup
@@ -361,11 +419,11 @@ class EventBuilder:
                      
             # primary trigger
             primary_index = int(inds[max_index])
-            primary_channel = trigger_channels[primary_index]
+            primary_channel = trigger_names[primary_index]
                     
             # other triggers 
             other_indices = inds[inds!=primary_index]
-            other_channels = trigger_channels[other_indices]
+            other_channels = trigger_names[other_indices]
 
             if not isinstance(other_indices, np.ndarray):
                 other_indices = [other_indices]
@@ -381,14 +439,16 @@ class EventBuilder:
                 
                 # find channel specific columns
                 column_names = np.array(
-                    df_pandas.columns[df_pandas.iloc[other_index].notnull()]).astype('U')
+                    df_pandas.columns[df_pandas.iloc[other_index].notnull()]
+                ).astype('U')
              
                 matching_elements = np.char.find(column_names, other_chan) >= 0
                 column_names = column_names[matching_elements]
 
                 # replace values
                 for column_name in column_names:
-                    df_pandas[column_name][primary_index] =  df_pandas[column_name][other_index]
+                    df_pandas[column_name][primary_index] =  (
+                        df_pandas[column_name][other_index])
 
                 # add to drop list
                 column_inds_to_drop.append(other_index)
@@ -399,7 +459,7 @@ class EventBuilder:
             df_pandas = df_pandas.drop(column_inds_to_drop)
 
         # convert back to vaex
-        self._trigger_df = vx.from_pandas(df_pandas, copy_index=False)
+        self._event_df = vx.from_pandas(df_pandas, copy_index=False)
                 
             
             

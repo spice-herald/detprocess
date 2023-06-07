@@ -6,7 +6,6 @@ from pprint import pprint
 import pytesdaq.io as h5io
 
 
-
 __all__ = [
     'ProcessingData'
 ]
@@ -347,15 +346,16 @@ class ProcessingData:
         if tag is not None and tag != 'default':
             psd_name += '_' + tag
 
-        
 
         if psd_name not in self._filter_data[channel]:
             raise ValueError('No parameter "' + psd_name
                              + '" found in filter file!'
                              + ' for channel ' + channel)
 
-        # FIXME add fs
-        return self._filter_data[channel][psd_name].values, None
+        # get values
+        psd_vals = self._filter_data[channel][psd_name].values
+        psd_freqs = self._filter_data[channel][psd_name].index
+        return psd_vals, psd_freqs
     
 
 
@@ -424,7 +424,7 @@ class ProcessingData:
                 
                 
 
-    def get_event_admin(self):
+    def get_event_admin(self, return_all=True):
         """
         Get event admin info
 
@@ -440,10 +440,12 @@ class ProcessingData:
         """
 
         admin_dict = dict()
-
         if self._event_info is None:
             return admin_dict
         
+        if return_all:
+            return self._event_info
+
         # fill dictionary
         admin_dict['event_number'] = np.int64(self._event_info['event_num'])
         admin_dict['event_index'] = np.int32(self._event_info['event_index'])
@@ -453,6 +455,8 @@ class ProcessingData:
         admin_dict['event_time'] = self._event_info['event_time']
         admin_dict['run_type'] = np.int16(self._event_info['run_type'])
 
+
+        # group name 
         if self._group_name is not None:
             admin_dict['group_name'] = self._group_name
         else:
@@ -577,7 +581,7 @@ class ProcessingData:
         if not trace_indices:
             raise ValueError('Unable to get event  traces for '
                              + channel)
-
+ 
         # build array
         if '+' in channel:
             array = np.sum(self._event_traces[trace_indices,:],

@@ -283,7 +283,7 @@ class OptimumFilterTrigger:
 
             
     def find_triggers(self, thresh, thresh_ttl=None,
-                      merge_window_msec=None, merge_window_samples=None,
+                      pileup_window_msec=None, pileup_window_samples=None,
                       positive_pulses=True):
         """
         Method to detect events in the traces with an optimum amplitude
@@ -304,9 +304,9 @@ class OptimumFilterTrigger:
             are analyzed.
 
 
-        merge_window_msec : float, optional
+        pileup_window_msec : float, optional
 
-        merge_window_samples : int, optional
+        pileup_window_samples : int, optional
         
         positive_pulses : boolean, optional
             Boolean flag for which direction the pulses go in the
@@ -329,7 +329,7 @@ class OptimumFilterTrigger:
             'trigger_amplitude':list(),
             'trigger_time': list(),
             'trigger_index': list(),
-            'trigger_pileup_merge_window': list(),
+            'trigger_pileup_window': list(),
             'trigger_threshold_sigma': list(),
             'trigger_type': list()}
         
@@ -346,11 +346,11 @@ class OptimumFilterTrigger:
             )
                
         # merge window
-        merge_window = 0
-        if merge_window_msec is not None:
-            merge_window = int(merge_window_msec*self._fs/1000)
-        elif merge_window_samples is not None:
-            merge_window = merge_window_samples
+        pileup_window = 0
+        if pileup_window_msec is not None:
+            pileup_window = int(pileup_window_msec*self._fs/1000)
+        elif pileup_window_samples is not None:
+            pileup_window = pileup_window_samples
             
                 
         # find where the filtered trace has an optimum amplitude
@@ -365,7 +365,7 @@ class OptimumFilterTrigger:
         # check if any left over detected triggers are within
         # the specified pulse_range from each other
         trigger_ranges, trigger_vals = _getchangeslessthanthresh(
-            triggers, merge_window)
+            triggers, pileup_window)
         
         # set the trigger type to pulses
         rangetypes = np.zeros((len(trigger_ranges), 3), dtype=bool)
@@ -393,7 +393,7 @@ class OptimumFilterTrigger:
             tot_mask = np.logical_or(triggers_mask_ttl, pulse_mask)
             triggers = np.where(tot_mask)[0]
             trigger_ranges, trigger_vals = _getchangeslessthanthresh(
-                triggers,  merge_window)
+                triggers,  pileup_window)
             
             tot_types = np.zeros(len(tot_mask), dtype=int)
             tot_types[triggers_mask] = 1
@@ -495,7 +495,7 @@ class OptimumFilterTrigger:
                     
                 # extra parameter both TTL and pulse threshold
                 trigger_data['trigger_threshold_sigma'].extend([thresh])
-                trigger_data['trigger_pileup_merge_window'].extend([merge_window])
+                trigger_data['trigger_pileup_window'].extend([pileup_window])
 
 
         # duplicate key channel name
