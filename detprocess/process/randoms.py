@@ -94,11 +94,11 @@ class Randoms:
 
 
     
-    def acquire(self, random_rate,
+    def process(self, random_rate,
                 min_separation_msec=100,
                 output_path=None,
-                ncores=4,
-                lgc_save=True,
+                ncores=1,
+                lgc_save=False,
                 lgc_output=False):
         
         """
@@ -133,8 +133,8 @@ class Randoms:
 
         # If rate is low, we can increase minimum seperation
         # (up to 50% time between randoms) 
-        if (random_length_sec/2>min_separation_sec):
-            min_separation_sec = random_length_sec/2
+        #if (random_length_sec/2>min_separation_sec):
+        #    min_separation_sec = random_length_sec/2
 
 
         # create output directory
@@ -171,7 +171,7 @@ class Randoms:
         # case only 1 node used for processing
         if ncores == 1:
             series_list = list(self._series_dict.keys())
-            output_df = self._acquire(-1,
+            output_df = self._process(-1,
                                       series_list,
                                       random_length_sec,
                                       min_separation_sec,
@@ -190,10 +190,8 @@ class Randoms:
             node_nums = list(range(ncores+1))[1:]
 
              
-            #pool = Pool(processes=ncores)
-
             with  Pool(processes=ncores) as pool:
-                output_df_list = pool.starmap(self._acquire,
+                output_df_list = pool.starmap(self._process,
                                               zip(node_nums,
                                                   series_list_split,
                                                   repeat(random_length_sec),
@@ -220,7 +218,7 @@ class Randoms:
                 
        
     
-    def _acquire(self, node_num,
+    def _process(self, node_num,
                  series_list,
                  random_length_sec,
                  min_separation_sec,
@@ -244,9 +242,6 @@ class Randoms:
             trigger_prod_group_name = (
                 str(Path(output_processing_path).name)
             )
-
-
-            
         
         # set output dataframe to None
         # only used if dataframe returned
@@ -254,7 +249,6 @@ class Randoms:
         
         # loop series
         for series  in series_list:
-
 
             if self._verbose:
                 print('INFO' + node_num_str
@@ -266,55 +260,46 @@ class Randoms:
 
             # series num
             series_num = self._series_dict[series]['series_num']
-                 
-
-
+      
             # trigger file name
             trigger_prod_file_name = np.nan
             if lgc_save:
-                trigger_prod_file_name = ('rand_vaex_'
-                                     + series + '.hdf5')
-                
-
-            
+                trigger_prod_file_name = ('rand_'
+                                          + series + '.hdf5')
             # trace length in second:
             sample_rate = self._series_dict[series]['sample_rate']
             nb_samples = self._series_dict[series]['nb_samples']
             trace_length_sec = nb_samples/sample_rate
-
         
             # timing
-            fridge_run_start_time = self._series_dict[series]['fridge_run_start_time']
+            fridge_run_start_time = (
+                self._series_dict[series]['fridge_run_start_time'])
             series_start_time = self._series_dict[series]['series_start_time']
             group_start_time =  self._series_dict[series]['group_start_time']
             
             # nb random triggers per event
-            nb_random_triggers_per_event =  int(
+            nb_rand_trig_per_event =  int(
                 round(trace_length_sec/random_length_sec)
             )
-            if nb_random_triggers_per_event<1:
-                nb_random_triggers_per_event = 1
+            if nb_rand_trig_per_event<1:
+                nb_rand_trig_per_event = 1
 
-            # build list of trigger indices
-            nb_samples_per_chunk = nb_samples
-            if nb_random_triggers_per_event>1:
-                nb_samples_per_chunk = int(
-                    round(nb_samples/nb_random_triggers_per_event)
+            # number of samples that will be used for random sample,
+            # taking into account that we will need to add space between
+            # randoms (as well as space at the beginning/end trace)
+            min_separation_samples = int(
+                ceil(sample_rate*min_separation_sec)
+            )
+                
+            nb_samples_reduced = (
+                nb_samples - (
+                    (nb_rand_trig_per_event+1)*min_separation_samples
                 )
+            )
 
-            trigger_indices = list(
-                range(round(nb_samples_per_chunk/2), nb_samples,
-                      nb_samples_per_chunk)
-            )
-                
-                
-            # number of samples we will randomly choose trigger time
-            # from center of the random chunk (to avoid to be phase locked)
-            
-            nb_samples_from_center = int(
-                floor(sample_rate*min_separation_sec/2)
-            )
-            
+            # build list with samples  
+            samples_list =  list(range(nb_samples_reduced))
+                        
                         
             # Fraction of events that will be needed
             #  1: find randoms every events
@@ -325,7 +310,6 @@ class Randoms:
 
             # loop files
             current_event_time = None
-            nb_same_event_time = 0
             trigger_id = 0
             total_event_counter = 0
             for file_name in self._series_dict[series]['files']:
@@ -365,7 +349,7 @@ class Randoms:
 
                 adc_id = metadata['adc_list'][0]
                 metadata_adc = metadata['groups'][adc_id]
-
+                
                 # nb of events in file
                 nb_events = metadata_adc['nb_events']
                 total_event_counter += nb_events
@@ -375,16 +359,17 @@ class Randoms:
                 if nb_random_events == 0:
                     nb_random_events = 1
                     print('WARNING: Modifying random rate to have a least '
-                          ' one event per dump!')
+                          ' one event per dump! To be fixed soon...')
 
-                # event list (continuous data) and trigger list
+                # event list (all events continuous data)
+                # and random event list
                 event_list = list(range(1, nb_events+1))
-                trigger_list = event_list.copy()
+                rand_event_list = event_list.copy()
                 if nb_random_events<nb_events:
-                    trigger_list = random.sample(event_list, nb_random_events)
-                    trigger_list.sort()
+                    rand_event_list = random.sample(event_list, nb_random_events)
+                    rand_event_list.sort()
                     
-                # loop events
+                # loop all events
                 for evend_id in event_list:
 
                     dataset_metadata = (
@@ -394,40 +379,42 @@ class Randoms:
                     event_num = dataset_metadata['event_num']
                     event_time = dataset_metadata['event_time']
 
-                    # check if same event time as previous event
-                    if (current_event_time is not None
-                        and event_time == current_event_time):
-                        nb_same_event_time +=1
+                    if (current_event_time is None
+                        or event_time>current_event_time):
+                        current_event_time = event_time
                     else:
-                        nb_same_event_time = 0
-
-                    # save current event time
-                    current_event_time = event_time
-                  
-                    # skip event if needed
-                    if evend_id not in trigger_list:
+                        current_event_time += trace_length_sec
+                                                              
+                    # continue loop if  event not needed
+                    if evend_id not in rand_event_list:
                         continue
-
-                    event_time_adjusted = (
-                        event_time + nb_same_event_time*trace_length_sec
-                    )
                                     
-                    # loop triggers
-                    for ind in trigger_indices:
+                    # randomly pick trigger from indices
+                    trigger_indices = np.array(
+                        random.sample(samples_list,
+                                      nb_rand_trig_per_event)
+                    )
+                    
+                    trigger_indices = np.sort(trigger_indices)
+                    
+
+                    # add min space between randoms
+                    trigger_indices += (
+                        min_separation_samples + (
+                            np.arange(nb_rand_trig_per_event)
+                            *min_separation_samples)
+                        )
+
+                    # loop triggers and fill dataframe
+                    for trigger_index in trigger_indices:
 
                         # increment trigger id
                         trigger_id +=1
 
-                        # randomly select trigger index around
-                        # center
-                        index_range = list(
-                            range(ind-nb_samples_from_center,
-                                  ind+nb_samples_from_center)
-                        )
-
-                        trigger_index = random.choice(index_range)
+                        # trigger time
                         trigger_time = trigger_index/sample_rate
-                        event_time_trigger = int(round(event_time_adjusted + trigger_time))
+                        event_time_trigger = int(
+                            round(current_event_time+trigger_time))
                                           
                         # fill dictionary                        
                         feature_dict['series_number'].append(series_num)
@@ -477,10 +464,7 @@ class Randoms:
                       + ' done! Final rate = '
                       + str(rate)
                       + ' Hz')
-                
-
-
-                
+                                
             # save file
             if lgc_save:
 
@@ -491,8 +475,7 @@ class Randoms:
                 )
 
                 # export
-                series_df.export_hdf5(output_file,
-                                      mode='w')
+                series_df.export_hdf5(output_file, mode='w')
                 print('INFO ' + node_num_str
                       + ': Saving vaex dataframe in '
                       + output_file)

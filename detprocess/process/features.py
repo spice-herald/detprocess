@@ -586,8 +586,9 @@ class FeatureProcessing:
                         extracted_features = dict()
                         
                         # For OF algorithms, get OB base object
-                        OF_base = self._processing_data.get_OF_base(channel,
-                                                                    algorithm)
+                        OF_base = self._processing_data.get_OF_base(
+                            channel, algorithm)
+                        
                         if OF_base is not None:
                             extracted_features = extractor(OF_base, **kwargs)
                         else:
