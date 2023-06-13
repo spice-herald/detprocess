@@ -35,7 +35,8 @@ filter_file: ./filter_example.hdf5
 # ---------------------------------------
 
 all:
-
+    nb_samples: 25000
+    nb_pretrigger_samples: 12500
 
     of1x1_constrained:
         run: False
@@ -126,7 +127,7 @@ CPDv21Ge:
 # channels are enabled
 
 IrPtTESSmall,IrPtTESBig:
-    disable: True
+    disable: False
 
     of1x1_nodelay: 
         run: True
@@ -141,8 +142,10 @@ IrPtTESSmall,IrPtTESBig:
 
 # example of sum of pulses
 IrPtTESSmall+IrPtTESBig:
-  
     feature_channel: TotIrPt
+    
+    nb_samples: 25000
+    nb_pretrigger_samples: 12500
     
     of1x1_nodelay: 
         run: True
@@ -157,8 +160,11 @@ IrPtTESSmall+IrPtTESBig:
         
 # example of subtraction channel1-channel2
 IrPtTESSmall-IrPtTESBig:
-  
+
     feature_channel: SubIrPt
+
+    nb_samples: 25000
+    nb_pretrigger_samples: 12500
     
     of1x1_nodelay: 
         run: True

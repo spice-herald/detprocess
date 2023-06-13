@@ -4,6 +4,8 @@ import qetpy as qp
 import sys
 from pprint import pprint
 import pytesdaq.io as h5io
+import vaex as vx
+from glob import glob
 
 
 __all__ = [
@@ -21,8 +23,12 @@ class ProcessingData:
 
     """
 
-    def __init__(self, input_files, group_name=None,
-                 filter_file=None, verbose=True):
+    def __init__(self, raw_path, raw_files,
+                 group_name=None,
+                 trigger_files=None,
+                 trigger_group_name=None,
+                 filter_file=None,
+                 verbose=True):
         """
         Intialize data processing 
         
@@ -49,12 +55,15 @@ class ProcessingData:
         # verbose
         self._verbose = verbose
 
-        # input files
-        self._input_file_dict = input_files
-
-        # group_name
+        # input raw files/path
+        self._raw_path = raw_path
+        self._raw_files = raw_files
         self._group_name = group_name
-        
+
+        # trigger dataframe 
+        self._trigger_files = trigger_files
+        self._trigger_group_name = trigger_group_name
+                
         # filter data
         self._filter_data = None
         if filter_file is not None:
@@ -64,7 +73,14 @@ class ProcessingData:
                 print('INFO: Filter file '
                       + filter_file
                       + ' has been successfully loaded!')
-                
+
+
+        # initialize vaex dataframe
+        self._dataframe = None
+        self._is_dataframe = False
+        if self._trigger_files is not None:
+            self._is_dataframe = True
+        
         
         # initialize OF containers
         self._OF_base_objs = dict()
@@ -73,10 +89,15 @@ class ProcessingData:
         # initialize raw data reader
         self._h5 = h5io.H5Reader()
 
-        # initialize event traces and metadata 
-        self._event_traces  = None
-        self._event_info = None
-
+        # initialize current event traces and metadata 
+        self._current_traces  = None
+        self._current_admin_info = None
+        self._current_dataframe_index = -1
+        self._current_dataframe_info = None
+        self._current_event_number = None
+        self._current_series_number = None
+        self._current_trigger_index = None 
+            
         # get ADC and file info
         self._data_info = self._extract_data_info()
       
@@ -100,7 +121,7 @@ class ProcessingData:
          disctionary with processing user config (loaded
          from yaml file)
 
-        channel : str. optional
+        channel : str,  optional
           channel name
           Default: all channels from config
         
@@ -137,6 +158,7 @@ class ProcessingData:
             # loop configuration and get list of templates
             for alg, alg_config in chan_config.items():
 
+                # FIXME: only 1x1 OF 
                 if alg.find('of1x')==-1:
                     continue
                 
@@ -145,7 +167,7 @@ class ProcessingData:
                 if 'psd_tag' in alg_config.keys():
                     psd_tag = alg_config['psd_tag']
 
-                # check if OF already instantiated
+                # Initialize dictionary (to store OF object)
                 if chan not in self._OF_base_objs.keys():
                     self._OF_base_objs[chan] = dict()
 
@@ -153,7 +175,7 @@ class ProcessingData:
                 if psd_tag not in self._OF_base_objs[chan].keys():
                     
                     # get psd
-                    psd, psd_fs = self.get_psd(chan, psd_tag)
+                    psd, psd_freqs, psd_metadata = self.get_psd(chan, psd_tag)
                     
                     # coupling
                     coupling = 'AC'
@@ -162,24 +184,22 @@ class ProcessingData:
                         
                         
                     # check sample rate
-                    sample_rate = self.get_sample_rate()
-                    if (psd_fs is not None
-                        and  (psd_fs != sample_rate)):
-                        raise ValueError('Sample rate for PSD is '
-                                         + 'inconsistent with data!')
+                    psd_fs = None
+                    fs = self.get_sample_rate()
+                    if (psd_metadata is not None
+                        and 'sample_rate' in psd_metadata):
+                        psd_fs = psd_metadata['sample_rate']
+                    
+                        if (psd_fs is not None
+                            and  (psd_fs != fs)):
+                            raise ValueError('Sample rate for PSD is '
+                                             + 'inconsistent with data!')
                        
-
-                    # get pretrigger samples
-                    pretrigger_samples = self.get_nb_samples_pretrigger()
-
-
                     # instantiate
                     self._OF_base_objs[chan][psd_tag] = qp.OFBase(
-                        sample_rate,
-                        pretrigger_samples=pretrigger_samples,
+                        fs,
                         channel_name=chan
                     )
-
 
                     # set psd
                     self._OF_base_objs[chan][psd_tag].set_psd(
@@ -188,7 +208,8 @@ class ProcessingData:
                         psd_tag=psd_tag)
                         
                                                 
-
+                # Add template
+                
                 # check if there are template tag(s)
                 tag_list = list()
                 for key in alg_config.keys():
@@ -205,10 +226,14 @@ class ProcessingData:
                     integralnorm = alg_config['integralnorm']
                         
                 for tag in tag_list:
-                    template_list = self._OF_base_objs[chan][psd_tag].template_tags()
+                    template_list = (
+                        self._OF_base_objs[chan][psd_tag].template_tags()
+                    )
                     if tag not in template_list:
                         # get template from filter file
-                        template = self.get_template(chan, tag)
+                        template, template_metadata = (
+                            self.get_template(chan, tag)
+                        )
 
                         #  add
                         self._OF_base_objs[chan][psd_tag].add_template(
@@ -216,8 +241,21 @@ class ProcessingData:
                             template_tag=tag,
                             integralnorm=integralnorm
                         )
-                            
+
+
+                        # pretrigger
+                        pretrigger_samples = None
+                        if 'pretrigger_samples' in template_metadata:
+                            pretrigger_samples = (
+                                template_metadata['pretrigger_samples']
+                            )
+
+                        # FIXME: need to modify QETpy to add parameter
+                        self._OF_base_objs[chan][psd_tag]._pretrigger_samples = (
+                            pretrigger_samples
+                        )
                         
+                                          
                 # save algorithm name and psd/signal tag
                 if chan not in self._OF_algorithms:
                     self._OF_algorithms[chan] = dict()
@@ -227,7 +265,9 @@ class ProcessingData:
             if chan in self._OF_base_objs.keys():
                 for tag in self._OF_base_objs[chan].keys():
                     self._OF_base_objs[chan][tag].calc_phi()
-                        
+
+
+                    
     def get_OF_base(self, channel, alg_name):
         """
         Get OF object 
@@ -304,7 +344,16 @@ class ProcessingData:
                              + '" found in filter file!'
                              + ' for channel ' + channel)
 
-        return self._filter_data[channel][template_name].values
+
+        template = self._filter_data[channel][template_name].values
+        
+        # metadata
+        metadata = None
+        metadata_key = template_name + '_metadata'
+        if metadata_key in self._filter_data[channel]:
+            metadata = self._filter_data[channel][metadata_key]
+
+        return template, metadata
 
 
     
@@ -355,7 +404,14 @@ class ProcessingData:
         # get values
         psd_vals = self._filter_data[channel][psd_name].values
         psd_freqs = self._filter_data[channel][psd_name].index
-        return psd_vals, psd_freqs
+
+        # metadata
+        metadata = None
+        metadata_key = psd_name + '_metadata'
+        if metadata_key in self._filter_data[channel]:
+            metadata = self._filter_data[channel][metadata_key]
+            
+        return psd_vals, psd_freqs, metadata
     
 
 
@@ -376,33 +432,115 @@ class ProcessingData:
 
         """
 
-        file_list = self._input_file_dict[series]
+                
+        # open/set files
+
+        # case dataframe
+        if self._is_dataframe:
+            file_list = self._trigger_files[series]
+            self._dataframe = vx.open_many(file_list)
+            self._current_dataframe_index = -1
+        else:
+            file_list = self._raw_files[series]
+            self._h5.set_files(file_list)
         
-        # Set files
-        self._h5.set_files(file_list)
-        
-    
+
+    def get_raw_path(self):
+        """
+        """
+        return self._raw_path
+
+            
         
     def read_next_event(self, channels=None):
         """
         Read next event
         """
 
-        self._event_traces, self._event_info = self._h5.read_next_event(
-            detector_chans=channels,
-            adctoamp=True,
-            include_metadata=True
-        )    
+        if not self._is_dataframe:
+            self._current_traces, self._current_admin_info = (
+                self._h5.read_next_event(
+                    detector_chans=channels,
+                    adctoamp=True,
+                    include_metadata=True
+                )
+            )
+
+        else:
+
+            # increment event pointer
+            # and get event info
+            self._current_dataframe_index +=1
+
+            # check if still some events
+            if self._current_dataframe_index >= len(self._dataframe):
+                self._current_traces = []
+                return False
+
+            # get record  
+            self._current_dataframe_info = self._dataframe.to_records(
+                index=self._current_dataframe_index
+            )
+
+            # get event/series number, and trigger index
+            event_number = self._current_dataframe_info['event_number']
+            dump_number = self._current_dataframe_info['dump_number']
+            series_number = self._current_dataframe_info['series_number']
+            trigger_index = self._current_dataframe_info['trigger_index']
+            group_name = self._current_dataframe_info['group_name']
+
+            # event index
+            event_index = int(event_number%100000)
+                     
+            # check if new event needs to be loaded
+            if (self._current_event_number is None
+                or self._current_series_number is None
+                or event_number!=self._current_event_number
+                or series_number!= self._current_series_number):
 
 
+                # Read new file if needed
+                if (series_number!=self._current_series_number
+                    or dump_number!=self._current_dump_number):
+                                    
+                    # file name
+                    file_search = (
+                        self._raw_path
+                        + '/' + group_name
+                        + '/*_' + h5io.extract_series_name(series_number)
+                        + '_F' + str(dump_number).zfill(4) + '.hdf5'
+                    )            
+
+                    file_list = glob(file_search)
+                    if len(file_list) != 1:
+                        raise ValueError('ERROR: Unable to get raw data file. '
+                                         + 'Something went wrong...')
+                    self._h5.set_files(file_list[0])
+
+                # read
+                self._current_traces, self._current_admin_info = (
+                    self._h5.read_single_event(
+                        event_index,
+                        detector_chans=channels,
+                        adctoamp=True,
+                        include_metadata=True
+                    )
+                )
+
+            # update info
+            self._current_event_number = event_number
+            self._current_series_number = series_number
+            self._current_dump_number = dump_number
+            self._current_trigger_index = trigger_index
+                             
         # if end of file, traces will be empty
-        if self._event_traces.size != 0:
+        if self._current_traces.size != 0:
             return True
         else:
             return False
         
 
-    def update_signal_OF(self):
+    def update_signal_OF(self, config=None):
         """
         Update OF base object with traces
 
@@ -418,13 +556,33 @@ class ProcessingData:
         
         # loop OF and update traces
         for channel, channel_dict in self._OF_base_objs.items():
-            trace = self.get_channel_trace(channel)
+
+            # get trace length / pre-trigger
+            nb_samples = None
+            nb_pretrigger_samples = None
+            
+            if (config is not None
+                and channel in config):
+
+                if 'nb_samples' in config[channel]:
+                    nb_samples = config[channel]['nb_samples']
+                if 'nb_pretrigger_samples' in config[channel]:
+                    nb_pretrigger_samples = (
+                        config[channel]['nb_pretrigger_samples']
+                    )
+                    
+            trace = self.get_channel_trace(
+                channel,
+                nb_samples=nb_samples,
+                nb_pretrigger_samples=nb_pretrigger_samples
+            )
+
             for tag, OF_base in channel_dict.items():
                 OF_base.update_signal(trace)
                 
                 
 
-    def get_event_admin(self, return_all=True):
+    def get_event_admin(self, return_all=False):
         """
         Get event admin info
 
@@ -440,20 +598,34 @@ class ProcessingData:
         """
 
         admin_dict = dict()
-        if self._event_info is None:
+
+        # check if event has been read
+        if self._current_admin_info is None:
             return admin_dict
+
+        # case dataframe
+        if self._is_dataframe:
+            if self._current_dataframe_info is None:
+                return admin_dict
+            else:
+                for key, val in self._current_dataframe_info.items():
+                    if val is None:
+                        val = np.nan
+                    admin_dict[key] = val     
+                return admin_dict
         
+        # return all        
         if return_all:
-            return self._event_info
+            return self._current_admin_info
 
         # fill dictionary
-        admin_dict['event_number'] = np.int64(self._event_info['event_num'])
-        admin_dict['event_index'] = np.int32(self._event_info['event_index'])
-        admin_dict['dump_number'] = np.int16(self._event_info['dump_num'])
-        admin_dict['series_number'] = np.int64(self._event_info['series_num'])
-        admin_dict['event_id'] = np.int32(self._event_info['event_id'])
-        admin_dict['event_time'] = self._event_info['event_time']
-        admin_dict['run_type'] = np.int16(self._event_info['run_type'])
+        admin_dict['event_number'] = np.int64(self._current_admin_info['event_num'])
+        admin_dict['event_index'] = np.int32(self._current_admin_info['event_index'])
+        admin_dict['dump_number'] = np.int16(self._current_admin_info['dump_num'])
+        admin_dict['series_number'] = np.int64(self._current_admin_info['series_num'])
+        admin_dict['event_id'] = np.int32(self._current_admin_info['event_id'])
+        admin_dict['event_time'] = self._current_admin_info['event_time']
+        admin_dict['run_type'] = np.int16(self._current_admin_info['run_type'])
 
 
         # group name 
@@ -463,23 +635,23 @@ class ProcessingData:
             admin_dict['group_name'] = np.nan
             
         # trigger info
-        if 'trigger_type' in self._event_info:
-            admin_dict['trigger_type'] = np.int16(self._event_info['trigger_type'])
+        if 'trigger_type' in self._current_admin_info:
+            admin_dict['trigger_type'] = np.int16(self._current_admin_info['trigger_type'])
         else:
-            data_mode =  self._event_info['data_mode']
+            data_mode =  self._current_admin_info['data_mode']
             data_modes = ['cont', 'trig-ext', 'rand', 'threshold']
             if  data_mode  in data_modes:
                 admin_dict['trigger_type'] = data_modes.index(data_mode)+1
             else:
                 admin_dict['trigger_type'] = np.nan
         
-        if  'trigger_amplitude' in self._event_info:
-            admin_dict['trigger_amplitude'] = self._event_info['trigger_amplitude']
+        if  'trigger_amplitude' in self._current_admin_info:
+            admin_dict['trigger_amplitude'] = self._current_admin_info['trigger_amplitude']
         else:
             admin_dict['trigger_amplitude'] = np.nan
 
-        if  'trigger_time' in self._event_info:
-            admin_dict['trigger_time'] = self._event_info['trigger_time']
+        if  'trigger_time' in self._current_admin_info:
+            admin_dict['trigger_time'] = self._current_admin_info['trigger_time']
         else:
             admin_dict['trigger_time'] = np.nan 
 
@@ -513,8 +685,8 @@ class ProcessingData:
 
 
         # check info filled
-        if (self._event_info is None or
-            'detector_config' not in self._event_info):
+        if (self._current_admin_info is None or
+            'detector_config' not in self._current_admin_info):
             return admin_dict
 
         
@@ -532,15 +704,17 @@ class ProcessingData:
         # fill dictionary
         for chan in channels:
             settings_dict['tes_bias_' + chan] =  (
-                self._event_info['detector_config'][chan]['tes_bias'])
+                self._current_admin_info['detector_config'][chan]['tes_bias'])
             settings_dict['output_gain_' + chan] =  (
-                self._event_info['detector_config'][chan]['output_gain'])
+                self._current_admin_info['detector_config'][chan]['output_gain'])
             
         return settings_dict
 
      
                 
-    def get_channel_trace(self, channel):
+    def get_channel_trace(self, channel,
+                          nb_samples=None,
+                          nb_pretrigger_samples=None):
         """
         Get trace (s)
 
@@ -574,31 +748,49 @@ class ProcessingData:
             channels = [channel]
 
         # get indicies
-        trace_indices = list()
+        channel_indices = list()
         for chan in channels:
-            trace_indices.append(self._event_info['detector_chans'].index(chan))
+            channel_indices.append(
+                self._current_admin_info['detector_chans'].index(chan)
+            )
 
-        if not trace_indices:
+        if not channel_indices:
             raise ValueError('Unable to get event  traces for '
                              + channel)
  
         # build array
         if '+' in channel:
-            array = np.sum(self._event_traces[trace_indices,:],
+            array = np.sum(self._current_traces[channel_indices,:],
                            axis = 0)
         elif '|' in channel:
-            array =  self._event_traces[trace_indices,:]
+            array =  self._current_traces[channel_indices,:]
             
         elif '-' in channel:
-            if len(trace_indices) != 2:
+            if len(channel_indices) != 2:
                 raise ValueError('ERROR: Unable to calculate subtracted pulse. '
                                  + ' Two channels needed. Found '
-                                 + str(len(trace_indices)) + ' traces')
-            array = (self._event_traces[trace_indices[0],:]
-                     -self._event_traces[trace_indices[1],:])
+                                 + str(len(channel_indices)) + ' traces')
+            array = (self._current_traces[channel_indices[0],:]
+                     -self._current_traces[channel_indices[1],:])
         else:
-            array =  self._event_traces[trace_indices[0],:]
+            array =  self._current_traces[channel_indices[0],:]
 
+        # extract trigger
+        if self._current_trigger_index is not None:
+            
+            if (nb_samples is None
+                or nb_pretrigger_samples is None):
+                raise ValueError('ERROR: Unknow number of '
+                                 + '(pretrigger) samples ')
+
+            # min/max index
+            trace_min_index = (self._current_trigger_index
+                               -nb_pretrigger_samples)
+            trace_max_index = trace_min_index + nb_samples
+
+            array = array[...,trace_min_index:trace_max_index]
+                   
+            
         return array
 
     def get_facility(self):
@@ -715,10 +907,10 @@ class ProcessingData:
 
         data_info = None
         
-        if not self._input_file_dict:
+        if not self._raw_files:
             raise ValueError('No file available to get sample rate!')
 
-        for series, files in self._input_file_dict.items():
+        for series, files in self._raw_files.items():
             metadata = self._h5.get_metadata(file_name=files[0],
                                              include_dataset_metadata=False)
 

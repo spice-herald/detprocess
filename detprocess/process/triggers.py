@@ -40,7 +40,9 @@ class TriggerProcessing:
     """
 
     def __init__(self, raw_path, config_file,
-                 series=None, verbose=True):
+                 series=None,
+                 processing_id=None,
+                 verbose=True):
         """
         Intialize data processing 
         
@@ -82,6 +84,9 @@ class TriggerProcessing:
 
         # display
         self._verbose = verbose
+        
+        # processing id
+        self._processing_id = processing_id
 
         # extract input file list
         input_data_dict, input_base_path, group_name = (
@@ -116,14 +121,13 @@ class TriggerProcessing:
         if not self._trigger_channels:
             raise ValueError('No trigger channels to be processed! ' +
                              'Check configuration...')
-                                               
-
+        
         
     def process(self, ntriggers=-1,
-                processing_id=None,
-                lgc_save=True,
+                lgc_save=False,
                 lgc_output=False,
-                output_path=None,
+                save_path=None,
+                output_group_name=None,
                 ncores=1,
                 memory_limit='2GB'):
         
@@ -137,13 +141,6 @@ class TriggerProcessing:
            number of events to be processed
            if not all events, requires ncores = 1
            Default: all available (=-1)
-            
-        processing_id : str, optional
-            an optional processing name. This is used to be build 
-            output subdirectory name and is saved as a feature in DetaFrame 
-            so it can then be used later during 
-            analysis to make a cut on a specific processing when mutliple 
-            datasets/processing are added together.
 
         lgc_save : bool, optional
            if True, save dataframe in hdf5 files
@@ -152,7 +149,7 @@ class TriggerProcessing:
            so not all events may be processed)
            Default: True
 
-        output_path : str, optional
+        output_group_path : str, optional
            base directory where output group will be saved
            default: same base path as input data
     
@@ -179,25 +176,25 @@ class TriggerProcessing:
                 print('INFO: Changing number cores to '
                       + str(ncores) + ' (maximum allowed)')
 
-        # processing ID 
-        self._processing_id = processing_id
-                
         # create output directory
         output_group_path = None
+        output_series_num = None
         
         if lgc_save:
-            if  output_path is None:
-                output_path  = self._input_base_path + '/processed'
+            if  save_path is None:
+                save_path  = self._input_base_path + '/processed'
 
             # add group name
-            if self._input_group_name not in output_path:
-                output_path += '/' + self._input_group_name
-            
-            output_group_path = self._create_output_directory(
-                output_path,
-                self._get_facility(self._input_data_dict)
+            if self._input_group_name not in save_path:
+                save_path += '/' + self._input_group_name
+                
+            output_group_path, output_series_num  = (
+                self._create_output_directory(
+                    save_path,
+                    self._get_facility(self._input_data_dict),
+                    output_group_name=output_group_name,
+                )
             )
-            
             if self._verbose:
                 print(f'INFO: Processing output group path: {output_group_path}')
 
@@ -211,11 +208,12 @@ class TriggerProcessing:
         
         # case only 1 node used for processing
         if ncores == 1:
-            output_df = self._process(-1,
+            output_df = self._process(1,
                                       self._series_list,
                                       ntriggers,
                                       lgc_save,
                                       lgc_output,
+                                      output_series_num,
                                       output_group_path,
                                       memory_limit)
 
@@ -241,6 +239,7 @@ class TriggerProcessing:
                                               repeat(ntriggers),
                                               repeat(lgc_save),
                                               repeat(lgc_output),
+                                              repeat(output_series_num),
                                               repeat(output_group_path),
                                               repeat(memory_limit)))
             pool.close()
@@ -267,6 +266,7 @@ class TriggerProcessing:
     def _process(self, node_num,
                  series_list, ntriggers,
                  lgc_save, lgc_output,
+                 output_series_num,
                  output_group_path,
                  memory_limit):
         """
@@ -315,6 +315,7 @@ class TriggerProcessing:
                 
         # instantiate process_data
         processing_data_inst = ProcessingData(
+            self._input_base_path,
             self._input_data_dict,
             group_name=self._input_group_name,
             filter_file=self._filter_file,
@@ -334,19 +335,22 @@ class TriggerProcessing:
             if 'template_tag' in trig_data:
                 template_tag = trig_data['template_tag']
             
-            template = processing_data_inst.get_template(
-                trig_chan, tag=template_tag)   
-
-                      
+            template, template_metadata = (
+                processing_data_inst.get_template(trig_chan,
+                                                  tag=template_tag)   
+            )
+                               
             # get psd
             psd_tag = 'default'
             if 'psd_tag' in trig_data:
                 psd_tag = trig_data['psd_tag']
 
-            psd, psd_freqs = processing_data_inst.get_psd(
-                trig_chan, tag=psd_tag)
-            
-          
+            psd, psd_freqs, psd_metadata = (
+                processing_data_inst.get_psd(trig_chan,
+                                             tag=psd_tag)
+            )
+
+                    
             # trigger name
             trigger_name = trig_chan
             if 'trigger_name' in trig_data:
@@ -391,10 +395,20 @@ class TriggerProcessing:
 
             # output file name base (if saving data)
             output_base_file = None
+                    
             if lgc_save:
+
+                file_prefix = 'threshtrig'
+                if self._processing_id is not None:
+                    file_prefix = self._processing_id +'_' + file_prefix 
+                    
+                series_name = h5io.extract_series_name(
+                    int(output_series_num+node_num)
+                )
+
                 output_base_file = (output_group_path
-                                    + '/threshtrig'
-                                    + '_' + series)
+                                    + '/' + file_prefix
+                                    + '_' + series_name)
 
        
             # initialize dump counter
@@ -522,7 +536,11 @@ class TriggerProcessing:
                 # -----------------------
                 # process triggers
                 # -----------------------
-               
+
+                # clear event
+                evtbuilder_inst.clear_event()
+
+                
                 # loop trigger channels
                 for trig_chan, trig_data in self._trigger_config.items():
                     
@@ -531,6 +549,7 @@ class TriggerProcessing:
                     if 'trigger_name' in trig_data.keys():
                         trigger_name = trig_data['trigger_name']
 
+                                      
                     # get threshold
                     threshold = None
                     if 'threshold_sigma' in trig_data.keys():
@@ -586,9 +605,7 @@ class TriggerProcessing:
                     
                 # get event metadata
                 event_info = processing_data_inst.get_event_admin()
-                
-
-
+              
                 # build event
                 evtbuilder_inst.build_event(
                     event_info,
@@ -600,14 +617,14 @@ class TriggerProcessing:
 
                 # get trigger data
                 event_df = evtbuilder_inst.get_event_df()
-                nb_triggers = len(event_df)
 
-                # if no triggers -> next event
-                if nb_triggers==0:
+                # check if triggers
+                if (event_df is None or len(event_df)==0):
                     continue
-                
-                
+
+                             
                 # increment counter
+                nb_triggers = len(event_df)
                 trigger_counter += nb_triggers
                 
 
@@ -917,7 +934,8 @@ class TriggerProcessing:
                 filter_file, trigger_channels)
 
 
-    def _create_output_directory(self, base_path, facility):
+    def _create_output_directory(self, base_path, facility,
+                                 output_group_name=None):
         """
         Create output directory 
 
@@ -937,19 +955,28 @@ class TriggerProcessing:
 
         """
 
+
+        # create series name/number
         now = datetime.now()
         series_day = now.strftime('%Y') +  now.strftime('%m') + now.strftime('%d') 
         series_time = now.strftime('%H') + now.strftime('%M')
         series_name = ('I' + str(facility) +'_D' + series_day + '_T'
                        + series_time + now.strftime('%S'))
-        
-        # prefix
-        prefix = 'trigger'
-        if self._processing_id is not None:
-            prefix = self._processing_id + '_trigger'
-        output_dir = base_path + '/' + prefix + '_' + series_name
-        
-        
+        series_num = int(h5io.extract_series_num(series_name))
+                 
+        # build full path
+        if output_group_name is None:
+            prefix = 'trigger'
+            if self._processing_id is not None:
+                prefix = self._processing_id + '_trigger'
+            output_dir = base_path + '/' + prefix + '_' + series_name
+        else:
+            if output_group_name not in base_path:
+                output_dir = base_path + '/' + output_group_name
+            else:
+                output_dir = base_path
+                
+        # create directory
         if not os.path.isdir(output_dir):
             try:
                 os.makedirs(output_dir)
@@ -957,8 +984,10 @@ class TriggerProcessing:
             except OSError:
                 raise ValueError('\nERROR: Unable to create directory "'+ output_dir  + '"!\n')
     
-        return output_dir
-           
+        return output_dir, series_num
+
+
+    
 
     def _split_series(self, ncores):
         """

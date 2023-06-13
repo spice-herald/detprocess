@@ -15,6 +15,7 @@ from datetime import datetime
 import stat
 import time
 import astropy
+from humanfriendly import parse_size
 
 from detprocess.core.algorithms  import FeatureExtractors
 from detprocess.process.processing_data  import ProcessingData
@@ -42,7 +43,9 @@ class FeatureProcessing:
     """
 
     def __init__(self, raw_path, config_file,
-                 external_file=None, series=None,
+                 trigger_dataframe_path=None,
+                 series=None,
+                 external_file=None,
                  processing_id=None,
                  verbose=True):
         """
@@ -52,9 +55,9 @@ class FeatureProcessing:
         ---------
     
         raw_path : str or list of str 
-           raw data group directory OR full path to HDF5  file 
-           (or list of files). Only a single raw data group 
-           allowed 
+           data group directory containing data OR full path to HDF5  file 
+           (or list of files). Data can be either raw data or 
+           vaex dataframes
             
         config_file : str 
            Full path and file name to the YAML settings for the
@@ -91,28 +94,47 @@ class FeatureProcessing:
         None
         """
 
+        # processing id
+        self._processing_id = processing_id
+        
         # display
         self._verbose = verbose
 
-        # processing ID 
-        self._processing_id = processing_id
-
-        # extract input file list
-        input_file_dict, input_base_path, group_name = (
-            self._get_file_list(raw_path, series=series)
+        # Raw file list
+        raw_files, raw_path, group_name = (
+            self._get_file_list(raw_path,
+                                series=series)
         )
-
-        if not input_file_dict:
-            raise ValueError('No files were found! Check configuration...')
-
-        self._input_base_path = input_base_path
-        self._series_list = list(input_file_dict.keys())
-                  
+        if not raw_files:
+            raise ValueError('No raw data files were found! '
+                             + 'Check configuration...')
+        self._series_list = list(raw_files.keys())
+        self._input_group_name = group_name
+        
+        # Dataframe file list
+        trigger_files = None
+        trigger_path = None
+        trigger_group_name = None
+        
+        if trigger_dataframe_path is not None:
+            
+            trigger_files, trigger_path, trigger_group_name = (
+                self._get_file_list(trigger_dataframe_path,
+                                    is_raw=False,
+                                    series=series)
+            )
+            if not trigger_files:
+                raise ValueError('No dataframe files were found! '
+                                 + 'Check configuration...')
+            
+            self._series_list = list(trigger_files.keys())
+       
+            
         # processing configuration
         if not os.path.exists(config_file):
             raise ValueError('Configuration file "' + config_file
                              + '" not found!')
-        available_channels = self._get_channel_list(input_file_dict)
+        available_channels = self._get_channel_list(raw_files)
         config, filter_file, selected_channels = (
             self._read_config(config_file, available_channels)
         )
@@ -138,43 +160,49 @@ class FeatureProcessing:
                       + self._external_file)
                 
         # get list of available features and check for duplicate
-        self._algorithm_list, self._ext_algorithm_list = self._extract_algorithm_list()
+        self._algorithm_list, self._ext_algorithm_list = (
+            self._extract_algorithm_list()
+        )
 
-
-
-        # instantiate processing data 
-        self._processing_data = ProcessingData(input_file_dict,
-                                               group_name=group_name,
-                                               filter_file=filter_file,
-                                               verbose=verbose)
+        # instantiate processing data
+        self._processing_data = ProcessingData(
+            raw_path,
+            raw_files,
+            group_name=group_name,
+            trigger_files=trigger_files,
+            trigger_group_name =trigger_group_name,
+            filter_file=filter_file,
+            verbose=verbose)
                                 
 
         
-    def process(self, nevents=-1,
-                save_hdf5=True, output_path=None,
+    def process(self,
+                nevents=-1,
+                lgc_save=False, save_path=None,
+                lgc_output=False, 
                 ncores=1,
-                memory_limit_MB=2000):
+                memory_limit='2GB'):
         
         """
         Process data 
         
         Parameters
         ---------
-
+       
         nevents : int, optional
            number of events to be processed
            if not all events, requires ncores = 1
-           Default: all available (=-1)
-            
-
-        save_hdf5 : bool, optional
+           Default: all available (=-1).
+        
+        lgc_save : bool, optional
            if True, save dataframe in hdf5 files
-           (dataframe not returned)
-           if False, return dataframe (memory limit applies
-           so not all events may be processed)
-           Default: True
+           Default: False
 
-        output_path : str, optional
+        lgc_output : bool, optional
+           if True, return dataframe 
+           Default: False
+
+        save_path : str, optional
            base directory where output group will be saved
            default: same base path as input data
     
@@ -182,14 +210,13 @@ class FeatureProcessing:
            number of cores that will be used for processing
            default: 1
 
-        memory_limit_MB : float, optionl
-           memory limit per file  in MB
-           (and/or if saved_hdf5=False, max dataframe size)
-        
+        memory_limit : str or float, optional
+           memory limit per file, example '2GB', '2MB'
+           if float, then unit is byte
 
         """
 
-
+             
         # check input
         if (ncores>1 and nevents>-1):
             raise ValueError('ERROR: Multi cores processing only allowed when '
@@ -201,18 +228,27 @@ class FeatureProcessing:
             if self._verbose:
                 print('INFO: Changing number cores to '
                       + str(ncores) + ' (maximum allowed)')
-
                 
         # create output directory
         output_group_path = None
+        output_series_num = None
         
-        if save_hdf5:
-            if  output_path is None:
-                output_path  = self._input_base_path
-            
-            output_group_path = self._create_output_directory(
-                output_path,
-                self._processing_data.get_facility()
+        if lgc_save:
+            if  save_path is None:
+                save_path  = self._processing_data.get_raw_path()
+                if '/raw' in save_path:
+                    save_path = save_path.replace('/raw','/processed')
+
+            # add group name
+            if self._input_group_name not in save_path:
+                save_path += '/' + self._input_group_name
+
+                    
+            output_group_path, output_series_num = (
+                self._create_output_directory(
+                    save_path,
+                    self._processing_data.get_facility()
+                )
             )
             
             if self._verbose:
@@ -226,19 +262,23 @@ class FeatureProcessing:
         
         self._processing_data.instantiate_OF_base(self._processing_config)
         
-                
+        # convert memory usage in bytes
+        if isinstance(memory_limit, str):
+            memory_limit = parse_size(memory_limit)   
 
         # initialize output
         output_df = None
         
         # case only 1 node used for processing
         if ncores == 1:
-            output_df = self._process(-1,
+            output_df = self._process(1,
                                       self._series_list,
                                       nevents,
-                                      save_hdf5,
+                                      lgc_save,
+                                      lgc_output,
+                                      output_series_num,
                                       output_group_path,
-                                      memory_limit_MB)
+                                      memory_limit)
 
         else:
             
@@ -247,7 +287,7 @@ class FeatureProcessing:
             
             # for multi-core processing, we need to decrease the
             # max memory so it fits in RAM
-            memory_limit_MB /= ncores
+            memory_limit /= ncores
 
               
             # lauch pool processing
@@ -260,9 +300,11 @@ class FeatureProcessing:
                                           zip(node_nums,
                                               series_list_split,
                                               repeat(nevents),
-                                              repeat(save_hdf5),
+                                              repeat(lgc_save),
+                                              repeat(lgc_output),
+                                              repeat(output_series_num),
                                               repeat(output_group_path),
-                                              repeat(memory_limit_MB)))
+                                              repeat(memory_limit)))
             pool.close()
             pool.join()
 
@@ -277,19 +319,17 @@ class FeatureProcessing:
             print('INFO: Feature processing done!') 
                 
         
-        if not save_hdf5:
+        if lgc_output:
             return output_df 
         
-            
-
-        
-
-            
-        
+           
     def _process(self, node_num,
                  series_list, nevents,
-                 save_hdf5, output_group_path,
-                 memory_limit_MB):
+                 lgc_save,
+                 lgc_output,
+                 output_series_num,
+                 output_group_path,
+                 memory_limit):
         """
         Process data
         
@@ -307,14 +347,14 @@ class FeatureProcessing:
            if not all events, requires ncores = 1
            Default: all available (=-1)
         
-        save_hdf5 : bool, optional
+        lgc_save : bool, optional
            if True, save dataframe in hdf5 files
            (dataframe not returned)
            if False, return dataframe (memory limit applies
            so not all events may be processed)
            Default: True
 
-        output_path : str, optional
+        save_path : str, optional
            base directory where output feature file will be saved
            default: same base path as input data
     
@@ -322,7 +362,7 @@ class FeatureProcessing:
            number of cores that will be used for processing
            default: 1
 
-        memory_limit_MB : float, optionl
+        memory_limit : float, optionl
            memory limit per file 
            (and/or if return_df=True, max dataframe size)
    
@@ -365,15 +405,18 @@ class FeatureProcessing:
 
             # output file name base (if saving data)
             output_base_file = None
-            if save_hdf5:
+            if lgc_save:
                 
                 file_prefix = 'feature'
                 if self._processing_id is not None:
                     file_prefix = self._processing_id + '_feature'
-                       
+                series_name = h5io.extract_series_name(
+                    int(output_series_num+node_num)
+                )
+                    
                 output_base_file = (output_group_path
                                     + '/' + file_prefix
-                                    + '_' + series)
+                                    + '_' + series_name)
 
        
             # initialize dump counter
@@ -391,8 +434,8 @@ class FeatureProcessing:
                 nevents_limit_reached = (nevents>0 and event_counter>=nevents)
                 
                 # flag memory limit reached
-                memory_usage_MB = feature_df.memory_usage(deep=True).sum()/1e6
-                memory_limit_reached =  memory_usage_MB  >= memory_limit_MB
+                memory_usage = feature_df.memory_usage(deep=True).sum()
+                memory_limit_reached =  memory_usage  >= memory_limit
                 
 
                 # display
@@ -402,7 +445,7 @@ class FeatureProcessing:
                         print('INFO' + node_num_str
                               + ': Local number of events = '
                               + str(event_counter)
-                              + ' (memory = ' + str(memory_usage_MB) + ' MB)')
+                              + ' (memory = ' + str(memory_usage/1e6) + ' MB)')
                         
                 # -----------------------
                 # Read next event
@@ -427,13 +470,11 @@ class FeatureProcessing:
                     or memory_limit_reached):
                     
                     # save file if needed
-                    if save_hdf5:
+                    if lgc_save:
                         
                         # build hdf5 file name
-                        dump_str = '_F'
-                        for ii in range(0,4-len(str(dump_couter))):
-                            dump_str += '0'
-                        dump_str += str(dump_couter)
+                        dump_str = str(dump_couter)
+                        dump_str ='_F' + dump_str.zfill(4)
                         file_name =  output_base_file +  dump_str + '.hdf5'
                     
                         # convert to vaex
@@ -456,20 +497,24 @@ class FeatureProcessing:
                     # case maximum number of events reached
                     # -> processing done!
                     if nevents_limit_reached:
-                        print('INFO' + node_num_str + ': Requested nb events reached. '
-                                      + 'Stopping processing!')
+                        print('INFO' + node_num_str
+                              + ': Requested nb events reached. '
+                              + 'Stopping processing!')
                         return feature_df
 
                     # case memory limit reached and not saving file
                     # -> processing done
                     if memory_limit_reached:
-                        print('INFO' + node_num_str + ': Memory limit reached!')
-                        if save_hdf5:
-                            print('INFO' + node_num_str + ': Starting a new  dump for series '
+                        print('INFO' + node_num_str
+                              + ': Memory limit reached!')
+                        if lgc_save:
+                            print('INFO' + node_num_str
+                                  + ': Starting a new  dump for series '
                                   + series)
                         else:
                             if success:
-                                print('WARNING' + node_num_str + ': Stopping procssing. '
+                                print('WARNING' + node_num_str
+                                      + ': Stopping procssing. '
                                       +' Not all events have been processed!')
                             return feature_df
 
@@ -492,7 +537,7 @@ class FeatureProcessing:
 
                 # update signal trace in OF base objects
                 # -> calculate FFTs, etc.
-                self._processing_data.update_signal_OF()
+                self._processing_data.update_signal_OF(self._processing_config)
 
               
                 # Processing id   
@@ -523,12 +568,22 @@ class FeatureProcessing:
                     if not isinstance(algorithms, dict):
                         continue
 
-
                     # check if feature channel name
                     # is changed by user
                     feature_channel = channel
-                    if 'feature_channel' in algorithms:
+                    if 'feature_channel' in algorithms.keys():
                         feature_channel = algorithms['feature_channel']
+
+                    # number of samples
+                    nb_samples = self._processing_data.get_nb_samples()
+                    if 'nb_samples' in algorithms.keys():
+                        nb_samples = algorithms['nb_samples']
+                    nb_pretrigger_samples = (
+                        self._processing_data.get_nb_samples_pretrigger()
+                    )
+                    if 'nb_pretrigger_samples' in algorithms.keys():
+                        nb_pretrigger_samples = algorithms['nb_pretrigger_samples']
+                    
                         
                     # loop algorithms to extact features
                     for algorithm, algorithm_params in algorithms.items():
@@ -537,6 +592,11 @@ class FeatureProcessing:
                         # skip if "feature_channel"
                         if algorithm=='feature_channel':
                             continue
+
+                        # skip if nb samples
+                        if (algorithm=='nb_samples'
+                            or  algorithm=='nb_pretrigger_samples'):
+                            continue
                         
                         # skip if algorithm disable
                         if not algorithm_params['run']:
@@ -544,9 +604,18 @@ class FeatureProcessing:
                         
                         # check if derived algorithm
                         base_algorithm = algorithm
-                        if 'base_algorithm' in algorithm_params:
+                        if 'base_algorithm' in algorithm_params.keys():
                             base_algorithm = algorithm_params['base_algorithm']
 
+
+                        # check if different number of samples
+                        if 'nb_samples' in algorithm_params.keys():
+                            nb_samples = algorithms['nb_samples']
+                        if 'nb_pretrigger_samples' in algorithm_params.keys():
+                            nb_pretrigger_samples = (
+                                algorithms['nb_pretrigger_samples']
+                            )
+                                                  
                      
                         # get feature extractor
                         extractor = None
@@ -569,11 +638,11 @@ class FeatureProcessing:
 
                         # add various parameters that may be needed
                         # by the algoithm
-                        kwargs['fs'] = self._processing_data.get_sample_rate()
-                        kwargs['nb_samples_pretrigger'] = (
-                            self._processing_data.get_nb_samples_pretrigger()-1
+                        kwargs['fs'] = (
+                            self._processing_data.get_sample_rate()
                         )
-                        kwargs['nb_samples'] = self._processing_data.get_nb_samples()
+                        kwargs['nb_samples_pretrigger'] = nb_pretrigger_samples-1
+                        kwargs['nb_samples'] = nb_samples
                         
                         kwargs['window_min_index'], kwargs['window_max_index'] = (
                             self._get_window_indices(**kwargs)
@@ -592,7 +661,11 @@ class FeatureProcessing:
                         if OF_base is not None:
                             extracted_features = extractor(OF_base, **kwargs)
                         else:
-                            trace = self._processing_data.get_channel_trace(channel)
+                            trace = self._processing_data.get_channel_trace(
+                                channel,
+                                nb_samples=nb_samples,
+                                nb_pretrigger_samples=nb_pretrigger_samples
+                            )
                             extracted_features = extractor(trace, **kwargs)
 
                                                         
@@ -602,9 +675,6 @@ class FeatureProcessing:
                             event_features.update(
                                 {feature_name: extracted_features[feature_base_name]}
                             )
-
-
-
 
                 # done processing event!
                 # append event dictionary to dataframe
@@ -618,7 +688,8 @@ class FeatureProcessing:
 
         
         
-    def _get_file_list(self, file_path, series=None):
+    def _get_file_list(self, file_path, is_raw=True,
+                       series=None):
         """
         Get file list from path. Return as a dictionary
         with key=series and value=list of files
@@ -647,15 +718,17 @@ class FeatureProcessing:
            group name of raw data
 
         """
-        
-        # loop file path
-        if not isinstance(file_path, list):
-            file_path = [file_path]
 
+        # convert file_path to list 
+        if isinstance(file_path, str):
+            file_path = [file_path]
+            
+            
         # initialize
         file_list = list()
         base_path = None
         group_name = None
+
 
         # loop files 
         for a_path in file_path:
@@ -717,12 +790,18 @@ class FeatureProcessing:
 
         # sort
         file_list.sort()
+
+
+        
       
-        # get list of series
+        # convert to series dictionary so can be easily split
+        # in multiple cores
+        
         series_dict = dict()
         h5reader = h5io.H5Reader()
         series_name = None
         file_counter = 0
+        
         for file_name in file_list:
 
             # skip if filter file
@@ -740,8 +819,16 @@ class FeatureProcessing:
                 continue
             
             # get metadata
-            metadata = h5reader.get_metadata(file_name)
-            series_name = h5io.extract_series_name(metadata['series_num'])
+            if is_raw:
+                metadata = h5reader.get_metadata(file_name)
+                series_name = h5io.extract_series_name(metadata['series_num'])
+            else:
+                series_name =str(Path(file_name).name)
+                sep_start = series_name.find('_I')
+                sep_end = series_name.find('_F')
+                series_name = series_name[sep_start+1:sep_end]
+
+                
             if series_name not in series_dict.keys():
                 series_dict[series_name] = list()
 
@@ -752,9 +839,14 @@ class FeatureProcessing:
                 
 
         if self._verbose:
+            msg = ' raw data file(s) with '
+            if not is_raw:
+                msg = ' dataframe file(s) with '
+                
             print('INFO: Found total of '
                   + str(file_counter)
-                  + ' files from ' + str(len(series_dict.keys()))
+                  + msg
+                  + str(len(series_dict.keys()))
                   + ' different series number!')
 
       
@@ -983,6 +1075,8 @@ class FeatureProcessing:
         series_time = now.strftime('%H') + now.strftime('%M')
         series_name = ('I' + str(facility) +'_D' + series_day + '_T'
                        + series_time + now.strftime('%S'))
+
+        series_num = h5io.extract_series_num(series_name)
         
         # prefix
         prefix = 'feature'
@@ -998,7 +1092,7 @@ class FeatureProcessing:
             except OSError:
                 raise ValueError('\nERROR: Unable to create directory "'+ output_dir  + '"!\n')
                 
-        return output_dir
+        return output_dir, series_num
         
 
 

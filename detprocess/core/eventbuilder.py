@@ -117,7 +117,8 @@ class EventBuilder:
 
         
     def acquire_triggers(self, trigger_name, trace, thresh,
-                         pileup_window_msec=None, pileup_window_samples=None,
+                         pileup_window_msec=None,
+                         pileup_window_samples=None,
                          positive_pulses=True):
         """
         calc
@@ -145,7 +146,7 @@ class EventBuilder:
         # append trigger data to event dataframe
         # sort by trigger index
         df = trigger_obj.get_trigger_data_df()
-        if df:
+        if (df is not None and len(df)!=0):
             if self._event_df is None:
                 self._event_df = df
             else:
@@ -302,15 +303,10 @@ class EventBuilder:
         """
         
         # check
-        if self._event_df is None:
+        if (self._event_df is None or len(self._event_df)==0):
             raise ValueError('ERROR: No trigger data '
                              + 'available')  
         
-
-        # check if any triggers
-        if len(self._event_df)==0:
-            return
-                
         # merge window
         merge_window = 0
         if coincident_window_msec is not None:

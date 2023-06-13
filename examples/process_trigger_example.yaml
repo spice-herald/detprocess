@@ -17,12 +17,12 @@ filter_file: ./filter_example.hdf5
 
 trigger:
 
-   coincident_window_msec: 10
+   coincident_window_msec: 0.01
    #coincident_window_samples: 2000
 
 
    CPDv21Ge:
-       run: True
+       run: False
        template_tag: default
        psd_tag: default
        pileup_window_msec: 10
@@ -34,7 +34,9 @@ trigger:
        template_tag: default
        psd_tag: default
        pileup_window_msec: 10
-       threshold_sigma: 2
+       threshold_sigma: 4
+
+
 
    IrPtTESSmall+IrPtTESBig:
        run: False
