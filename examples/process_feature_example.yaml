@@ -19,69 +19,9 @@
 #      in "./process_example.yaml", line 133, column 1
 # ==============================================================
 
-filter_file: /home/serfass/workspace/notebooks/filter_r20.hdf5
-
+filter_file: ./filter_example.hdf5
 
 # ---------------------------------------
-# Trigger processing
-# ---------------------------------------
-
-trigger:
-
-   coincident_window_msec: 0.01
-   #coincident_window_samples: 2000
-
-
-   CPDv21Ge:
-       run: False
-       template_tag: default
-       psd_tag: default
-       pileup_window_msec: 10
-       threshold_sigma: 10
-       #positive_pulses: True	
-       
-   IrPtTESSmall,IrPtTESBig:
-       run: True
-       template_tag: default
-       psd_tag: default
-       pileup_window_msec: 10
-       threshold_sigma: 10
-
-
-   IrPtTESSmall+IrPtTESBig:
-       run: False
-       trigger_name: TotIrPt
-       template_tag: default
-       psd_tag: default
-       pileup_window_msec: 10
-       threshold_sigma: 10
-
-
-   IrPtTESSmall-IrPtTESBig:
-       run: False
-       trigger_name: SubIrPt
-       template_tag: default
-       psd_tag: default
-       pileup_window_msec: 2
-       threshold_sigma: 10
-
-
-   IrPtTESSmall|IrPtTESBig:
-       run: False
-       template_tag: default
-       psd_tag: default
-       pileup_window_msec: 2
-       threshold_sigma: 6
-
-
-
- 
-# ---------------------------------------
-# Feature processing
-# ---------------------------------------
-
-
-
 # Feature configuration for ALL channels
 # 
 # Each algorithm can be modified/disable
@@ -92,7 +32,7 @@ trigger:
 # processing not done on a specific
 # channel, it can then be disabled (example
 # further below)
-
+# ---------------------------------------
 
 all:
     nb_samples: 25000
@@ -148,8 +88,7 @@ all:
 
 
 CPDv21Ge:
-    disable: True
-  
+ 
     of1x1_unconstrained_glitch:
         run: True
         base_algorithm: of1x1_unconstrained
@@ -222,7 +161,6 @@ IrPtTESSmall+IrPtTESBig:
 # example of subtraction channel1-channel2
 IrPtTESSmall-IrPtTESBig:
 
-    disable: True
     feature_channel: SubIrPt
 
     nb_samples: 25000

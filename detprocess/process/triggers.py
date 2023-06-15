@@ -20,12 +20,12 @@ from humanfriendly import parse_size
 from detprocess.process.processing_data  import ProcessingData
 from detprocess.core.eventbuilder import EventBuilder
 from detprocess.core.oftrigger import OptimumFilterTrigger
+warnings.filterwarnings('ignore')
+
 
 __all__ = [
     'TriggerProcessing'
 ]
-
-
 
 
 class TriggerProcessing:
@@ -122,6 +122,16 @@ class TriggerProcessing:
             raise ValueError('No trigger channels to be processed! ' +
                              'Check configuration...')
         
+
+        self._output_group_path = None
+
+
+    def get_output_path(self):
+        """
+        Get output group path
+        """
+        return self._output_group_path
+    
         
     def process(self, ntriggers=-1,
                 lgc_save=False,
@@ -198,6 +208,11 @@ class TriggerProcessing:
             if self._verbose:
                 print(f'INFO: Processing output group path: {output_group_path}')
 
+
+        # keep
+        self._output_group_path = output_group_path
+        self._output_series_num = output_series_num
+
                 
         # convert memory usage in bytes
         if isinstance(memory_limit, str):
@@ -226,11 +241,10 @@ class TriggerProcessing:
             # max memory so it fits in RAM
             memory_limit /= ncores
 
-              
             # lauch pool processing
             if self._verbose:
                 print(f'INFO: Processing with be split between {ncores} cores!')
-
+            
             node_nums = list(range(ncores+1))[1:]
             pool = Pool(processes=ncores)
             output_df_list = pool.starmap(self._process,
@@ -312,7 +326,6 @@ class TriggerProcessing:
         if node_num>-1:
             node_num_str = ' node #' + str(node_num)
 
-                
         # instantiate process_data
         processing_data_inst = ProcessingData(
             self._input_base_path,

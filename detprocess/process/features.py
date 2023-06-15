@@ -20,7 +20,7 @@ from humanfriendly import parse_size
 from detprocess.core.algorithms  import FeatureExtractors
 from detprocess.process.processing_data  import ProcessingData
 import pytesdaq.io as h5io
-
+warnings.filterwarnings('ignore')
 
 
 __all__ = [
@@ -937,6 +937,10 @@ class FeatureProcessing:
         key_list = list()
         key_list_duplicate = list()
         for key in yaml_dict.keys():
+            
+            if key=='trigger' or key=='filter':
+                continue
+            
             if ',' in key:
                 key_split = key.split(',')
                 for key_sep in key_split:
@@ -974,7 +978,10 @@ class FeatureProcessing:
             # (already taking into account)
             if (key=='filter_file' or key=='all'):
                 continue
-
+            
+            # skip trigger or filter
+            if key=='trigger' or key=='filter':
+                continue
             
             # check if key contains a comma 
             # -> need to split 
