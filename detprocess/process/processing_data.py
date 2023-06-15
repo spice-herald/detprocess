@@ -80,8 +80,8 @@ class ProcessingData:
         self._is_dataframe = False
         if self._trigger_files is not None:
             self._is_dataframe = True
-        
-        
+
+              
         # initialize OF containers
         self._OF_base_objs = dict()
         self._OF_algorithms = dict()
@@ -154,6 +154,10 @@ class ProcessingData:
                 and channel != chan):
                 continue
 
+            pretrigger_samples = None
+            if 'nb_pretrigger_samples' in chan_config:
+                pretrigger_samples = chan_config['nb_pretrigger_samples']
+
             
             # loop configuration and get list of templates
             for alg, alg_config in chan_config.items():
@@ -198,6 +202,7 @@ class ProcessingData:
                     # instantiate
                     self._OF_base_objs[chan][psd_tag] = qp.OFBase(
                         fs,
+                        pretrigger_samples=pretrigger_samples,
                         channel_name=chan
                     )
 
@@ -244,7 +249,6 @@ class ProcessingData:
 
 
                         # pretrigger
-                        pretrigger_samples = None
                         if 'pretrigger_samples' in template_metadata:
                             pretrigger_samples = (
                                 template_metadata['pretrigger_samples']
@@ -570,7 +574,7 @@ class ProcessingData:
                     nb_pretrigger_samples = (
                         config[channel]['nb_pretrigger_samples']
                     )
-                    
+                
             trace = self.get_channel_trace(
                 channel,
                 nb_samples=nb_samples,
@@ -790,7 +794,6 @@ class ProcessingData:
 
             array = array[...,trace_min_index:trace_max_index]
                    
-            
         return array
 
     def get_facility(self):

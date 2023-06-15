@@ -93,7 +93,11 @@ if __name__ == "__main__":
     if args.ncores:
         ncores = int(args.ncores)
         
-   
+    # dataframe path
+    dataframe_path = None
+    if args.trigger_dataframe_path:
+        dataframe_path = args.trigger_dataframe_path
+        
     # ------------------
     # check setup file
     # ------------------
@@ -124,8 +128,6 @@ if __name__ == "__main__":
     # ------------------
     # 3. Acquire trigger
     # ------------------
-
-    dataframe_path = None
     
     if acquire_trig:
 

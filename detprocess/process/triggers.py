@@ -96,7 +96,6 @@ class TriggerProcessing:
         if not input_data_dict:
             raise ValueError('No files were found! Check configuration...')
 
-        self._input_data_dict = input_data_dict
         self._input_base_path = input_base_path
         self._input_group_name = group_name
         self._series_list = list(input_data_dict.keys())
@@ -114,7 +113,6 @@ class TriggerProcessing:
 
         self._trigger_config = trigger_config
         self._evtbuilder_config = evtbuider_config
-        self._filter_file = filter_file
         self._trigger_channels = channels
       
         # check channels to be processed
@@ -122,9 +120,21 @@ class TriggerProcessing:
             raise ValueError('No trigger channels to be processed! ' +
                              'Check configuration...')
         
-
+        # initialize output path
         self._output_group_path = None
 
+
+        # instantiate processing data
+        self._processing_data_inst = ProcessingData(
+            input_base_path,
+            input_data_dict,
+            group_name=group_name,
+            filter_file=filter_file,
+            verbose=verbose
+        )
+
+
+        
 
     def get_output_path(self):
         """
@@ -201,7 +211,7 @@ class TriggerProcessing:
             output_group_path, output_series_num  = (
                 self._create_output_directory(
                     save_path,
-                    self._get_facility(self._input_data_dict),
+                    self._processing_data_inst.get_facility(),
                     output_group_name=output_group_name,
                 )
             )
@@ -326,20 +336,10 @@ class TriggerProcessing:
         if node_num>-1:
             node_num_str = ' node #' + str(node_num)
 
-        # instantiate process_data
-        processing_data_inst = ProcessingData(
-            self._input_base_path,
-            self._input_data_dict,
-            group_name=self._input_group_name,
-            filter_file=self._filter_file,
-            verbose=self._verbose
-        )
-
-
+      
         # instantiate event builder
         evtbuilder_inst = EventBuilder()
-        
-        
+              
         # instantiate OF trigger and add to EventBuilder
         for trig_chan, trig_data in self._trigger_config.items():
 
@@ -349,8 +349,9 @@ class TriggerProcessing:
                 template_tag = trig_data['template_tag']
             
             template, template_metadata = (
-                processing_data_inst.get_template(trig_chan,
-                                                  tag=template_tag)   
+                self._processing_data_inst.get_template(
+                    trig_chan,
+                    tag=template_tag)   
             )
                                
             # get psd
@@ -359,8 +360,9 @@ class TriggerProcessing:
                 psd_tag = trig_data['psd_tag']
 
             psd, psd_freqs, psd_metadata = (
-                processing_data_inst.get_psd(trig_chan,
-                                             tag=psd_tag)
+                self._processing_data_inst.get_psd(
+                    trig_chan,
+                    tag=psd_tag)
             )
 
                     
@@ -370,7 +372,7 @@ class TriggerProcessing:
                 trigger_name = trig_data['trigger_name']
             
             # sample rate
-            fs  = processing_data_inst.get_sample_rate()
+            fs  = self._processing_data_inst.get_sample_rate()
                 
             # instantiate optimal filter trigger
             oftrigger_inst = OptimumFilterTrigger(
@@ -404,7 +406,7 @@ class TriggerProcessing:
 
                 
             # set file list
-            processing_data_inst.set_series(series)
+            self._processing_data_inst.set_series(series)
 
             # output file name base (if saving data)
             output_base_file = None
@@ -464,7 +466,7 @@ class TriggerProcessing:
                 # -----------------------
                 # Read next event
                 # -----------------------                
-                success = processing_data_inst.read_next_event(
+                success = self._processing_data_inst.read_next_event(
                     channels=self._trigger_channels
                 )
 
@@ -589,7 +591,7 @@ class TriggerProcessing:
                         positive_pulses = trig_data['positive_pulses']
                         
                     # get trace
-                    trace = processing_data_inst.get_channel_trace(trig_chan)
+                    trace = self._processing_data_inst.get_channel_trace(trig_chan)
                                      
                     # acquire trigger
                     evtbuilder_inst.acquire_triggers(
@@ -617,7 +619,7 @@ class TriggerProcessing:
                         self._evtbuilder_config['coincident_window_samples'])
                     
                 # get event metadata
-                event_info = processing_data_inst.get_event_admin()
+                event_info = self._processing_data_inst.get_event_admin()
               
                 # build event
                 evtbuilder_inst.build_event(
@@ -654,7 +656,7 @@ class TriggerProcessing:
                 # add detector settings
                 for channel in self._trigger_config.keys():
                     event_features.update(
-                        processing_data_inst.get_channel_settings(channel)
+                        self._processing_data_inst.get_channel_settings(channel)
                     )
                 """
 
