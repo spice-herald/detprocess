@@ -203,7 +203,9 @@ class TriggerProcessing:
         if lgc_save:
             if  save_path is None:
                 save_path  = self._input_base_path + '/processed'
-
+                if '/raw/processed' in save_path:
+                    save_path = save_path.replace('/raw/processed','/processed')
+                    
             # add group name
             if self._input_group_name not in save_path:
                 save_path += '/' + self._input_group_name
