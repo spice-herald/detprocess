@@ -149,7 +149,6 @@ if __name__ == "__main__":
         myproc.process(ntriggers=ntriggers,
                        lgc_output=False,
                        lgc_save=True,
-                       save_path='/home/serfass/workspace',
                        ncores=ncores)
         
         
@@ -176,5 +175,4 @@ if __name__ == "__main__":
         myproc.process(nevents=-1,
                        lgc_save=True,
                        lgc_output=False,
-                       save_path='/home/serfass/workspace',
                        ncores=ncores)
