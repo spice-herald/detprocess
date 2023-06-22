@@ -1,9 +1,10 @@
 import warnings
 import argparse
 from pprint import pprint
-from detprocess import TriggerProcessing
-from detprocess import FeatureProcessing
+from detprocess import TriggerProcessing, FeatureProcessing, Randoms
 import os
+from pathlib import Path
+
 warnings.filterwarnings('ignore')
 
 
@@ -21,10 +22,10 @@ if __name__ == "__main__":
     parser.add_argument('--enable-rand', '--enable_rand',
                         dest='enable_rand',
                         action='store_true', help='Acquire randoms')
-    parser.add_argument('--calc-filter', '--calc_filter',
-                        dest='calc_filter',
-                        action='store_true',
-                        help='Calculate filter informations (PSD and template)')
+  #  parser.add_argument('--calc-filter', '--calc_filter',
+  #                      dest='calc_filter',
+  #                      action='store_true',
+  #                      help='Calculate filter informations (PSD and template)')
     parser.add_argument('--enable-trig', '--enable_trig',
                         dest='enable_trig',
                         action='store_true', help='Acquire randoms')
@@ -41,7 +42,11 @@ if __name__ == "__main__":
                               '(format string Ix_Dyyyymmdd_Thhmmss,'
                               'space or comma seperated) [Default: all series]'))
     parser.add_argument('--random_rate', type=float,
-                        help='random rate [default: 0.1 Hz]')
+                        help='random event rate (either "random_rate" "nrandoms"'
+                        + ' required is randoms enabled!)')
+    parser.add_argument('--nrandoms', type=int,
+                        help='Number random events (either "random_rate" "nrandoms"'
+                        + ' required is randoms enabled!)')
     parser.add_argument('--ntriggers', type=int,
                         help='Number trigger events [Default=all available]')
     parser.add_argument('--output_group_name',
@@ -69,8 +74,8 @@ if __name__ == "__main__":
         acquire_rand = True
     if args.enable_trig:
         acquire_trig = True
-    if args.calc_filter:
-        calc_filter = True
+    #if args.calc_filter:
+    #    calc_filter = True
     if args.enable_feature:
         process_feature = True
     if not (acquire_rand
@@ -97,7 +102,14 @@ if __name__ == "__main__":
     dataframe_path = None
     if args.trigger_dataframe_path:
         dataframe_path = args.trigger_dataframe_path
+
+    # series
+    series = None
+    if args.input_series:
+        series = args.input_series
+
         
+         
     # ------------------
     # check setup file
     # ------------------
@@ -115,15 +127,54 @@ if __name__ == "__main__":
     # 1. Acquire randoms
     # ------------------
 
+    trigger_output_path = None
+    trigger_output_name = None
+    
     if acquire_rand:
-        print('RAND ACQUISITION NOT AVAILABLE')
+        
+        print('\n\n================================')
+        print('Randoms Acquisition')
+        print('================================')
 
 
+        if args.random_rate and args.nrandoms:
+            print('ERROR: Choose between "random_rate" '
+                  + 'or "nrandoms" argument, not both!')
+            exit()
+        
+        random_rate = None
+        nrandoms = None
+        if args.random_rate:
+            random_rate = float(args.random_rate)
+        elif args.nrandoms:
+            nrandoms = int(args.nrandoms)
+        else:
+            print('ERROR: "random_rate" or '
+                  + '"nrandoms" argument required!')
+            exit()
+
+        
+        # instantiate
+        myproc = Randoms(args.input_group_path,
+                         processing_id=processing_id,
+                         series=series,
+                         verbose=True)
+        
+        myproc.process(random_rate=random_rate,
+                       nrandoms=nrandoms,
+                       ncores=ncores,
+                       lgc_save=True,
+                       lgc_output=False)
+
+        trigger_output_path = myproc.get_output_path()
+        trigger_output_name = str(Path(trigger_output_path).name)
+        
     # ------------------
     # 2. Calc Filter
     # ------------------
     if calc_filter:
         print('CALC FILTER NOT AVAILABLE')
+        
         
     # ------------------
     # 3. Acquire trigger
@@ -132,7 +183,7 @@ if __name__ == "__main__":
     if acquire_trig:
 
         print('\n\n================================')
-        print('Trigger Processing')
+        print('Trigger Acquisition')
         print('================================')
 
         
@@ -143,12 +194,14 @@ if __name__ == "__main__":
             
         myproc = TriggerProcessing(args.input_group_path,
                                    processing_setup,
+                                   series=series,
                                    processing_id=processing_id,
                                    verbose=True)
         
         myproc.process(ntriggers=ntriggers,
                        lgc_output=False,
                        lgc_save=True,
+                       output_group_name=trigger_output_name,
                        ncores=ncores)
         
         
@@ -158,7 +211,7 @@ if __name__ == "__main__":
     # ------------------
     # 4. Process feature
     # ------------------
-
+     
     if process_feature:
 
         print('\n\n================================')
@@ -167,7 +220,7 @@ if __name__ == "__main__":
         
         myproc = FeatureProcessing(args.input_group_path,
                                    processing_setup,
-                                   series=None, 
+                                   series=series, 
                                    trigger_dataframe_path=dataframe_path,
                                    external_file=None, 
                                    processing_id=processing_id)

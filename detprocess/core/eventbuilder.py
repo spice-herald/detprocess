@@ -248,19 +248,19 @@ class EventBuilder:
         # some parameters have different names
         if 'series_num' in event_metadata.keys():
             metadata_dict['series_number'] = np.array(
-                [event_metadata['series_num']]*nb_triggers)    
+                [event_metadata['series_num']]*nb_triggers).astype(int)    
         if 'event_num' in event_metadata.keys():
             metadata_dict['event_number'] = np.array(
-                [event_metadata['event_num']]*nb_triggers)    
+                [event_metadata['event_num']]*nb_triggers).astype(int)    
         if 'dump_num' in event_metadata.keys():
             metadata_dict['dump_number'] = np.array(
-                [event_metadata['dump_num']]*nb_triggers)    
+                [event_metadata['dump_num']]*nb_triggers) .astype(int)   
         if 'run_type' in event_metadata.keys():
             metadata_dict['data_type'] = np.array(
-                [event_metadata['run_type']]*nb_triggers)   
+                [event_metadata['run_type']]*nb_triggers).astype(int)   
         if 'fridge_run' in event_metadata.keys():
             metadata_dict['fridge_run_number'] = np.array(
-                [event_metadata['fridge_run']]*nb_triggers)   
+                [event_metadata['fridge_run']]*nb_triggers).astype(int)   
 
                 
         # event times
@@ -278,12 +278,13 @@ class EventBuilder:
             event_times_int-metadata_dict['fridge_run_start_time'])
 
         # trigger id
-        metadata_dict['trigger_id'] = (
+        metadata_dict['trigger_prod_id'] = (
             np.array(range(nb_triggers))
-            + self._current_trigger_id
+            + int(self._current_trigger_id)
             + 1)
         
-        self._current_trigger_id = metadata_dict['trigger_id'][-1]
+        
+        self._current_trigger_id = metadata_dict['trigger_prod_id'][-1]
         
         
         # add to dataframe

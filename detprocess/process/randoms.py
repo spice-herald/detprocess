@@ -30,6 +30,7 @@ class Randoms:
     """
 
     def __init__(self, raw_path, series=None,
+                 processing_id=None,
                  verbose=True):
         """
         Initialize randoms acquisition
@@ -57,19 +58,25 @@ class Randoms:
         # display
         self._verbose = verbose
 
+        # processing id
+        self._processing_id = processing_id
       
         # extract input file list
-        input_file_dict, input_base_path, group_name, facility = (
+        input_file_dict, input_base_path, input_group_name, facility = (
             self._get_file_list(raw_path, series=series)
         )
 
         if not input_file_dict:
             raise ValueError('No files were found! Check configuration...')
-
+        
         self._input_base_path = input_base_path
-        self._series_dict =input_file_dict
-        self._group_name = group_name
+        self._input_group_name = input_group_name
+        self._series_dict = input_file_dict
         self._facility = facility
+
+        # initialize output path
+        self._output_group_path = None
+        
     
 
     @property
@@ -88,18 +95,24 @@ class Randoms:
         return self._input_base_path
 
     def get_group_name(self):
-        return self._group_name
+        return self._input_group_name
 
-
-
+    def get_output_path(self):
+        """
+        Get output group path
+        """
+        return self._output_group_path
 
     
-    def process(self, random_rate,
+
+    def process(self, random_rate=None,
+                nrandoms=None,
                 min_separation_msec=100,
-                output_path=None,
                 ncores=1,
                 lgc_save=False,
-                lgc_output=False):
+                lgc_output=False,
+                save_path=None,
+                output_group_name=None):
         
         """
         Acquire random trigger using specified rate (and minimum
@@ -120,6 +133,40 @@ class Randoms:
 
         # minimum separation (convert to seconds)
         min_separation_sec = min_separation_msec/1000
+
+
+        # random rate
+        if (random_rate is not None
+            and nrandoms is not None):
+            print('ERROR: Use either "random_rate" or "nrandoms", '
+                  + 'not both!')
+            return
+
+
+        # if input is number of randoms, let's calculate
+        # approximately random_rate (slightly increased so
+        # we end up with enough events)
+        self._nrandoms = nrandoms
+        if nrandoms is not None:
+
+            # let's get approximate random rate
+            nb_events = 0
+            nb_samples = 0
+            sample_rate = 0
+            for series,file_dict in self._series_dict.items():
+                nb_samples = file_dict['nb_samples']
+                sample_rate = file_dict['sample_rate']
+                nb_events_series = file_dict['nb_events_first_file']
+                nb_files = len(file_dict['files'])
+                if nb_files>1:
+                    nb_files -= 1
+                nb_events  += (nb_events_series*nb_files)
+
+            # increasing nrandoms by 20%
+            nrandoms_increased = float(nrandoms)*1.2
+            random_rate = nrandoms_increased/(nb_events*nb_samples/sample_rate)
+          
+
         
         # average time between randoms
         random_length_sec = 1/random_rate
@@ -137,33 +184,39 @@ class Randoms:
         #    min_separation_sec = random_length_sec/2
 
 
+
+
         # create output directory
-        output_processing_path = None
+        output_group_path = None
+        output_series_num = None
         
         if lgc_save:
-            
-            if output_path is None:
-                output_path  = self._input_base_path
-                dir_name = str(Path(output_path).name)
-                if dir_name == 'raw':
-                    output_path = str(Path(output_path).parent)
 
-                output_path += '/processed'
-                           
-            if self._group_name not in output_path:
-                output_path += '/' + self._group_name
-
-                                    
-            output_processing_path = self._create_output_directory(
-                output_path,
-                self._facility
+            if  save_path is None:
+                save_path  = self._input_base_path + '/processed'
+                if '/raw/processed' in save_path:
+                    save_path = save_path.replace('/raw/processed','/processed')
+                    
+            # add group name
+            if self._input_group_name not in save_path:
+                save_path += '/' + self._input_group_name
+                
+            output_group_path, output_series_num  = (
+                self._create_output_directory(
+                    save_path,
+                    self._facility,
+                    output_group_name=output_group_name,
+                )
             )
             
             if self._verbose:
-                print(f'INFO: Processing output group path: {output_processing_path}')
-            
-           
-                     
+                print(f'INFO: Processing output group path: {output_group_path}')
+
+
+        # keep
+        self._output_group_path = output_group_path
+        self._output_series_num = output_series_num
+
 
         # initialize output
         output_df = None
@@ -171,11 +224,12 @@ class Randoms:
         # case only 1 node used for processing
         if ncores == 1:
             series_list = list(self._series_dict.keys())
-            output_df = self._process(-1,
+            output_df = self._process(1,
                                       series_list,
                                       random_length_sec,
                                       min_separation_sec,
-                                      output_processing_path,
+                                      output_series_num,
+                                      output_group_path,
                                       lgc_save,
                                       lgc_output)
         else:
@@ -196,7 +250,8 @@ class Randoms:
                                                   series_list_split,
                                                   repeat(random_length_sec),
                                                   repeat(min_separation_sec),
-                                                  repeat(output_processing_path),
+                                                  repeat(output_series_num),
+                                                  repeat(output_group_path),
                                                   repeat(lgc_save),
                                                   repeat(lgc_output))
                 )
@@ -213,6 +268,10 @@ class Randoms:
         if self._verbose:
             print('INFO: Randoms acquisition done!') 
 
+
+        if lgc_output and self._nrandoms is not None:
+            if len(output_df)>self._nrandoms:
+                output_df = output_df[0:1000]
             
         return output_df
                 
@@ -222,7 +281,8 @@ class Randoms:
                  series_list,
                  random_length_sec,
                  min_separation_sec,
-                 output_processing_path,
+                 output_series_num,
+                 output_group_path,
                  lgc_save,
                  lgc_output):
         """
@@ -231,16 +291,14 @@ class Randoms:
         """
 
         # node string (for display)
-        node_num_str = str()
-        if node_num>-1:
-            node_num_str = ' node #' + str(node_num)
+        node_num_str = ' node #' + str(node_num)
 
 
         # trigger prod group name
         trigger_prod_group_name = np.nan
-        if output_processing_path is not None:
+        if output_group_path is not None:
             trigger_prod_group_name = (
-                str(Path(output_processing_path).name)
+                str(Path(output_group_path).name)
             )
         
         # set output dataframe to None
@@ -262,10 +320,23 @@ class Randoms:
             series_num = self._series_dict[series]['series_num']
       
             # trigger file name
-            trigger_prod_file_name = np.nan
+            output_base_file  = None
+
             if lgc_save:
-                trigger_prod_file_name = ('rand_'
-                                          + series + '.hdf5')
+                
+                file_prefix = 'rand'
+                if self._processing_id is not None:
+                    file_prefix = self._processing_id + '_' + file_prefix 
+                    
+                series_name = h5io.extract_series_name(
+                    int(output_series_num+node_num)
+                )
+
+                output_base_file = (output_group_path
+                                    + '/' + file_prefix
+                                    + '_' + series_name)
+
+                
             # trace length in second:
             sample_rate = self._series_dict[series]['sample_rate']
             nb_samples = self._series_dict[series]['nb_samples']
@@ -312,6 +383,7 @@ class Randoms:
             current_event_time = None
             trigger_id = 0
             total_event_counter = 0
+            dump_couter = 1
             for file_name in self._series_dict[series]['files']:
 
 
@@ -329,10 +401,9 @@ class Randoms:
                                 'trigger_type': list(),
                                 'data_type': list(),
                                 'group_name':list(),
-                                'trigger_id': list(),
+                                'processing_id':list(),
                                 'trigger_prod_id': list(),
-                                'trigger_prod_group_name':list(),
-                                'trigger_prod_file_name':list()}
+                                'trigger_prod_group_name':list()}
 
                 
                 # get file metadata 
@@ -358,8 +429,8 @@ class Randoms:
                 nb_random_events = int(round(nb_events*event_fraction))
                 if nb_random_events == 0:
                     nb_random_events = 1
-                    print('WARNING: Modifying random rate to have a least '
-                          ' one event per dump! To be fixed soon...')
+                    #print('WARNING: Modifying random rate to have a least '
+                    #      ' one event per dump! To be fixed soon...')
 
                 # event list (all events continuous data)
                 # and random event list
@@ -417,9 +488,9 @@ class Randoms:
                             round(current_event_time+trigger_time))
                                           
                         # fill dictionary                        
-                        feature_dict['series_number'].append(series_num)
-                        feature_dict['event_number'].append(event_num)
-                        feature_dict['dump_number'].append(metadata['dump_num'])
+                        feature_dict['series_number'].append(int(series_num))
+                        feature_dict['event_number'].append(int(event_num))
+                        feature_dict['dump_number'].append(int(metadata['dump_num']))
                         feature_dict['event_time'].append(event_time_trigger)
                         feature_dict['series_start_time'].append(
                             event_time_trigger-series_start_time
@@ -430,16 +501,18 @@ class Randoms:
                         feature_dict['fridge_run_start_time'].append(
                             event_time_trigger-fridge_run_start_time
                         )
-                        feature_dict['trigger_index'].append(trigger_index)
+                        feature_dict['trigger_index'].append(int(trigger_index))
                         feature_dict['trigger_time'].append(trigger_time)
                         feature_dict['trigger_type'].append(3)
-                        feature_dict['data_type'].append(metadata['run_type'])
-                        feature_dict['fridge_run_number'].append(metadata['fridge_run'])
-                        feature_dict['trigger_id'].append(trigger_id)
+                        feature_dict['data_type'].append(int(metadata['run_type']))
+                        feature_dict['fridge_run_number'].append(int(metadata['fridge_run']))
                         feature_dict['trigger_prod_id'].append(trigger_id)
                         feature_dict['trigger_prod_group_name'].append(trigger_prod_group_name)
-                        feature_dict['trigger_prod_file_name'].append(trigger_prod_file_name)
                         feature_dict['group_name'].append(metadata['group_name'])
+                        processing_id = np.nan
+                        if self._processing_id is not None:
+                            processing_id = self._processing_id
+                        feature_dict['processing_id'].append(processing_id)
                       
                 # convert to vaex
                 df = vx.from_dict(feature_dict)
@@ -459,27 +532,27 @@ class Randoms:
             if self._verbose:
                 nb_events = len(series_df)
                 rate = nb_events/(trace_length_sec*total_event_counter)
+                rate_str = '{:.2f}'.format(rate)
                 print('INFO' + node_num_str
                       + ': Randoms acquisition for ' + series
                       + ' done! Final rate = '
-                      + str(rate)
+                      + rate_str
                       + ' Hz')
                                 
             # save file
             if lgc_save:
-
-                output_file = (
-                    output_processing_path
-                    + '/'
-                    + trigger_prod_file_name
-                )
-
+                         
+                # build hdf5 file name
+                dump_str = str(dump_couter)
+                file_name =  (output_base_file + '_F' + dump_str.zfill(4)
+                              + '.hdf5')
+                        
                 # export
-                series_df.export_hdf5(output_file, mode='w')
-                print('INFO ' + node_num_str
-                      + ': Saving vaex dataframe in '
-                      + output_file)
-                
+                series_df.export_hdf5(file_name, mode='w')
+                        
+                # increment dump
+                dump_couter += 1
+                          
             # output dataframe
             if lgc_output:
                 
@@ -534,8 +607,9 @@ class Randoms:
 
         return output_list
 
-                
-    def _create_output_directory(self, base_path, facility):
+    
+    def _create_output_directory(self, base_path, facility,
+                                 output_group_name=None):
         """
         Create output directory 
 
@@ -555,28 +629,38 @@ class Randoms:
 
         """
 
+
+        # create series name/number
         now = datetime.now()
         series_day = now.strftime('%Y') +  now.strftime('%m') + now.strftime('%d') 
         series_time = now.strftime('%H') + now.strftime('%M')
         series_name = ('I' + str(facility) +'_D' + series_day + '_T'
                        + series_time + now.strftime('%S'))
-        
-        # prefix
-        prefix = 'randoms'
-        output_dir = base_path + '/' + prefix + '_' + series_name
-        
-        
+        series_num = int(h5io.extract_series_num(series_name))
+    
+        # build full path
+        if output_group_name is None:
+            prefix = 'trigger'
+            if self._processing_id is not None:
+                prefix = self._processing_id + '_trigger'
+            output_dir = base_path + '/' + prefix + '_' + series_name
+        else:
+            if output_group_name not in base_path:
+                output_dir = base_path + '/' + output_group_name
+            else:
+                output_dir = base_path
+                
+        # create directory
         if not os.path.isdir(output_dir):
             try:
                 os.makedirs(output_dir)
                 os.chmod(output_dir, stat.S_IRWXG | stat.S_IRWXU | stat.S_IROTH | stat.S_IXOTH)
             except OSError:
                 raise ValueError('\nERROR: Unable to create directory "'+ output_dir  + '"!\n')
-                
-        return output_dir
+    
+        return output_dir, series_num
         
-
-
+  
     def _get_file_list(self, file_path, series=None):
         """
         Get file list from path. Return as a dictionary
@@ -640,7 +724,7 @@ class Randoms:
                             file_list.extend(
                                 glob(a_path + '/' + file_name_wildcard))
                 else:
-                    file_list = glob(a_path + '/*.hdf5')
+                    file_list = glob(a_path + '/[!didv_]**.hdf5')
                 
                 # check a single directory
                 if len(file_path) != 1:
@@ -667,7 +751,9 @@ class Randoms:
                                 if a_path.find(it_series) != -1:
                                     file_list.append(a_path)
                     else:
-                        file_list.append(a_path)
+                        file_name = str(Path(a_path).name)
+                        if file_name[0:4] != 'didv':
+                            file_list.append(a_path)
 
             else:
                 raise ValueError('File or directory "' + a_path
@@ -731,7 +817,10 @@ class Randoms:
             metadata_adc = metadata['groups'][adc_id]
             series_dict[series_name]['sample_rate'] = metadata_adc['sample_rate']
             series_dict[series_name]['nb_samples'] = metadata_adc['nb_samples']
-        
+            series_dict[series_name]['nb_events_first_file'] = metadata_adc['nb_events']
+
+
+
             # time since start of run
             fridge_run_start_time = np.nan
             if 'fridge_run_start' in metadata:
@@ -742,14 +831,14 @@ class Randoms:
             series_dict[series_name]['fridge_run_start_time'] = fridge_run_start_time
 
             # time since start of series
-            if 'series_start_time' in metadata:
-                series_dict[series_name]['series_start_time'] = metadata['series_start_time']
+            if 'series_start' in metadata:
+                series_dict[series_name]['series_start_time'] = metadata['series_start']
             else:
                 series_dict[series_name]['series_start_time'] = np.nan
 
             # time since start of group
-            if 'group_start_time' in metadata:
-                series_dict[series_name]['group_start_time'] = metadata['group_start_time']
+            if 'group_start' in metadata:
+                series_dict[series_name]['group_start_time'] = metadata['group_start']
             else:
                 series_dict[series_name]['group_start_time'] = np.nan
 

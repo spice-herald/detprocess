@@ -43,8 +43,8 @@ class FeatureProcessing:
     """
 
     def __init__(self, raw_path, config_file,
-                 trigger_dataframe_path=None,
                  series=None,
+                 trigger_dataframe_path=None,
                  external_file=None,
                  processing_id=None,
                  verbose=True):
@@ -120,16 +120,14 @@ class FeatureProcessing:
             
             trigger_files, trigger_path, trigger_group_name = (
                 self._get_file_list(trigger_dataframe_path,
-                                    is_raw=False,
-                                    series=series)
+                                    is_raw=False)
             )
             if not trigger_files:
                 raise ValueError('No dataframe files were found! '
                                  + 'Check configuration...')
             
             self._series_list = list(trigger_files.keys())
-       
-            
+                    
         # processing configuration
         if not os.path.exists(config_file):
             raise ValueError('Configuration file "' + config_file
@@ -221,7 +219,12 @@ class FeatureProcessing:
         if (ncores>1 and nevents>-1):
             raise ValueError('ERROR: Multi cores processing only allowed when '
                              + 'processing ALL events!')
-        
+
+        if lgc_output and lgc_save:
+            raise ValueError('ERROR: Unable to save and output datafame '
+                             + 'at the same time. Set either lgc_output '
+                             + 'or lgc_save to False.')
+
         # check number cores allowed
         if ncores>len(self._series_list):
             ncores = len(self._series_list)
@@ -380,19 +383,33 @@ class FeatureProcessing:
         if self._external_file is not None:
             FE_ext = self._load_external_extractors(self._external_file)
 
+
+
+        # output file name base
+        output_base_file = None
+        if lgc_save:
             
-        # intialize event counter
-        # (only used to check maximum
-        # numberof events
+            file_prefix = 'feature'
+            if self._processing_id is not None:
+                file_prefix = self._processing_id + '_feature'
+            series_name = h5io.extract_series_name(
+                int(output_series_num+node_num)
+            )
+                    
+            output_base_file = (output_group_path
+                                + '/' + file_prefix
+                                + '_' + series_name)
+
+                
+        # intialize counters
+        dump_counter = 0
         event_counter = 0
 
-
-        # initialize output data frame
+        # initialize data frame
         feature_df = pd.DataFrame()
             
         # loop series
         for series in series_list:
-
 
             if self._verbose:
                 print('INFO' + node_num_str
@@ -403,25 +420,6 @@ class FeatureProcessing:
             # set file list
             self._processing_data.set_series(series)
 
-            # output file name base (if saving data)
-            output_base_file = None
-            if lgc_save:
-                
-                file_prefix = 'feature'
-                if self._processing_id is not None:
-                    file_prefix = self._processing_id + '_feature'
-                series_name = h5io.extract_series_name(
-                    int(output_series_num+node_num)
-                )
-                    
-                output_base_file = (output_group_path
-                                    + '/' + file_prefix
-                                    + '_' + series_name)
-
-       
-            # initialize dump counter
-            dump_couter = 1
-                        
             # loop events
             do_stop = False
             while (not do_stop):
@@ -440,7 +438,6 @@ class FeatureProcessing:
 
                 # display
                 if self._verbose:
-                    
                     if (event_counter%500==0 and event_counter!=0):
                         print('INFO' + node_num_str
                               + ': Local number of events = '
@@ -454,7 +451,8 @@ class FeatureProcessing:
                 success = self._processing_data.read_next_event(
                     channels=self._selected_channels
                 )
-                
+
+                # end of file
                 if not success:
                     do_stop = True
 
@@ -464,7 +462,8 @@ class FeatureProcessing:
                 # -----------------------
                 
                 # now let's handle case we need to stop
-                # or memory/nb events limit reached
+                # memory/nb events limit reached
+                
                 if (do_stop
                     or nevents_limit_reached
                     or memory_limit_reached):
@@ -473,7 +472,7 @@ class FeatureProcessing:
                     if lgc_save:
                         
                         # build hdf5 file name
-                        dump_str = str(dump_couter)
+                        dump_str = str(dump_counter)
                         dump_str ='_F' + dump_str.zfill(4)
                         file_name =  output_base_file +  dump_str + '.hdf5'
                     
@@ -487,38 +486,35 @@ class FeatureProcessing:
                                                mode='w')
                         
                         # increment dump
-                        dump_couter += 1
+                        dump_counter += 1
+                        if not do_stop and self._verbose:
+                            print('INFO' + node_num_str
+                                  + ': Incrementing dump number')
 
-                        # reset dataframe
+                        # initialize
                         del feature_df
                         feature_df = pd.DataFrame()
 
-
+                        
                     # case maximum number of events reached
                     # -> processing done!
                     if nevents_limit_reached:
-                        print('INFO' + node_num_str
-                              + ': Requested nb events reached. '
-                              + 'Stopping processing!')
+                        if self._verbose:
+                            print('INFO' + node_num_str
+                                  + ': Requested nb events reached. '
+                                  + 'Stopping processing!')
                         return feature_df
 
                     # case memory limit reached and not saving file
                     # -> processing done
-                    if memory_limit_reached:
-                        print('INFO' + node_num_str
-                              + ': Memory limit reached!')
-                        if lgc_save:
-                            print('INFO' + node_num_str
-                                  + ': Starting a new  dump for series '
-                                  + series)
-                        else:
-                            if success:
-                                print('WARNING' + node_num_str
-                                      + ': Stopping procssing. '
-                                      +' Not all events have been processed!')
-                            return feature_df
-
-
+                    # case memory limit reached
+                    # -> processing needs to stop!
+                    if lgc_output and memory_limit_reached:
+                        raise ValueError(
+                            'ERROR: memory limit reached! '
+                            + 'Change memory limit or only save hdf5 files '
+                            +'(lgc_save=True AND lgc_output=False) '
+                        )
 
 
                 # Now let's stop or increment event counter....

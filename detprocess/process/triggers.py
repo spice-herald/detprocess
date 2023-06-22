@@ -88,6 +88,7 @@ class TriggerProcessing:
         # processing id
         self._processing_id = processing_id
 
+        
         # extract input file list
         input_data_dict, input_base_path, group_name = (
             self._get_file_list(raw_path, series=series)
@@ -133,8 +134,6 @@ class TriggerProcessing:
             verbose=verbose
         )
 
-
-        
 
     def get_output_path(self):
         """
@@ -333,6 +332,13 @@ class TriggerProcessing:
    
         """
 
+
+        # check argument
+        if lgc_output and lgc_save:
+            raise ValueError('ERROR: Unable to save and output datafame '
+                             + 'at the same time. Set either lgc_output '
+                             + 'or lgc_save to False.')
+
         # node string (for display)
         node_num_str = str()
         if node_num>-1:
@@ -374,7 +380,7 @@ class TriggerProcessing:
                 trigger_name = trig_data['trigger_name']
             
             # sample rate
-            fs  = self._processing_data_inst.get_sample_rate()
+            fs = self._processing_data_inst.get_sample_rate()
                 
             # instantiate optimal filter trigger
             oftrigger_inst = OptimumFilterTrigger(
@@ -384,53 +390,41 @@ class TriggerProcessing:
             evtbuilder_inst.add_trigger_object(
                 trigger_name, oftrigger_inst)
             
-            
+        # output file name base (if saving data)
+        output_base_file = None
+        
+        if lgc_save:
+
+            file_prefix = 'threshtrig'
+            if self._processing_id is not None:
+                file_prefix = self._processing_id +'_' + file_prefix 
                 
-        # intialize trigger counter
-        # (only used to check maximum
-        # number of events
+            series_name = h5io.extract_series_name(
+                int(output_series_num+node_num)
+            )
+
+            output_base_file = (output_group_path
+                                + '/' + file_prefix
+                                + '_' + series_name)
+            
+        # intialize counters
+        dump_couter = 1
         trigger_counter = 0
 
-        # initialize output data frame
-        output_df = None
+        # intialize output dataframe
+        process_df = None
         
         # loop series
         for series in series_list:
-
 
             if self._verbose:
                 print('INFO' + node_num_str
                       + ': starting processing series '
                       + series)
-
-            # initialize series dataframe
-            series_df = None
-
                 
             # set file list
             self._processing_data_inst.set_series(series)
-
-            # output file name base (if saving data)
-            output_base_file = None
-                    
-            if lgc_save:
-
-                file_prefix = 'threshtrig'
-                if self._processing_id is not None:
-                    file_prefix = self._processing_id +'_' + file_prefix 
-                    
-                series_name = h5io.extract_series_name(
-                    int(output_series_num+node_num)
-                )
-
-                output_base_file = (output_group_path
-                                    + '/' + file_prefix
-                                    + '_' + series_name)
-
-       
-            # initialize dump counter
-            dump_couter = 1
-                        
+                                
             # loop events
             do_stop = False
             while (not do_stop):
@@ -445,18 +439,10 @@ class TriggerProcessing:
                 # flag memory limit reached
                 memory_usage = 0
                 memory_limit_reached = False
-                if series_df is not None:
-                    memory_usage = series_df.shape[0]*series_df.shape[1]*8
+                if process_df is not None:
+                    memory_usage = process_df.shape[0]*process_df.shape[1]*8
                     memory_limit_reached =  memory_usage  >= memory_limit
-
-                total_memory_limit_reached = False
-                if lgc_output and output_df is not None:
-                    memory_usage = output_df.shape[0]*output_df.shape[1]*8
-                    total_memory_limit_reached =  memory_usage  >= memory_limit
-
-                memory_limit_reached  = (memory_limit_reached
-                                         or total_memory_limit_reached)
-                    
+                                  
                 # display
                 if self._verbose:
                     if (trigger_counter%500==0 and trigger_counter!=0):
@@ -494,19 +480,11 @@ class TriggerProcessing:
                     # case nb triggers reached
                     if ntriggers_limit_reached:
                         nextra = trigger_counter-ntriggers
-                        nkeep = len(series_df)-nextra
+                        nkeep = len(process_df)-nextra
                         if nkeep>0:
-                            series_df = series_df[0:nkeep]
+                            process_df = process_df[0:nkeep]
                        
-                    
-                    # case output -> keep copy
-                    if lgc_output:
-                        if output_df is None:
-                            output_df = series_df.copy()
-                        else:
-                            output_df = vx.concat(
-                                [output_df, series_df.copy()])
-                
+                           
                     # save file if needed
                     if lgc_save:
                         
@@ -516,35 +494,38 @@ class TriggerProcessing:
                                       + '.hdf5')
                         
                         # export
-                        series_df.export_hdf5(file_name, mode='w')
+                        process_df.export_hdf5(file_name, mode='w')
                         
                         # increment dump
                         dump_couter += 1
-                        print('INFO' + node_num_str
-                              + ': Starting a new  dump for series '
-                              + series)
-                        
+                        if self._verbose:
+                            print('INFO' + node_num_str
+                                  + ': Incrementing dump number')
+
                         # initialize
-                        del series_df
-                        series_df = None
-                        
-                        
+                        del process_df
+                        process_df = None
+                            
+
                     # case maximum number of events reached
                     # -> processing done!
                     if ntriggers_limit_reached:
-                        print('INFO' + node_num_str
-                              + ': Requested nb events reached. '
-                              + 'Stopping processing!')
-                        return output_df
+                        if self._verbose:
+                            print('INFO' + node_num_str
+                                  + ': Requested nb events reached. '
+                                  + 'Stopping processing!')
+                        return process_df
 
                     # case memory limit reached
                     # -> processing needs to stop!
                     if lgc_output and memory_limit_reached:
-                        print('WARNING' + node_num_str
-                          + ': Stopping processing due to memory limit. '
-                          + 'Not all events may have been processed!')
-                        return output_df
+                        raise ValueError(
+                            'ERROR: memory limit reached! '
+                            + 'Change memory limit or only save hdf5 files '
+                            +'(lgc_save=True AND lgc_output=False) '
+                        )
                     
+                                
                 # check if stop
                 if do_stop:
                     break
@@ -653,25 +634,17 @@ class TriggerProcessing:
                 event_df['processing_id'] = np.array(
                     [self._processing_id]*nb_triggers
                 )
-                
-                """
-                # add detector settings
-                for channel in self._trigger_config.keys():
-                    event_features.update(
-                        self._processing_data_inst.get_channel_settings(channel)
-                    )
-                """
 
                 # done processing event!
                 # append event dictionary to dataframe
-                if series_df is None:
-                    series_df = event_df
+                if process_df is None:
+                    process_df = event_df
                 else:
-                    series_df = vx.concat([series_df, event_df])
-
+                    process_df = vx.concat([process_df, event_df])
+                    
                     
         # return features
-        return output_df
+        return process_df
        
 
 
@@ -738,8 +711,8 @@ class TriggerProcessing:
                             file_name_wildcard = '*' + it_series + '_*.hdf5'
                             file_list.extend(glob(a_path + '/' + file_name_wildcard))
                 else:
-                    file_list = glob(a_path + '/*.hdf5')
-                
+                    file_list = glob(a_path + '/[!didv_]*.hdf5')
+                    
                 # check a single directory
                 if len(file_path) != 1:
                     raise ValueError('Only single directory allowed! ' +
@@ -765,7 +738,9 @@ class TriggerProcessing:
                                 if a_path.find(it_series) != -1:
                                     file_list.append(a_path)
                     else:
-                        file_list.append(a_path)
+                        file_name = str(Path(a_path).name)
+                        if file_name[0:4] != 'didv':
+                            file_list.append(a_path)
 
             else:
                 raise ValueError('File or directory "' + a_path
@@ -776,7 +751,7 @@ class TriggerProcessing:
 
         # sort
         file_list.sort()
-      
+
         # get list of series
         series_dict = dict()
         h5reader = h5io.H5Reader()
@@ -972,7 +947,8 @@ class TriggerProcessing:
 
         """
 
-
+        time.sleep(1)
+        
         # create series name/number
         now = datetime.now()
         series_day = now.strftime('%Y') +  now.strftime('%m') + now.strftime('%d') 
@@ -980,7 +956,7 @@ class TriggerProcessing:
         series_name = ('I' + str(facility) +'_D' + series_day + '_T'
                        + series_time + now.strftime('%S'))
         series_num = int(h5io.extract_series_num(series_name))
-                 
+      
         # build full path
         if output_group_name is None:
             prefix = 'trigger'

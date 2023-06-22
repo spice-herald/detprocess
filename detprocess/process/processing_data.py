@@ -441,6 +441,9 @@ class ProcessingData:
 
         # case dataframe
         if self._is_dataframe:
+            if self._verbose:
+                print('INFO: Loading dataframe for trigger series '
+                      + series)
             file_list = self._trigger_files[series]
             self._dataframe = vx.open_many(file_list)
             self._current_dataframe_index = -1
@@ -615,7 +618,7 @@ class ProcessingData:
                 for key, val in self._current_dataframe_info.items():
                     if val is None:
                         val = np.nan
-                    admin_dict[key] = val     
+                    admin_dict[key] = val
                 return admin_dict
         
         # return all        
@@ -628,9 +631,9 @@ class ProcessingData:
         admin_dict['dump_number'] = np.int16(self._current_admin_info['dump_num'])
         admin_dict['series_number'] = np.int64(self._current_admin_info['series_num'])
         admin_dict['event_id'] = np.int32(self._current_admin_info['event_id'])
-        admin_dict['event_time'] = self._current_admin_info['event_time']
+        admin_dict['event_time'] = np.int64(self._current_admin_info['event_time'])
         admin_dict['run_type'] = np.int16(self._current_admin_info['run_type'])
-
+        admin_dict['data_type'] = np.int16(self._current_admin_info['run_type'])
 
         # group name 
         if self._group_name is not None:
@@ -657,7 +660,40 @@ class ProcessingData:
         if  'trigger_time' in self._current_admin_info:
             admin_dict['trigger_time'] = self._current_admin_info['trigger_time']
         else:
-            admin_dict['trigger_time'] = np.nan 
+            admin_dict['trigger_time'] = np.nan
+
+
+        # fridge run
+        if 'fridge_run' in self._current_admin_info:
+            admin_dict['fridge_run_number'] = np.int64(
+                self._current_admin_info['fridge_run']
+            )
+        else:
+            admin_dict['fridge_run'] = np.nan
+
+
+        # start times
+        if 'fridge_run_start' in self._current_admin_info:
+            admin_dict['fridge_run_start_time'] = np.int64(
+                self._current_admin_info['fridge_run_start']
+            )
+        else:
+            admin_dict['fridge_run_start_time'] = np.nan
+
+
+        if 'series_start' in self._current_admin_info:
+            admin_dict['series_start_time'] = np.int64(
+                self._current_admin_info['series_start']
+            )
+        else:
+            admin_dict['series_start_time'] = np.nan
+
+        if 'group_start' in self._current_admin_info:
+            admin_dict['group_start_time'] = np.int64(
+                self._current_admin_info['group_start']
+            )
+        else:
+            admin_dict['group_start_time'] = np.nan
 
 
         return admin_dict
