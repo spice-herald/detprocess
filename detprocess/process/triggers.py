@@ -711,7 +711,7 @@ class TriggerProcessing:
                             file_name_wildcard = '*' + it_series + '_*.hdf5'
                             file_list.extend(glob(a_path + '/' + file_name_wildcard))
                 else:
-                    file_list = glob(a_path + '/[!didv_]*.hdf5')
+                    file_list = glob(a_path + '/*.hdf5')
                     
                 # check a single directory
                 if len(file_path) != 1:
@@ -738,9 +738,7 @@ class TriggerProcessing:
                                 if a_path.find(it_series) != -1:
                                     file_list.append(a_path)
                     else:
-                        file_name = str(Path(a_path).name)
-                        if file_name[0:4] != 'didv':
-                            file_list.append(a_path)
+                        file_list.append(a_path)
 
             else:
                 raise ValueError('File or directory "' + a_path
@@ -757,31 +755,38 @@ class TriggerProcessing:
         h5reader = h5io.H5Reader()
         series_name = None
         file_counter = 0
-        for file_name in file_list:
+        for afile in file_list:
 
+            file_name = str(Path(afile).name)
+                        
             # skip if filter file
-            if 'filter' in file_name:
+            if 'filter_' in file_name:
                 continue
+
+            # skip didv
+            if 'didv_' in file_name:
+                continue
+
             
             # append file if series already in dictionary
             if (series_name is not None
-                and series_name in file_name
+                and series_name in afile
                 and series_name in series_dict.keys()):
 
-                if file_name not in series_dict[series_name]:
-                    series_dict[series_name].append(file_name)
+                if afile not in series_dict[series_name]:
+                    series_dict[series_name].append(afile)
                     file_counter += 1
                 continue
             
             # get metadata
-            metadata = h5reader.get_metadata(file_name)
+            metadata = h5reader.get_metadata(afile)
             series_name = h5io.extract_series_name(metadata['series_num'])
             if series_name not in series_dict.keys():
                 series_dict[series_name] = list()
 
             # append
-            if file_name not in series_dict[series_name]:
-                series_dict[series_name].append(file_name)
+            if afile not in series_dict[series_name]:
+                series_dict[series_name].append(afile)
                 file_counter += 1
                 
 

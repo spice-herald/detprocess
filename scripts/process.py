@@ -17,7 +17,7 @@ if __name__ == "__main__":
     parser.add_argument('--raw_path','--input_group_path',
                         dest='input_group_path', type=str, required=True,
                         help='Path to continuous raw data group')
-    parser.add_argument('--processing_setup', type=str, required=True,
+    parser.add_argument('--processing_setup', type=str,
                         help='Processing setup file')        
     parser.add_argument('--enable-rand', '--enable_rand',
                         dest='enable_rand',
@@ -49,11 +49,9 @@ if __name__ == "__main__":
                         + ' required is randoms enabled!)')
     parser.add_argument('--ntriggers', type=int,
                         help='Number trigger events [Default=all available]')
-    parser.add_argument('--output_group_name',
-                        dest='output_group_name',
-                        type=str,
-                        help=('Name to output group (if exist already)'
-                              'path can be included (optional)'))
+    parser.add_argument('--save_path', type=str,
+                        help=('Base path to save process data, '
+                              + '(optional)'))
     parser.add_argument('--ncores', type=int,
                         help=('Maximum number of cores used for '
                               'trigger processing [Default=1]'))
@@ -108,18 +106,30 @@ if __name__ == "__main__":
     if args.input_series:
         series = args.input_series
 
+
+    # save path
+    save_path = None
+    if args.save_path:
+        save_path = args.save_path
+
         
          
     # ------------------
     # check setup file
     # ------------------
-    processing_setup = args.processing_setup
-    if not os.path.isfile(processing_setup):
-        print('ERROR: Processing setup file "'
-              + processing_setup  + '" not found!')
+    processing_setup = None
+    if args.processing_setup:
+        processing_setup = args.processing_setup
+        if not os.path.isfile(processing_setup):
+            print('ERROR: Processing setup file "'
+                  + processing_setup  + '" not found!')
+            exit()
+
+    if (processing_setup is None 
+        and (acquire_trig or process_feature)):
+        print('ERROR: Processing setup required!')
         exit()
         
-
     # FIXME, check some fields
     
             
@@ -164,7 +174,8 @@ if __name__ == "__main__":
                        nrandoms=nrandoms,
                        ncores=ncores,
                        lgc_save=True,
-                       lgc_output=False)
+                       lgc_output=False,
+                       save_path=save_path)
 
         trigger_output_path = myproc.get_output_path()
         trigger_output_name = str(Path(trigger_output_path).name)
@@ -202,7 +213,8 @@ if __name__ == "__main__":
                        lgc_output=False,
                        lgc_save=True,
                        output_group_name=trigger_output_name,
-                       ncores=ncores)
+                       ncores=ncores,
+                       save_path=save_path)
         
         
         dataframe_path = myproc.get_output_path()
@@ -228,4 +240,5 @@ if __name__ == "__main__":
         myproc.process(nevents=-1,
                        lgc_save=True,
                        lgc_output=False,
-                       ncores=ncores)
+                       ncores=ncores,
+                       save_path=save_path)
