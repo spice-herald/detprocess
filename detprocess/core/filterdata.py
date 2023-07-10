@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from pprint import pprint
 import pytesdaq.io as h5io
-
+import matplotlib.pyplot as plt
 
 
 class FilterData:
@@ -177,6 +177,13 @@ class FilterData:
         None
         """
 
+        # check file name
+        if 'filter' not in file_name:
+            raise ValueError(
+                'ERROR: file name required to include "filter", '
+                'for example, "xxxxxx_yyyy_filter.hdf5"')
+        
+        
         if self._verbose:
             print('INFO: Saving noise data to file '
                   + file_name)
@@ -281,3 +288,109 @@ class FilterData:
         val = template_series.values
 
         return val, time
+
+    
+    def plot_template(self, channels, tag='default'):
+        """
+        Plot template for specified channel(s)
+
+        Parameters:
+        ----------
+        
+        channels :  str or list of str (required)
+           channel name or list of channels
+
+        tag : str (optional)
+              psd name suffix:  "psd_[tag]" or "psd_fold_[tag]"
+              if tag is None, then "psd" or "psd_fold" is used  
+
+        Return:
+        -------
+        None
+
+        """
+
+        if isinstance(channels, str):
+            channels = [channels]
+
+      
+            
+        # define fig size
+        fig, ax = plt.subplots(figsize=(8, 5))
+        
+        
+        for chan in channels:
+
+            template, t = self.get_template(chan, tag=tag)
+            ax.plot(t*1e3, template, label=chan)
+            
+        # add axis
+        ax.legend()
+        ax.tick_params(which='both', direction='in', right=True, top=True)
+        ax.grid(which='minor', linestyle='dotted')
+        ax.grid(which='major')
+        ax.set_title('Template',fontweight='bold')
+        ax.set_xlabel('Time [msec]',fontweight='bold')
+     
+
+
+    def plot_psd(self, channels, tag='default', fold=True, unit='pA'):
+        """
+        Plot PSD for specified channel(s)
+
+        Parameters:
+        ----------
+        
+        channels :  str or list of str (required)
+           channel name or list of channels
+
+        tag : str (optional)
+              psd name suffix:  "psd_[tag]" or "psd_fold_[tag]"
+              if tag is None, then "psd" or "psd_fold" is used  
+
+        fold : bool (optional, default=False)
+             if True, plot "psd_fold" parameter
+             if False, plot "psd" parameter
+
+        unit : str (optional, default='pA')
+            plot in Amps ('A') or pico Amps 'pA')
+
+
+        Return:
+        -------
+        None
+
+        """
+
+        if isinstance(channels, str):
+            channels = [channels]
+
+      
+            
+        # define fig size
+        fig, ax = plt.subplots(figsize=(8, 5))
+        
+        
+        for chan in channels:
+
+            psd, freq = self.get_psd(chan, tag=tag, fold=fold)
+            psd = psd**0.5
+            if unit=='pA':
+                psd *= 1e12
+                
+            if fold:
+                ax.loglog(freq, psd, label=chan)
+            else:
+                ax.plot(freq, psd, label=chan)
+        # add axis
+        ax.legend()
+        ax.tick_params(which='both', direction='in', right=True, top=True)
+        ax.grid(which='minor', linestyle='dotted')
+        ax.grid(which='major')
+        ax.set_title('Noise PSD',fontweight='bold')
+        ax.set_xlabel('Frequency [Hz]',fontweight='bold')
+        if  unit=='pA':
+            ax.set_ylabel('PSD [pA/rtHz]',fontweight='bold')
+        else:
+            ax.set_ylabel('PSD [A/rtHz]',fontweight='bold')
+        

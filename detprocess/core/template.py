@@ -1,7 +1,6 @@
 import os
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from pprint import pprint
 import pytesdaq.io as h5io
 import qetpy as qp
@@ -307,45 +306,4 @@ class Template(FilterData):
             
 
                         
-    def plot_template(self, channels, tag='default'):
-        """
-        Plot template for specified channel(s)
-
-        Parameters:
-        ----------
-        
-        channels :  str or list of str (required)
-           channel name or list of channels
-
-        tag : str (optional)
-              psd name suffix:  "psd_[tag]" or "psd_fold_[tag]"
-              if tag is None, then "psd" or "psd_fold" is used  
-
-        Return:
-        -------
-        None
-
-        """
-
-        if isinstance(channels, str):
-            channels = [channels]
-
-      
-            
-        # define fig size
-        fig, ax = plt.subplots(figsize=(8, 5))
-        
-        
-        for chan in channels:
-
-            template, t = self.get_template(chan, tag=tag)
-            ax.plot(t*1e3, template, label=chan)
-            
-        # add axis
-        ax.legend()
-        ax.tick_params(which='both', direction='in', right=True, top=True)
-        ax.grid(which='minor', linestyle='dotted')
-        ax.grid(which='major')
-        ax.set_title('Template',fontweight='bold')
-        ax.set_xlabel('Time [msec]',fontweight='bold')
-     
+    
