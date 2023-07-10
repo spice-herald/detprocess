@@ -276,8 +276,8 @@ class FilterData:
             return None, None
         
 
-        template_series = self._filter_data[channel][psd_name]
+        template_series = self._filter_data[channel][template_name]
         time = template_series.index
-        val = tempalte_series.values
+        val = template_series.values
 
         return val, time
