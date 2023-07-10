@@ -760,7 +760,7 @@ class TriggerProcessing:
             file_name = str(Path(afile).name)
                         
             # skip if filter file
-            if 'filter_' in file_name:
+            if 'filter' in file_name:
                 continue
 
             # skip didv

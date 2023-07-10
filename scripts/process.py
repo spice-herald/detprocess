@@ -4,6 +4,8 @@ from pprint import pprint
 from detprocess import TriggerProcessing, FeatureProcessing, Randoms
 import os
 from pathlib import Path
+from pytesdaq.utils import arg_utils
+
 
 warnings.filterwarnings('ignore')
 
@@ -104,9 +106,9 @@ if __name__ == "__main__":
     # series
     series = None
     if args.input_series:
-        series = args.input_series
+        series = arg_utils.extract_list(args.input_series)
 
-
+        
     # save path
     save_path = None
     if args.save_path:

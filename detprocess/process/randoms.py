@@ -703,8 +703,7 @@ class Randoms:
         
         # loop files 
         for a_path in file_path:
-
-                   
+            
             # case path is a directory
             if os.path.isdir(a_path):
 
@@ -724,7 +723,8 @@ class Randoms:
                             file_list.extend(
                                 glob(a_path + '/' + file_name_wildcard))
                 else:
-                    file_list = glob(a_path + '/[!didv_]*.hdf5')
+                    file_list = glob(a_path + '/*.hdf5')
+                    
                 
                 # check a single directory
                 if len(file_path) != 1:
@@ -773,7 +773,7 @@ class Randoms:
             file_name = str(Path(afile).name)
                         
             # skip if filter file
-            if 'filter_' in file_name:
+            if 'filter' in file_name:
                 continue
 
             # skip didv

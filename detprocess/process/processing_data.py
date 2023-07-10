@@ -309,7 +309,7 @@ class ProcessingData:
         
                 
                     
-    def get_template(self, channel, tag=None):
+    def get_template(self, channel, tag='default'):
         """
         Get template from filter file
         
@@ -338,16 +338,21 @@ class ProcessingData:
             raise ValueError('No channel ' + channel
                              + ' found in filter file!')
 
-        # check if template in filter file
-        template_name = 'template'
-        if tag is not None and tag != 'default':
-            template_name += '_' + tag
+        # parameter name 
+        template_name = 'template_' + tag
 
+        # Back compatibility
+        if (tag == 'default'
+            and template_name not in self._filter_data[channel]):
+            psd_name = 'template'
+
+
+        # check if exist
         if template_name not in self._filter_data[channel]:
-            raise ValueError('No parameter "' + template_name
+            raise ValueError('No template with tag "' + tag
                              + '" found in filter file!'
                              + ' for channel ' + channel)
-
+        
 
         template = self._filter_data[channel][template_name].values
         
@@ -361,7 +366,7 @@ class ProcessingData:
 
 
     
-    def get_psd(self, channel, tag=None):
+    def get_psd(self, channel, tag='default'):
         """
         Get psd from filter file
 
@@ -394,14 +399,16 @@ class ProcessingData:
             raise ValueError('No channel ' + channel
                              + ' found in filter file!')
 
-        # check if psd in filter file
-        psd_name = 'psd'
-        if tag is not None and tag != 'default':
-            psd_name += '_' + tag
+        # parameter name 
+        psd_name = 'psd_' + tag
 
-
+        # Back compatibility
+        if (tag == 'default'
+            and psd_name not in self._filter_data[channel]):
+            psd_name = 'psd'
+            
         if psd_name not in self._filter_data[channel]:
-            raise ValueError('No parameter "' + psd_name
+            raise ValueError('No psd with tag "' + tag
                              + '" found in filter file!'
                              + ' for channel ' + channel)
 
