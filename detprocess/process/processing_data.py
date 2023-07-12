@@ -808,7 +808,7 @@ class ProcessingData:
         # build array
         if '+' in channel:
             array = np.sum(self._current_traces[channel_indices,:],
-                           axis = 0)
+                           axis=0)
         elif '|' in channel:
             array =  self._current_traces[channel_indices,:]
             

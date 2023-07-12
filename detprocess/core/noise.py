@@ -128,10 +128,8 @@ class Noise(FilterData):
 
        
         
-         
+    """     
     def set_randoms_array(self, array, channels, fs):
-        """
-        """
         # initialize data
         self.clear_randoms()
 
@@ -140,7 +138,7 @@ class Noise(FilterData):
         self._array_channels = channels
         self._array = array
         self._fs = fs
-               
+    """          
 
 
         
@@ -237,23 +235,35 @@ class Noise(FilterData):
                     print('INFO: Processing PSD for channel '
                           +  chan + ' using series '
                           + str(series))
+
+
+            # let's check if sum of pulses 
+            chan_list = [chan]
+            do_sum = False
+            if '+' in chan:
+                chan_list = chan.split('+')
+                do_sum = True
                     
             # let's do first overall all PSD
-            traces = self._array
-            if self._array is None:
-                traces, traces_metadata = self._get_traces(
-                    chan,
-                    nevents=nevents,
-                    trace_length_msec=trace_length_msec,
-                    trace_length_samples=trace_length_samples,
-                    pretrigger_length_msec=pretrigger_length_msec,
-                    pretrigger_length_samples=pretrigger_length_samples,
-                    series=series
-                )
-                
-                self._fs = traces_metadata['sample_rate']
+            traces, traces_metadata = self._get_traces(
+                chan_list,
+                nevents=nevents,
+                trace_length_msec=trace_length_msec,
+                trace_length_samples=trace_length_samples,
+                pretrigger_length_msec=pretrigger_length_msec,
+                pretrigger_length_samples=pretrigger_length_samples,
+                series=series
+            )
 
+            self._fs = traces_metadata['sample_rate']
+
+            if do_sum:
+                traces = np.sum(traces, axis=1)
+                
             if traces.ndim==3:
+                if traces.shape[1] != 1:
+                    raise ValueError('ERROR: Multiple channels. Expecting '
+                                     'only one. Something went wrong!')
                 traces = traces[:,0,:]
                 
             # autocut_noise

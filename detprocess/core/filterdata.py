@@ -320,8 +320,9 @@ class FilterData:
         
         
         for chan in channels:
-
             template, t = self.get_template(chan, tag=tag)
+            if template is None:
+                continue
             ax.plot(t*1e3, template, label=chan)
             
         # add axis
@@ -374,6 +375,10 @@ class FilterData:
         for chan in channels:
 
             psd, freq = self.get_psd(chan, tag=tag, fold=fold)
+
+            if psd is None:
+                continue
+            
             psd = psd**0.5
             if unit=='pA':
                 psd *= 1e12
