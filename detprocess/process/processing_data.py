@@ -163,9 +163,9 @@ class ProcessingData:
             for alg, alg_config in chan_config.items():
 
                 # FIXME: only 1x1 OF 
-                if alg.find('of1x')==-1:
+                if (alg.find('of1x')==-1 and alg.find('psd_amp')==-1):
                     continue
-                
+                               
                 # psd
                 psd_tag = 'default'
                 if 'psd_tag' in alg_config.keys():

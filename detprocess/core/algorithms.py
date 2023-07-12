@@ -1,5 +1,6 @@
 import numpy as np
 import qetpy as qp
+from numpy.fft import fftfreq, fft
 
 
 __all__ = [
@@ -694,9 +695,9 @@ class FeatureExtractors:
         
     @staticmethod
     def psd_amp(of_base=None, trace=None, fs=None,
-                f_lims=[],
-                feature_base_name='psdamp',
-                **kwargs):
+               f_lims=[],
+               feature_base_name='psd_amp',
+               **kwargs):
         """
         Feature extraction for measuring the average amplitude of a
         ffted trace in a range of frequencies. Rather than recalculating
@@ -743,10 +744,9 @@ class FeatureExtractors:
             df = fs/trace_length
             freqs = fftfreq(trace_length, 1.0/fs)
             trace_psd = np.abs(fft(trace, axis=-1)/trace_length/df)
-              
-            retdict = {}   
-                 
+                          
         i = 0
+        retdict = {}   
         while i < len(f_lims):
             f_low = f_lims[i][0]
             f_high = f_lims[i][1]
