@@ -1328,3 +1328,81 @@ class FeatureProcessing:
         
 
         return min_index, max_index
+        
+    @staticmethod
+    def psd_amp(of_base=None, trace=None, fs=None,
+                f_lims=[],
+                feature_base_name='psdamp',
+                **kwargs):
+        """
+        Feature extraction for measuring the average amplitude of a
+        ffted trace in a range of frequencies. Rather than recalculating
+        the fft, this feature references the pre-calculated OF class.
+        The arguments "trace", "template", "psd"
+        (and associated parameters "fs", "nb_samples_pretrigger")
+        should only be used if  not already added in OF base object.
+        Otherwise keep as None        
+        
+        Parameters
+        ----------        
+        of_base : OFBase object, optional
+            OFBase  if it has been instantiated independently
+                   
+        trace : ndarray, optional
+            An ndarray containing the raw data to extract the feature
+            from. It is required if trace not already added in OFbase,
+            otherwise keep it as None
+        
+        fs : float, optional
+            If trace is passed, used to construct fft of trace and fft
+            frequencies array.
+            
+        f_lims : list of list of floats
+            A list of [f_low, f_high]s between which the averaged PSD is
+            calculated. For example, [[45.0, 65.0], [120.0, 130.0]]
+            
+        feature_base_name : str, option
+            output feature base name
+            
+        Returns
+        -------
+        retdict : dict
+            Dictionary containing the various extracted features.   
+                 
+        """
+            
+        if of_base is not None:
+            freqs = of_base._fft_freqs
+            trace_psd = np.abs(of_base._signal_fft)
+            
+        else:
+            trace_length = len(trace[0])
+            df = fs/trace_length
+            freqs = fftfreq(trace_length, 1.0/fs)
+            trace_psd = np.abs(fft(trace, axis=-1)/trace_length/df)
+              
+            retdict = {}   
+                 
+        i = 0
+        while i < len(f_lims):
+            f_low = f_lims[i][0]
+            f_high = f_lims[i][1]
+            
+            #round the frequencies so we can more easily look up what
+            #frequencies to average between
+            freq_spacing = freqs[1] - freqs[0]
+            f_low_mod = freq_spacing * np.ceil(f_low/freq_spacing)
+            f_high_mod = freq_spacing * np.floor(f_high/freq_spacing)
+            
+            #get the indices of where to average the psd
+            f_low_index = np.where(freqs == f_low_mod)[0][0]
+            f_high_index = np.where(freqs == f_high_mod)[0][0]
+            
+            #calculate the average psd in that range
+            av_psd = np.average(trace_psd[f_low_index:f_high_index])
+            
+            # store features
+            retdict[feature_base_name + '_' + str(round(f_low)) + '_' + str(round(f_high))] = av_psd            
+            i += 1
+            
+        return retdict
