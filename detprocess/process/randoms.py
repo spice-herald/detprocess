@@ -15,6 +15,8 @@ import pytesdaq.io as h5io
 from math import ceil, floor
 import random
 import copy
+from humanfriendly import parse_size
+
 
 __all__ = [
     'Randoms'
@@ -112,7 +114,8 @@ class Randoms:
                 lgc_save=False,
                 lgc_output=False,
                 save_path=None,
-                output_group_name=None):
+                output_group_name=None,
+                memory_limit='2GB'):
         
         """
         Acquire random trigger using specified rate (and minimum
@@ -220,7 +223,12 @@ class Randoms:
 
         # initialize output
         output_df = None
-        
+
+        # convert memory usage in bytes
+        if isinstance(memory_limit, str):
+            memory_limit = parse_size(memory_limit)
+
+
         # case only 1 node used for processing
         if ncores == 1:
             series_list = list(self._series_dict.keys())
@@ -231,11 +239,16 @@ class Randoms:
                                       output_series_num,
                                       output_group_path,
                                       lgc_save,
-                                      lgc_output)
+                                      lgc_output,
+                                      memory_limit)
         else:
             
             # split data
             series_list_split = self._split_series(ncores)
+            
+            # max memory so it fits in RAM
+            memory_limit /= ncores
+            
             
             # lauch pool processing
             if self._verbose:
@@ -253,7 +266,8 @@ class Randoms:
                                                   repeat(output_series_num),
                                                   repeat(output_group_path),
                                                   repeat(lgc_save),
-                                                  repeat(lgc_output))
+                                                  repeat(lgc_output),
+                                                  repeat(memory_limit))
                 )
                 pool.close()
                 pool.join()
@@ -284,7 +298,8 @@ class Randoms:
                  output_series_num,
                  output_group_path,
                  lgc_save,
-                 lgc_output):
+                 lgc_output,
+                 memory_limit):
         """
         Acquire random trigger using specified rate (and minimum
         separation)
@@ -303,39 +318,49 @@ class Randoms:
         
         # set output dataframe to None
         # only used if dataframe returned
-        output_df = None
+        process_df = None
+
+        # output file name base (if saving data)
+        output_base_file = None
         
+        if lgc_save:
+
+            file_prefix = 'rand'
+            if self._processing_id is not None:
+                file_prefix = self._processing_id +'_' + file_prefix 
+                
+            series_name = h5io.extract_series_name(
+                int(output_series_num+node_num)
+            )
+
+            output_base_file = (output_group_path
+                                + '/' + file_prefix
+                                + '_' + series_name)
+
         # loop series
-        for series  in series_list:
+        dump_counter = 1
+        nb_series = len(series_list)
+        for series_count, series  in enumerate(series_list):
 
             if self._verbose:
                 print('INFO' + node_num_str
                       + ': Acquiring randoms for series '
                       + series)
 
-            # set series dataframe to None
-            series_df = None
+            
+            # flag memory limit reached (on a series by series basis)
+            # if memory reached, save file 
+            memory_usage = 0
+            memory_limit_reached = False
+            if process_df is not None:
+                memory_usage = process_df.shape[0]*process_df.shape[1]*8
+                memory_limit_reached =  memory_usage  >= memory_limit
+                
 
+                
             # series num
             series_num = self._series_dict[series]['series_num']
       
-            # trigger file name
-            output_base_file  = None
-
-            if lgc_save:
-                
-                file_prefix = 'rand'
-                if self._processing_id is not None:
-                    file_prefix = self._processing_id + '_' + file_prefix 
-                    
-                series_name = h5io.extract_series_name(
-                    int(output_series_num+node_num)
-                )
-
-                output_base_file = (output_group_path
-                                    + '/' + file_prefix
-                                    + '_' + series_name)
-
                 
             # trace length in second:
             sample_rate = self._series_dict[series]['sample_rate']
@@ -383,9 +408,8 @@ class Randoms:
             current_event_time = None
             trigger_id = 0
             total_event_counter = 0
-            dump_couter = 1
+        
             for file_name in self._series_dict[series]['files']:
-
 
                 # initialize feature dictionary
                 feature_dict = {'series_number': list(),
@@ -518,54 +542,47 @@ class Randoms:
                 df = vx.from_dict(feature_dict)
 
                 # concatenate
-                if series_df is None:
-                    series_df = df
+                if process_df is None:
+                    process_df = df
                 else:
-                    series_df = vx.concat([series_df, df])
+                    process_df = vx.concat([process_df, df])
 
                 # close file
                 h5reader.close()
 
-
-
-            # display rate
-            if self._verbose:
-                nb_events = len(series_df)
-                rate = nb_events/(trace_length_sec*total_event_counter)
-                rate_str = '{:.2f}'.format(rate)
-                print('INFO' + node_num_str
-                      + ': Randoms acquisition for ' + series
-                      + ' done! Final rate = '
-                      + rate_str
-                      + ' Hz')
                                 
             # save file
-            if lgc_save:
-                         
+            if (lgc_save
+                and (nb_series==series_count+1
+                     or memory_limit_reached)):
+                
                 # build hdf5 file name
-                dump_str = str(dump_couter)
+                dump_str = str(dump_counter)
                 file_name =  (output_base_file + '_F' + dump_str.zfill(4)
                               + '.hdf5')
                         
                 # export
-                series_df.export_hdf5(file_name, mode='w')
+                process_df.export_hdf5(file_name, mode='w')
                         
                 # increment dump
-                dump_couter += 1
-                          
-            # output dataframe
-            if lgc_output:
-                
-                # concatenate
-                if output_df is None:
-                    output_df = series_df
-                else:
-                    output_df = vx.concat([output_df, series_df])
-            else:
-                del series_df
-                
+                dump_counter += 1
+
+                # delete df
+                if memory_limit_reached:
+                    del process_df
+                    process_df = None
+                    
+            # case memory limit reached
+            # -> processing needs to stop!
+            if lgc_output and memory_limit_reached:
+                raise ValueError(
+                    'ERROR: memory limit reached! '
+                    + 'Change memory limit or only save hdf5 files '
+                    +'(lgc_save=True AND lgc_output=False) '
+                )
+                                          
                                    
-        return output_df
+        return process_df
             
 
 
