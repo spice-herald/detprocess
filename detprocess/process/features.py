@@ -803,6 +803,10 @@ class FeatureProcessing:
             # skip if filter file
             if 'filter' in file_name:
                 continue
+
+            # skip didv
+            if 'didv' in file_name:
+                continue
             
             # append file if series already in dictionary
             if (series_name is not None
