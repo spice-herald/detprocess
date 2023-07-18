@@ -361,7 +361,21 @@ class TriggerProcessing:
                     trig_chan,
                     tag=template_tag)   
             )
-                               
+
+            nb_pretrigger_samples = None
+            if 'pretrigger_length_samples' in template_metadata.keys():
+                nb_pretrigger_samples = (
+                    template_metadata['pretrigger_length_samples']
+                )
+            elif 'pretrigger_samples' in template_metadata.keys():
+                nb_pretrigger_samples = (
+                    template_metadata['pretrigger_samples']
+                )
+            else:
+                raise ValueError('ERROR: Template metadata needs to contain '
+                                 '"pretirgger_samples" value')
+            
+            
             # get psd
             psd_tag = 'default'
             if 'psd_tag' in trig_data:
@@ -384,7 +398,8 @@ class TriggerProcessing:
                 
             # instantiate optimal filter trigger
             oftrigger_inst = OptimumFilterTrigger(
-                trigger_name, fs, template, psd)
+                trigger_name, fs, template, psd, nb_pretrigger_samples
+            )
 
             # add in EventBuilder
             evtbuilder_inst.add_trigger_object(

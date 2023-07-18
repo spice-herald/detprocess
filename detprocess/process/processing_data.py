@@ -249,9 +249,13 @@ class ProcessingData:
 
 
                         # pretrigger
-                        if 'pretrigger_samples' in template_metadata:
+                        if 'pretrigger_samples' in template_metadata.keys():
                             pretrigger_samples = (
                                 template_metadata['pretrigger_samples']
+                            )
+                        elif 'pretrigger_length_samples' in template_metadata.keys():
+                            pretrigger_samples = (
+                                template_metadata['pretrigger_length_samples']
                             )
 
                         # FIXME: need to modify QETpy to add parameter

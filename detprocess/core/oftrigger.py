@@ -94,6 +94,7 @@ class OptimumFilterTrigger:
 
     def __init__(self, trigger_channel,
                  fs, template, noisepsd,
+                 pretrigger_samples,
                  template_ttl=None):
         """
         Initialization of the FIR filter.
@@ -122,6 +123,12 @@ class OptimumFilterTrigger:
         self._template = template
         self._noisepsd = noisepsd
         self._trigger_channel = trigger_channel
+        self._pretrigger_samples = pretrigger_samples
+        self._nb_samples = self._template.shape[-1]
+        self._posttrigger_samples = self._nb_samples - self._pretrigger_samples
+
+        # trigger index shift if pretrigger not midpoint
+        self._trigger_index_shift = self._pretrigger_samples - self._nb_samples//2
         
         # check array shapes
         #if isinstance(trigger_channel, str):   
@@ -260,25 +267,28 @@ class OptimumFilterTrigger:
         if self._filtered_trace is None:
             self._filtered_trace = correlate(trace,
                                              self._phi,
-                                             mode="same",
+                                             mode='same',
                                              method='fft')/self._norm
             
         
         # set the filtered values to zero near the edges,
         # so as not to use the padded values in the analysis
         cut_len =  self._phi.shape[-1]
-        self._filtered_trace[:cut_len//2] = 0.0
-        self._filtered_trace[-(cut_len//2) + (cut_len+1)%2:] = 0.0
-
+        self._filtered_trace[:self._pretrigger_samples] = 0.0
+        self._filtered_trace[-(self._posttrigger_samples)
+                             +(self._nb_samples+1)%2:] = 0.0
+        
         # filtered with ttl template
         self._filtered_trace_ttl = filtered_trace_ttl
         if self._template_ttl is not None:
             self._filtered_trace_ttl = correlate(trace,
                                                  self._template_ttl,
-                                                 mode="same")/self._norm_ttl      
-            self._filtered_trace_ttl[:cut_len//2] = 0.0
-            self._filtered_trace_ttl[-(cut_len//2) + (cut_len+1)%2:] = 0.0
-
+                                                 mode="same",
+                                                 method='fft')/self._norm_ttl      
+            self._filtered_trace_ttl[:self._pretrigger_samples] = 0.0
+            self._filtered_trace_ttl[-(self._posttrigger_samples)
+                                     +(self._nb_samples+1)%2:] = 0.0
+            
             
 
             
@@ -426,37 +436,39 @@ class OptimumFilterTrigger:
                 else:
                     evt_ind = evt_inds[np.argmin(self._filtered_trace[evt_inds])]
 
+                evt_ind_shift = evt_ind + self._trigger_index_shift
 
+                    
                 # Case TTL is used
                 if (self._filtered_trace_ttl is not None
                     and thresh_ttl is not None):
 
                     # TTL index
                     ttl_ind = evt_inds[np.argmax(self._filtered_trace_ttl[evt_inds])]
-
+                    ttl_ind_shift = ttl_ind + self._trigger_index_shift
                         
                     # case trigger TTL -> primary
                     if rangetypes[irange][2]:
 
                         # primary = TTL
-                        trigger_data['trigger_index'].extend([ttl_ind])
-                        trigger_data['trigger_time'].extend([ttl_ind/self._fs])
+                        trigger_data['trigger_index'].extend([ttl_ind_shift])
+                        trigger_data['trigger_time'].extend([ttl_ind_shift/self._fs])
                         trigger_data['trigger_amplitude'].extend(
                             [self._filtered_trace[ttl_ind]])
                         trigger_data['trigger_type'].extend([5])
 
                         
                         # TTL                    
-                        trigger_data['trigger_index_ttl'].extend([ttl_ind])
-                        trigger_data['trigger_time_ttl'].extend([ttl_ind/self._fs])
+                        trigger_data['trigger_index_ttl'].extend([ttl_ind_shift])
+                        trigger_data['trigger_time_ttl'].extend([ttl_ind_shift/self._fs])
                         trigger_data['trigger_amplitude_ttl'].extend(
                             [self._filtered_trace_ttl[ttl_ind]])
                         
                         # pulse
                         if rangetypes[irange][1]:
                             # pulse also triggered
-                            trigger_data['trigger_index_pulse'].extend([evt_ind])
-                            trigger_data['trigger_time_pulse'].extend([evt_ind/self._fs])
+                            trigger_data['trigger_index_pulse'].extend([evt_ind_shift])
+                            trigger_data['trigger_time_pulse'].extend([evt_ind_shift/self._fs])
                             trigger_data['trigger_amplitude_pulse'].extend(
                                 [self._filtered_trace[evt_ind]])
                         else:
@@ -468,16 +480,16 @@ class OptimumFilterTrigger:
                     # case only pulse triggered
                     else:
                         # primary = pulse
-                        trigger_data['trigger_index'].extend([evt_ind])
-                        trigger_data['trigger_time'].extend([evt_ind/self._fs])
+                        trigger_data['trigger_index'].extend([evt_ind_shift])
+                        trigger_data['trigger_time'].extend([evt_ind_shift/self._fs])
                         trigger_data['trigger_amplitude'].extend(
                             [self._filtered_trace[evt_ind]])
                         trigger_data['trigger_type'].extend([4])
 
                         
                         # pulse also triggered
-                        trigger_data['trigger_index_pulse'].extend([evt_ind])
-                        trigger_data['trigger_time_pulse'].extend([evt_ind/self._fs])
+                        trigger_data['trigger_index_pulse'].extend([evt_ind_shift])
+                        trigger_data['trigger_time_pulse'].extend([evt_ind_shift/self._fs])
                         trigger_data['trigger_amplitude_pulse'].extend(
                             [self._filtered_trace[evt_ind]])
                         
@@ -488,8 +500,8 @@ class OptimumFilterTrigger:
 
                 # Case no TTL
                 else:
-                    trigger_data['trigger_index'].extend([evt_ind])
-                    trigger_data['trigger_time'].extend([evt_ind/self._fs])
+                    trigger_data['trigger_index'].extend([evt_ind_shift])
+                    trigger_data['trigger_time'].extend([evt_ind_shift/self._fs])
                     trigger_data['trigger_amplitude'].extend([self._filtered_trace[evt_ind]])
                     trigger_data['trigger_type'].extend([4])
                     
