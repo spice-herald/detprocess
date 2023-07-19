@@ -248,15 +248,39 @@ class ProcessingData:
                         )
 
 
-                        # pretrigger
-                        if 'pretrigger_samples' in template_metadata.keys():
-                            pretrigger_samples = (
-                                template_metadata['pretrigger_samples']
+                        # template pretrigger
+                        pretrigger_samples_temp = None
+                        if 'nb_pretrigger_samples' in template_metadata.keys():
+                            pretrigger_samples_temp = (
+                                int(template_metadata['nb_pretrigger_samples'])
                             )
-                        elif 'pretrigger_length_samples' in template_metadata.keys():
-                            pretrigger_samples = (
-                                template_metadata['pretrigger_length_samples']
-                            )
+                        else:
+                            # back compatibility....
+                            if 'pretrigger_samples' in template_metadata.keys():
+                                pretrigger_samples_temp = (
+                                    int(template_metadata['pretrigger_samples'])
+                                )
+                            elif 'pretrigger_length_samples' in template_metadata.keys():
+                                pretrigger_samples_temp = (
+                                    int(template_metadata['pretrigger_length_samples'])
+                                )
+
+                        # check
+                        if (pretrigger_samples is not None
+                            and  pretrigger_samples_temp is not None):
+
+                            if (pretrigger_samples!=pretrigger_samples_temp):
+                                raise ValueError(
+                                    'ERROR: template pretrigger length ('
+                                    + str(pretrigger_samples_temp) + ') '
+                                    + 'is different than pretrigger length defined in '
+                                    + 'configuration (yaml) file ('
+                                    + str(pretrigger_samples) + ').'
+                                    + 'Unable to process!')
+
+                        if pretrigger_samples_temp is not None:
+                            pretrigger_samples =  pretrigger_samples_temp
+                                
 
                         # FIXME: need to modify QETpy to add parameter
                         self._OF_base_objs[chan][psd_tag]._pretrigger_samples = (
@@ -597,8 +621,7 @@ class ProcessingData:
 
             for tag, OF_base in channel_dict.items():
                 OF_base.update_signal(trace)
-                
-                
+                                
 
     def get_event_admin(self, return_all=False):
         """

@@ -522,8 +522,8 @@ class Noise(FilterData):
         # metadata
         trace_metadata = dict()
         trace_metadata['sample_rate'] = fs
-        trace_metadata['trace_length_samples'] = nb_samples
-        trace_metadata['pretrigger_length_samples'] = nb_pretrigger_samples
+        trace_metadata['nb_samples'] = nb_samples
+        trace_metadata['nb_pretrigger_samples'] = nb_pretrigger_samples
         trace_metadata['nb_randoms'] = nb_events
         if 'fridge_run' in metadata.keys():
             trace_metadata['fridge_run'] =  metadata['fridge_run']

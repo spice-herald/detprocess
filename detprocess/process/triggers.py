@@ -363,19 +363,24 @@ class TriggerProcessing:
             )
 
             nb_pretrigger_samples = None
-            if 'pretrigger_length_samples' in template_metadata.keys():
+            if  'nb_pretrigger_samples' in template_metadata.keys():
                 nb_pretrigger_samples = (
-                    template_metadata['pretrigger_length_samples']
-                )
-            elif 'pretrigger_samples' in template_metadata.keys():
-                nb_pretrigger_samples = (
-                    template_metadata['pretrigger_samples']
+                    template_metadata['nb_pretrigger_samples']
                 )
             else:
+                # back compatibility
+                if 'pretrigger_length_samples' in template_metadata.keys():
+                    nb_pretrigger_samples = (
+                        template_metadata['pretrigger_length_samples']
+                    )
+                elif 'pretrigger_samples' in template_metadata.keys():
+                    nb_pretrigger_samples = (
+                        template_metadata['pretrigger_samples']
+                    )
+            if nb_pretrigger_samples is None:
                 raise ValueError('ERROR: Template metadata needs to contain '
-                                 '"pretirgger_samples" value')
-            
-            
+                                 '"nb_pretrigger_samples" value')
+                        
             # get psd
             psd_tag = 'default'
             if 'psd_tag' in trig_data:
@@ -395,10 +400,11 @@ class TriggerProcessing:
             
             # sample rate
             fs = self._processing_data_inst.get_sample_rate()
-                
+            
             # instantiate optimal filter trigger
             oftrigger_inst = OptimumFilterTrigger(
-                trigger_name, fs, template, psd, nb_pretrigger_samples
+                trigger_name, fs, template, psd,
+                nb_pretrigger_samples
             )
 
             # add in EventBuilder

@@ -4,7 +4,7 @@ import numpy as np
 from pprint import pprint
 import pytesdaq.io as h5io
 import matplotlib.pyplot as plt
-
+from numpy.fft import fftfreq, rfftfreq
 
 class FilterData:
     """
@@ -28,12 +28,7 @@ class FilterData:
         # filter file data dictionary
         self._filter_data = dict()
 
-        # available tags, parameters
-        self._filter_names = dict()
-        
-        
-        
-
+      
 
     @property
     def verbose(self):
@@ -112,8 +107,49 @@ class FilterData:
                         print('    ' + msg)
                                     
 
+
+    def clear_data(self, channels=None, tag=None):
+        """
+        clear filter data
+        """
+
+        if (channels is None and tag is not None):
+            raise ValueError(
+                'ERROR: "channels" argument needed when '
+                '"tag" is provided'
+            )
+        
+        
+        if (channels is None and tag is None):
+            self._filter_data.clear()
+            self._filter_data = dict()
+            
+        elif channels is not None:
+
+            if isinstance(channels, str):
+                channels = [channels]
+
+            for chan in channels:
+
+                # check if channel exist
+                if chan not in self._filter_data.keys():
+                    continue
+
+                # remove specific item
+                if tag is None:
+                    self._filter_data.pop(chan)
+                else:
+                    for key in self._filter_data[chan].keys():
+                        if tag in key:
+                            self._filter_data[chan].pop(key)
+            
+                    
+                    
+            
+
+                        
                 
-    def load_hdf5(self, file_name, overwrite=False):
+    def load_hdf5(self, file_name, overwrite=True):
         """
         Load filter data from file. Key may be overwritten if 
         already exist
@@ -224,22 +260,44 @@ class FilterData:
             psd frequencies
 
         """
+        
+        # check channel
+        if (channel not in self._filter_data.keys()):
+            msg = ('ERROR: Channel "'
+                   + channel + '" not available!')
+            
+            if self._filter_data.keys():
+                msg += ' List of channels in filter file:'
+                msg += str(list(self._filter_data.keys()))
+                
+            raise ValueError(msg)
 
         
         # parameter name
         psd_name = 'psd' + '_' + tag
         if fold:
             psd_name = 'psd_fold' + '_' + tag
-            
-        # check if available
-        if ((channel not in self._filter_data.keys()
-             or (channel in self._filter_data.keys()
-                 and psd_name not in self._filter_data[channel].keys()))):
-            print('ERROR: No psd available for channel '
-                  + channel)
-            return None, None
-        
 
+            
+        # back compatibility
+        if (tag=='default'
+            and psd_name not in self._filter_data[channel].keys()):
+            psd_name = 'psd'
+            if fold:
+                psd_name = 'psd_fold'
+                
+
+        # check available tag
+        if psd_name not in self._filter_data[channel].keys():
+            msg = 'ERROR: Parameter not found!'            
+            if  self._filter_data[channel].keys():
+                msg += ('List of parameters for channel '
+                        + channel + ':')
+                msg += str(list(self._filter_data[channel].keys()))
+                
+            raise ValueError(msg)
+            
+    
         psd_series = self._filter_data[channel][psd_name]
         freq = psd_series.index
         val = psd_series.values
@@ -270,24 +328,239 @@ class FilterData:
             time array
         """
 
+        # check channel
+        if (channel not in self._filter_data.keys()):
+            msg = ('ERROR: Channel "'
+                   + channel + '" not available! ')
+
+            if self._filter_data.keys():
+                msg += 'List of channels in filter file: '
+                msg += str(list(self._filter_data.keys()))
+                
+            raise ValueError(msg)
+
+
         
         # parameter name
         template_name = 'template' + '_' + tag
+
+
+        # back compatibility
+        if (tag=='default'
+            and template_name not in self._filter_data[channel].keys()):
+            template_name = 'psd'
+            
+        # check available tag
+        if template_name not in self._filter_data[channel].keys():
+            msg = 'ERROR: Parameter not found!'            
+            if self._filter_data[channel].keys():
+                msg += ('List of parameters for channel '
+                        + channel + ':')
+                msg += str(list(self._filter_data[channel].keys()))
                 
-        # check if available
-        if ((channel not in self._filter_data.keys()
-             or (channel in self._filter_data.keys()
-                 and template_name not in self._filter_data[channel].keys()))):
-            print('ERROR: No template available for channel ' + channel
-                  + '. Load from file first?')
-            return None, None
-        
+            raise ValueError(msg)
+
 
         template_series = self._filter_data[channel][template_name]
         time = template_series.index
         val = template_series.values
 
         return val, time
+
+
+
+    def set_template(self, channels, array,
+                     sample_rate=None,
+                     pretrigger_length_msec=None,
+                     pretrigger_length_samples=None,
+                     metadata=None,
+                     tag='default'):
+        """
+        set template array
+        """
+
+        #  check array type/dim
+        if isinstance(array, list):
+            array = np.array(array)
+        elif not isinstance(array, np.ndarray):
+            raise ValueError('ERROR: Expecting numpy array!')
+        if array.ndim == 1:
+            array = array[np.newaxis, :]
+
+        # number of channels
+        if isinstance(channels, str):
+            channels = [channels]
+        nb_channels = len(channels)
+
+        # check array shape
+        if (array.shape[0] !=  nb_channels):
+            raise ValueError(
+                'ERROR: Array shape is not consistent with '
+                'number of channels')
+
+        # sample rate / pretrigger length
+        if sample_rate is None:
+            raise ValueError('ERROR: "sample_rate" argument required!')
+
+        if (pretrigger_length_msec is None
+            and pretrigger_length_samples):
+            raise ValueError('ERROR: pretrigger length (samples or msec)'
+                             ' required!')
+
+        if pretrigger_length_msec is not None:
+            pretrigger_length_samples = int(
+                round(pretrigger_length_msec*sample_rate*1e-3)
+            )
+
+            
+        # time array
+        dt = 1/sample_rate
+        t =  np.asarray(list(range(array.shape[-1])))*dt
+        
+
+        # parameter name
+        template_name = 'template' + '_' + tag
+
+        # metadata
+        if metadata is None:
+            metadata = dict()
+        metadata['sample_rate'] =  sample_rate
+        metadata['nb_samples'] = array.shape[1]
+        metadata['nb_pretrigger_samples'] = pretrigger_length_samples
+                    
+        
+        # loop channels and store 
+        for ichan in range(nb_channels):
+
+            # channel name
+            chan = channels[ichan]
+
+                     
+            # template
+            template = array[ichan,:]
+
+            # add channel
+            if chan not in self._filter_data.keys():
+                self._filter_data[chan] = dict()
+            else:
+                # check PSD has same length
+                psd_name = 'psd' + '_' + tag
+                if psd_name in self._filter_data[chan]:
+                    psd = self._filter_data[chan][psd_name].values
+                    if len(psd)!=len(template):
+                        raise ValueError(
+                            'ERROR: template and psd for channel '
+                            + chan + ' are required to have same length for '
+                            + 'tag ' + tag  + '. Clear data first using '
+                            + '"clear_data(...)" or set '
+                            + ' template length to ' + str(len(psd))
+                        )
+                
+                
+            self._filter_data[chan][template_name] = (
+                pd.Series(template, t))
+            
+            # add channel nanme metadata
+            metadata['channel'] = chan
+            self._filter_data[chan][template_name + '_metadata'] = metadata
+            
+
+
+    def set_psd(self, channels, array, fold=False,
+                sample_rate=None,
+                pretrigger_length_msec=None,
+                pretrigger_length_samples=None,
+                metadata=None,
+                tag='default'):
+        """
+        set psd array
+        """
+        
+        #  check array type/dim
+        if isinstance(array, list):
+            array = np.array(array)
+        elif not isinstance(array, np.ndarray):
+            raise ValueError('ERROR: Expecting numpy array!')
+        if array.ndim == 1:
+            array = array[np.newaxis, :]
+            
+        # number of channels
+        if isinstance(channels, str):
+            channels = [channels]
+        nb_channels = len(channels)
+
+        # check array shape
+        if (array.shape[0] != nb_channels):
+            raise ValueError(
+                'ERROR: Array shape is not consistent with '
+                'number of channels')
+
+        # sample rate 
+        if sample_rate is None:
+            raise ValueError('ERROR: "sample_rate" argument required!')
+
+        # pretrigger length (not required)
+        if pretrigger_length_msec is not None:
+            pretrigger_length_samples = int(
+                round(pretrigger_length_msec*sample_rate*1e-3)
+            )
+
+       
+        # parameter name
+        psd_name = 'psd' + '_' + tag
+        if fold:
+            psd_name = 'psd_fold' + '_' + tag
+            
+        # metadata
+        if metadata is None:
+            metadata = dict()
+        metadata['sample_rate'] =  sample_rate
+        metadata['nb_samples'] = array.shape[1]
+        if pretrigger_length_samples is not None:
+            metadata['nb_pretrigger_samples'] = pretrigger_length_samples
+                    
+        
+        # loop channels and store 
+        for ichan in range(nb_channels):
+
+            # channel name
+            chan = channels[ichan]
+
+            # psd
+            psd = array[ichan,:]
+            freqs = None
+            if fold:
+                freqs = rfftfreq(len(psd), d=1.0/sample_rate)
+            else:
+                freqs = fftfreq(len(psd), d=1.0/sample_rate)
+                
+
+            # add channel
+            if chan not in self._filter_data.keys():
+                self._filter_data[chan] = dict()
+            else:
+                # check template/psd have  same length
+                template_name = 'template' + '_' + tag
+                if template_name in self._filter_data[chan]:
+                    template = self._filter_data[chan][template_name].values
+                    if len(psd)!=len(template):
+                        raise ValueError(
+                            'ERROR: template and psd for channel '
+                            + chan + ' are required to have same length for '
+                            + 'tag ' + tag  + '. Clear data first using '
+                            + '"clear_data(...)" or set '
+                            + ' psd length to ' + str(len(template))
+                        )
+                
+                
+            self._filter_data[chan][psd_name] = (
+                pd.Series(psd, freqs))
+            
+            # add channel nanme metadata
+            metadata['channel'] = chan
+            self._filter_data[chan][psd_name + '_metadata'] = metadata
+            
+
 
     
     def plot_template(self, channels, tag='default'):

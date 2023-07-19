@@ -32,90 +32,7 @@ class Template(FilterData):
         # instantiate base class
         super().__init__(verbose=verbose)
 
-        
-
-    def set_template(self, channels, array,
-                     sample_rate=None,
-                     pretrigger_length_msec=None,
-                     pretrigger_length_samples=None,
-                     metadata=None,
-                     tag='default'):
-        """
-        set template array
-        """
-
-        #  check array type/dim
-        if isinstance(array, list):
-            array = np.array(array)
-        elif not isinstance(array, np.ndarray):
-            raise ValueError('ERROR: Expecting numpy array!')
-        if array.ndim == 1:
-            array = array[np.newaxis, :]
-
-        # number of channels
-        if isinstance(channels, str):
-            channels = [channels]
-        nb_channels = len(channels)
-
-        # check array shape
-        if (array.shape[0] !=  nb_channels):
-            raise ValueError(
-                'ERROR: Array shape is not consistent with '
-                'number of channels')
-
-        # sample rate / pretrigger length
-        if sample_rate is None:
-            raise ValueError('ERROR: "sample_rate" argument required!')
-
-        if (pretrigger_length_msec is None
-            and pretrigger_length_samples):
-            raise ValueError('ERROR: pretrigger length (samples or msec)'
-                             ' required!')
-
-        if pretrigger_length_msec is not None:
-            pretrigger_length_samples = int(
-                round(pretrigger_length_msec*sample_rate*1e-3)
-            )
-    
-        # time array
-        dt = 1/sample_rate
-        t =  np.asarray(list(range(array.shape[-1])))*dt
-        
-
-        # parameter name
-        template_name = 'template' + '_' + tag
-
-        # metadata
-        if metadata is None:
-            metadata = dict()
-        metadata['sample_rate'] =  sample_rate
-        metadata['trace_length_samples'] = array.shape[1]
-        metadata['pretrigger_length_samples'] = pretrigger_length_samples
-                    
-        
-        # loop channels and store 
-        for ichan in range(nb_channels):
-
-            # template
-            template = array[ichan,:]
-
-            # add channel
-            chan = channels[ichan]
-            if chan not in self._filter_data.keys():
-                self._filter_data[chan] = dict()
-                
-            self._filter_data[chan][template_name] = (
-                pd.Series(template, t))
-            
-            # add channel nanme metadata
-            metadata['channel'] = chan
-            self._filter_data[chan][template_name + '_metadata'] = metadata
-            
-   
-                     
-            
-
-        
+           
 
     def create_template(self, channels,
                         sample_rate=None,
@@ -275,8 +192,8 @@ class Template(FilterData):
 
         # metadata
         metadata = {'sample_rate': sample_rate,
-                    'trace_length_samples': trace_length_samples,
-                    'pretrigger_length_samples': pretrigger_length_samples,
+                    'nb_samples': trace_length_samples,
+                    'nb_pretrigger_samples': pretrigger_length_samples,
                     'nb_poles': poles,
                     'A': A, 'tau_r': tau_r, 'tau_f1': tau_f1}
 
