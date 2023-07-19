@@ -29,7 +29,7 @@ filter_file: /home/serfass/workspace/notebooks/filter_r20.hdf5
 trigger:
 
    coincident_window_msec: 0.01
-   #coincident_window_samples: 2000
+   #coincident_window_samples: 12
 
 
    CPDv21Ge:
@@ -57,22 +57,6 @@ trigger:
        threshold_sigma: 10
 
 
-   IrPtTESSmall-IrPtTESBig:
-       run: False
-       trigger_name: SubIrPt
-       template_tag: default
-       psd_tag: default
-       pileup_window_msec: 2
-       threshold_sigma: 10
-
-
-   IrPtTESSmall|IrPtTESBig:
-       run: False
-       template_tag: default
-       psd_tag: default
-       pileup_window_msec: 2
-       threshold_sigma: 6
-
 
 
  
@@ -82,7 +66,7 @@ trigger:
 
 
 
-# Feature configuration for ALL channels
+# Feature configuration for ALL INDIVIDUAL channels
 # 
 # Each algorithm can be modified/disable
 # (or new algorithms can be added) for each
@@ -205,26 +189,6 @@ IrPtTESSmall,IrPtTESBig:
 IrPtTESSmall+IrPtTESBig:
     feature_channel: TotIrPt
     
-    nb_samples: 25000
-    nb_pretrigger_samples: 12500
-    
-    of1x1_nodelay: 
-        run: True
-
-    of1x1_unconstrained:
-        run: True
-
-    of1x1_constrained:
-        run: True
-        window_min_from_trig_usec: -300
-        window_max_from_trig_usec: 300
-        
-# example of subtraction channel1-channel2
-IrPtTESSmall-IrPtTESBig:
-
-    disable: True
-    feature_channel: SubIrPt
-
     nb_samples: 25000
     nb_pretrigger_samples: 12500
     
