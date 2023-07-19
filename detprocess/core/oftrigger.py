@@ -274,8 +274,8 @@ class OptimumFilterTrigger:
         # set the filtered values to zero near the edges,
         # so as not to use the padded values in the analysis
         cut_len =  self._phi.shape[-1]
-        self._filtered_trace[:cut_len//2] = 0.0
-        self._filtered_trace[-(cut_len//2)
+        self._filtered_trace[:cut_len] = 0.0
+        self._filtered_trace[-(cut_len)
                              +(cut_len+1)%2:] = 0.0
         
         # filtered with ttl template
@@ -287,8 +287,8 @@ class OptimumFilterTrigger:
                 mode="same",
                 method='fft')/self._norm_ttl      
 
-            self._filtered_trace_ttl[:cut_len//2] = 0.0
-            self._filtered_trace_ttl[-(cut_len//2)
+            self._filtered_trace_ttl[:cut_len] = 0.0
+            self._filtered_trace_ttl[-(cut_len)
                                      + (cut_len+1)%2:] = 0.0
          
             

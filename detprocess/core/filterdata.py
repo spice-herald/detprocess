@@ -139,7 +139,11 @@ class FilterData:
                 if tag is None:
                     self._filter_data.pop(chan)
                 else:
-                    for key in self._filter_data[chan].keys():
+                    key_list = list(
+                        self._filter_data[chan].keys()
+                    ).copy()
+                    
+                    for key in key_list:
                         if tag in key:
                             self._filter_data[chan].pop(key)
             
@@ -403,7 +407,7 @@ class FilterData:
             raise ValueError('ERROR: "sample_rate" argument required!')
 
         if (pretrigger_length_msec is None
-            and pretrigger_length_samples):
+            and pretrigger_length_samples is None):
             raise ValueError('ERROR: pretrigger length (samples or msec)'
                              ' required!')
 
