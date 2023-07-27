@@ -1,4 +1,4 @@
-# ==============================================================
+# ##############################################################
 # Processing configuration example using UCB R20 data
 # version: development
 #
@@ -17,14 +17,18 @@
 #      ScannerError: while scanning for the next token
 #      found character '\t' that cannot start any token
 #      in "./process_example.yaml", line 133, column 1
-# ==============================================================
-
-filter_file: /home/serfass/workspace/notebooks/filter_r20.hdf5
+# ##############################################################
 
 
-# ---------------------------------------
+
+# Full path to filter file
+# It is used for both trigger and feature processing
+
+filter_file: ./filter_example.hdf5
+
+# ================================================
 # Trigger processing
-# ---------------------------------------
+# ================================================
 
 trigger:
 
@@ -59,24 +63,25 @@ trigger:
 
 
 
- 
-# ---------------------------------------
+# ================================================
 # Feature processing
+# ================================================
+
+
 # ---------------------------------------
-
-
-
-# Feature configuration for ALL INDIVIDUAL channels
+# Feature configuration for ALL
+# INDIVIDUAL channels (does not include
+# sum of channels for example)
+#
 # 
-# Each algorithm can be modified/disable
-# (or new algorithms can be added) for each
-# channel separately
+# Each channel/algorithm can be modified/disable
+# separately using channel name as field
 #
 # This section enable all channels. If
 # processing not done on a specific
 # channel, it can then be disabled (example
 # further below)
-
+# ---------------------------------------
 
 all:
     nb_samples: 25000
@@ -126,6 +131,9 @@ all:
 # Feature configuration for specific
 # channels
 #
+# Channels can be grouped using a comma
+#  for example: chan1,chan2,chan3
+#
 # overwrite algorithm configuration from
 # ALL
 # ---------------------------------------
@@ -165,8 +173,6 @@ CPDv21Ge:
         window_max_from_trig_usec: 500
     
 
-
-
 # example of disabling channels
 # by default, if at least 1 algorithm
 # channels are enabled
@@ -184,8 +190,11 @@ IrPtTESSmall,IrPtTESBig:
         window_max_from_trig_usec: 500
      
 
+# ---------------------------------------
+# Other types of "channel" such as
+# sum of pulses
+# ---------------------------------------
 
-# example of sum of pulses
 IrPtTESSmall+IrPtTESBig:
     feature_channel: TotIrPt
     

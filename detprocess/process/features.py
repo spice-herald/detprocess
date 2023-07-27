@@ -478,7 +478,7 @@ class FeatureProcessing:
                     
                         # convert to vaex
                         feature_vx = vx.from_pandas(feature_df,
-                                                    copy_index=True)
+                                                    copy_index=False)
 
 
                         # export
@@ -1034,8 +1034,8 @@ class FeatureProcessing:
                 chans = key.split('|')
             elif '+' in key:
                 chans = key.split('+')
-            elif '-' in key:
-                chans = key.split('-')
+                # elif '-' in key:
+                # chans = key.split('-')
             elif key != 'filter_file':
                 chans.append(key)
                 

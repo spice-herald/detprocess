@@ -913,8 +913,8 @@ class TriggerProcessing:
                 split_char = ','
             elif '+' in key:
                 split_char = '+'
-            elif '-' in key:
-                split_char = '-'
+                # elif '-' in key:
+                # split_char = '-'
             elif '|' in key:
                 split_char = '|'
 

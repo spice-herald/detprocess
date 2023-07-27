@@ -40,7 +40,6 @@ class Noise(FilterData):
         self._raw_base_path = None
         self._series_list = None
     
-
         # intialize randoms dataframe
         self._dataframe = None
 
@@ -69,7 +68,7 @@ class Noise(FilterData):
         self._group_name = None
         self._raw_base_path = None
         self._series_list = None
-
+        
         self._array_channels = None
         self._array = None
         self._fs = None
@@ -126,7 +125,7 @@ class Noise(FilterData):
         elif event_list is not None:
             self._event_list = event_list
 
-       
+                    
         
     """     
     def set_randoms_array(self, array, channels, fs):
@@ -179,13 +178,13 @@ class Noise(FilterData):
          
         
     
-    def calc_psd(self, channels,
+    def calc_psd(self, channels, 
                  series=None,
                  trace_length_msec=None,
                  trace_length_samples=None,
                  pretrigger_length_msec=None,
                  pretrigger_length_samples=None,
-                 nevents=5000,
+                 nevents=None,
                  tag='default'):
         """
         Calculate PSD
@@ -197,22 +196,23 @@ class Noise(FilterData):
         # Check arguments
         # --------------------------------
 
+        if nevents is None:
+            raise ValueError('ERROR: Maximum number of randoms required!'
+                             ' Add "nevents" argument.')
         
         # check raw data has been loaded
         if (self._array is None
             and self._raw_data is None):
             raise ValueError('ERROR: No raw data available. Use '
                              + '"set_randoms()" function first!')
-        
-              
+
         # Check if randoms available
-        if (self._array is None
-            and self._dataframe is None
-            and self._event_list is None):
-            raise ValueError('ERROR: No randoms selected from raw data. '
-                             + 'Use first "set_randoms()"'
-                             + ' or "set_randoms_array()"'
-                             + ' or "generate_randoms()"')
+        #if (self._array is None
+        #     and self._dataframe is None
+        #    and self._event_list is None):
+        #    raise ValueError('ERROR: No randoms selected from raw data. '
+        #                     + 'Use first "set_randoms()"'
+        #                     + ' or "generate_randoms()"')
 
 
 
@@ -310,7 +310,7 @@ class Noise(FilterData):
 
                     
 
-    def _get_traces(self, channels,
+    def _get_traces(self, channels, 
                     trace_length_msec=None,
                     trace_length_samples=None,
                     pretrigger_length_msec=None,
@@ -354,7 +354,7 @@ class Noise(FilterData):
 
 
         # trace length
-        nb_samples = nb_samples_raw
+        nb_samples = None
         if trace_length_samples is not None:
             nb_samples = trace_length_samples
         elif trace_length_msec is not None:
@@ -366,7 +366,7 @@ class Noise(FilterData):
                 raise ValueError('ERROR: number of samples required!')
 
         # pretrigger length
-        nb_pretrigger_samples = nb_samples//2
+        nb_pretrigger_samples = None
         if pretrigger_length_samples is not None:
             nb_pretrigger_samples = pretrigger_length_samples
         elif pretrigger_length_msec is not None:
@@ -376,12 +376,13 @@ class Noise(FilterData):
             
              
         # Get event list (list of dictionaries)
-        event_list = list()
+        event_list = None
         if self._event_list is not None:
             event_list = self._event_list.copy()
             
-        else:
-
+        elif self._dataframe is not None:
+            
+            event_list = list()
             dataframe = self._dataframe.copy()
 
             # filter based on series
@@ -420,119 +421,61 @@ class Noise(FilterData):
                 event_list.append(event_dict)
 
         # check number of events
-        nb_events = len(event_list)
-        if nb_events == 0:
-            raise ValueError('ERROR: No events selected! Something '
-                             + 'went wrong!')
+        if event_list is not None:
 
+            if len(event_list) == 0:
+                raise ValueError('ERROR: No events selected! Something '
+                                 + 'went wrong!')
+            
+            if len(event_list)>nevents:
+                event_list = event_list[:nevents]
 
+            nevents = len(event_list)
+
+        # get data
+    
+        raw_path = self._raw_base_path + '/' + self._group_name
+        trace_array = h5reader.read_many_events(
+            filepath=raw_path,
+            nevents=nevents,
+            output_format=2,
+            detector_chans=channels,
+            event_list=event_list,
+            trace_length_samples=nb_samples,
+            pretrigger_length_samples=nb_pretrigger_samples,
+            include_metadata=False,
+            adctoamp=True,
+            baselinesub=False)
+
+        
         if self._verbose:
             chan_string = str(channels)
             if len(channels)==1:
                 chan_string = channels[0]
-                print('INFO: Loading ' + str(nb_events)
-                      + ' events for channel(s) '
+                print('INFO: ' + str(trace_array.shape[0])
+                      + ' events found in raw data'
+                      + ' for channel(s) '
                       + str(chan_string))
 
-
-        # intialize array
-        trace_array = np.zeros(
-            (nb_events, nb_channels, nb_samples), dtype=np.float64
-        )
-
-        # initialize parameters
-        current_event_number = None
-        current_series_number = None
-        current_traces = None
-
-        
-        # loop events
-        for idx in range(len(event_list)):
-
-            evt = event_list[idx]
-                   
-            # event data from dataframe
-            group_name = evt['group_name']
-            event_number = evt['event_number']
-            series_number = evt['series_number']
-
-
-            # check series number
-            if (series_num is not None
-                and series_number!=series_num):
-                continue
-
-            # trigger index
-            trigger_index = None
-            if 'trigger_index' in evt.keys():
-                trigger_index = evt['trigger_index']
-                
-            # extract info from event_number
-            dump_number = int(event_number/100000)
-            event_index = int(event_number%100000)
-
-
-            # check if new file needed
-            if (current_series_number is None
-                or series_number!=current_series_number
-                or dump_number!=current_dump_number):
-                
-                # file name
-                series_name = h5io.extract_series_name(series_number)
-                file_search = (series_name
-                               + '_F' + str(dump_number).zfill(4)
-                               + '.hdf5')
-                
-                if series_name not in self._raw_data.keys():
-                    raise ValueError('ERROR: Unable to find series '
-                                     + series_name + ' in raw data')
-                file_name = None
-                for afile in self._raw_data[series_name]:
-                    if file_search  in afile:
-                        file_name = afile
-                        break
-
-                if file_name is None:
-                    raise ValueError('ERROR: Unable to find file '
-                                     + file_search
-                                     + '. Something went wrong...')
-                # set file
-                h5reader.set_files(file_name)
-
-
-            # load event
-            current_traces, info = h5reader.read_single_event(
-                event_index,
-                trigger_index=trigger_index,
-                trace_length_samples=nb_samples,
-                pretrigger_length_samples=nb_pretrigger_samples,
-                detector_chans=channels,
-                adctoamp=True,
-                include_metadata=True
-            )
-            
-            current_event_number = event_number
-            current_series_number = series_number
-            current_dump_number = dump_number
-            
-            # store
-            trace_array[idx,...] = current_traces
-            
-
         # metadata
+        if nb_samples is None:
+            nb_samples = nb_samples_raw
+        if nb_pretrigger_samples is None:
+            nb_pretrigger_samples =  nb_samples//2
+            
         trace_metadata = dict()
         trace_metadata['sample_rate'] = fs
         trace_metadata['nb_samples'] = nb_samples
         trace_metadata['nb_pretrigger_samples'] = nb_pretrigger_samples
-        trace_metadata['nb_randoms'] = nb_events
+        trace_metadata['nb_randoms'] = trace_array.shape[0]
         if 'fridge_run' in metadata.keys():
             trace_metadata['fridge_run'] =  metadata['fridge_run']
         if 'comment' in metadata.keys():
             trace_metadata['comment'] =  metadata['comment']
 
-        
-            
+                    
         return trace_array, trace_metadata
+        
         
               
 

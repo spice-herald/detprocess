@@ -770,8 +770,8 @@ class ProcessingData:
             channels = channel.split('+')
         elif '|' in channel:
             channels = channel.split('|')
-        elif '-' in channel:
-            channels = channel.split('-')
+            # elif '-' in channel:
+            # channels = channel.split('-')
         else:
             channels = [channel]
 
@@ -816,8 +816,8 @@ class ProcessingData:
             channels = channel.split('+')
         elif '|' in channel:
             channels = channel.split('|')
-        elif '-' in channel:
-            channels = channel.split('-')
+            # elif '-' in channel:
+            # channels = channel.split('-')
         else:
             channels = [channel]
 
@@ -838,14 +838,13 @@ class ProcessingData:
                            axis=0)
         elif '|' in channel:
             array =  self._current_traces[channel_indices,:]
-            
-        elif '-' in channel:
-            if len(channel_indices) != 2:
-                raise ValueError('ERROR: Unable to calculate subtracted pulse. '
-                                 + ' Two channels needed. Found '
-                                 + str(len(channel_indices)) + ' traces')
-            array = (self._current_traces[channel_indices[0],:]
-                     -self._current_traces[channel_indices[1],:])
+            # elif '-' in channel:
+            # if len(channel_indices) != 2:
+            #     raise ValueError('ERROR: Unable to calculate subtracted pulse. '
+            #                      + ' Two channels needed. Found '
+            #                      + str(len(channel_indices)) + ' traces')
+            # array = (self._current_traces[channel_indices[0],:]
+            #          -self._current_traces[channel_indices[1],:])
         else:
             array =  self._current_traces[channel_indices[0],:]
 
