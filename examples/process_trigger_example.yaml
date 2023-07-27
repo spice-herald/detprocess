@@ -1,0 +1,54 @@
+# ##############################################################
+# Trigger Processing configuration example using UCB R20 data
+# version: development
+#
+# 
+# Syntax tip: NO TAB ALLOWED.... If tab you will get an error:
+#      ScannerError: while scanning for the next token
+#      found character '\t' that cannot start any token
+#      in "./process_example.yaml", line 133, column 1
+# ##############################################################
+
+
+# Full path to filter file
+# It is used for both trigger and feature processing
+
+filter_file: ./filter_example.hdf5
+
+# ================================================
+# Trigger processing
+# ================================================
+
+trigger:
+
+   coincident_window_msec: 0.01
+   #coincident_window_samples: 12
+
+
+   CPDv21Ge:
+       run: False
+       template_tag: default
+       psd_tag: default
+       pileup_window_msec: 10
+       threshold_sigma: 10
+       #positive_pulses: True	
+       
+   IrPtTESSmall,IrPtTESBig:
+       run: True
+       template_tag: default
+       psd_tag: default
+       pileup_window_msec: 10
+       threshold_sigma: 4
+
+
+
+   IrPtTESSmall+IrPtTESBig:
+       run: False
+       trigger_name: TotIrPt
+       template_tag: default
+       psd_tag: default
+       pileup_window_msec: 2
+       threshold_sigma: 10
+
+
+  

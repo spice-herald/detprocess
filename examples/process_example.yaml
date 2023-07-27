@@ -1,4 +1,4 @@
-# ==============================================================
+# ##############################################################
 # Processing configuration example using UCB R20 data
 # version: development
 #
@@ -17,16 +17,65 @@
 #      ScannerError: while scanning for the next token
 #      found character '\t' that cannot start any token
 #      in "./process_example.yaml", line 133, column 1
-# ==============================================================
+# ##############################################################
+
+
+
+# Full path to filter file
+# It is used for both trigger and feature processing
 
 filter_file: ./filter_example.hdf5
 
+# ================================================
+# Trigger processing
+# ================================================
+
+trigger:
+
+   coincident_window_msec: 0.01
+   #coincident_window_samples: 12
+
+
+   CPDv21Ge:
+       run: False
+       template_tag: default
+       psd_tag: default
+       pileup_window_msec: 10
+       threshold_sigma: 10
+       #positive_pulses: True	
+       
+   IrPtTESSmall,IrPtTESBig:
+       run: True
+       template_tag: default
+       psd_tag: default
+       pileup_window_msec: 10
+       threshold_sigma: 10
+
+
+   IrPtTESSmall+IrPtTESBig:
+       run: False
+       trigger_name: TotIrPt
+       template_tag: default
+       psd_tag: default
+       pileup_window_msec: 10
+       threshold_sigma: 10
+
+
+
+
+# ================================================
+# Feature processing
+# ================================================
+
+
 # ---------------------------------------
-# Feature configuration for ALL channels
+# Feature configuration for ALL
+# INDIVIDUAL channels (does not include
+# sum of channels for example)
+#
 # 
-# Each algorithm can be modified/disable
-# (or new algorithms can be added) for each
-# channel separately
+# Each channel/algorithm can be modified/disable
+# separately using channel name as field
 #
 # This section enable all channels. If
 # processing not done on a specific
@@ -35,7 +84,8 @@ filter_file: ./filter_example.hdf5
 # ---------------------------------------
 
 all:
-
+    nb_samples: 25000
+    nb_pretrigger_samples: 12500
 
     of1x1_constrained:
         run: False
@@ -81,13 +131,17 @@ all:
 # Feature configuration for specific
 # channels
 #
+# Channels can be grouped using a comma
+#  for example: chan1,chan2,chan3
+#
 # overwrite algorithm configuration from
 # ALL
 # ---------------------------------------
 
 
 CPDv21Ge:
- 
+    disable: True
+  
     of1x1_unconstrained_glitch:
         run: True
         base_algorithm: of1x1_unconstrained
@@ -119,14 +173,12 @@ CPDv21Ge:
         window_max_from_trig_usec: 500
     
 
-
-
 # example of disabling channels
 # by default, if at least 1 algorithm
 # channels are enabled
 
 IrPtTESSmall,IrPtTESBig:
-    disable: True
+    disable: False
 
     of1x1_nodelay: 
         run: True
@@ -138,11 +190,16 @@ IrPtTESSmall,IrPtTESBig:
         window_max_from_trig_usec: 500
      
 
+# ---------------------------------------
+# Other types of "channel" such as
+# sum of pulses
+# ---------------------------------------
 
-# example of sum of pulses
 IrPtTESSmall+IrPtTESBig:
-  
     feature_channel: TotIrPt
+    
+    nb_samples: 25000
+    nb_pretrigger_samples: 12500
     
     of1x1_nodelay: 
         run: True
@@ -154,4 +211,3 @@ IrPtTESSmall+IrPtTESBig:
         run: True
         window_min_from_trig_usec: -300
         window_max_from_trig_usec: 300
-        
