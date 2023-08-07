@@ -941,10 +941,11 @@ class TriggerProcessing:
             if trigger_chan not in channel_list:
                 channel_list.append(trigger_chan)
             else:
-                raise ValueError(
-                    'ERROR: ' + trigger_chan + ' trigger '
-                    ' used multipled times!')
-            
+                print('WARNING: "' + trigger_chan 
+                      + '" used in multiple trigger channels! Will continue '
+                      + 'processing regardless, however double check '
+                      + 'config file!')
+                                        
                     
                     
         # return
