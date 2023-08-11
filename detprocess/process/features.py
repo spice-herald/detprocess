@@ -16,9 +16,12 @@ import stat
 import time
 import astropy
 from humanfriendly import parse_size
+from itertools import groupby
 
 from detprocess.core.algorithms  import FeatureExtractors
 from detprocess.process.processing_data  import ProcessingData
+from detprocess.utils import utils
+
 import pytesdaq.io as h5io
 warnings.filterwarnings('ignore')
 
@@ -26,7 +29,6 @@ warnings.filterwarnings('ignore')
 __all__ = [
     'FeatureProcessing'
 ]
-
 
 
 
@@ -109,7 +111,7 @@ class FeatureProcessing:
             raise ValueError('No raw data files were found! '
                              + 'Check configuration...')
         self._series_list = list(raw_files.keys())
-        self._input_group_name = group_name
+        self._input_group_name = str(group_name)
         
         # Dataframe file list
         trigger_files = None
@@ -127,17 +129,21 @@ class FeatureProcessing:
                                  + 'Check configuration...')
             
             self._series_list = list(trigger_files.keys())
-                    
-        # processing configuration
+
+
+        # get list of available channels in raw data
+        available_channels = self._get_channel_list(raw_files)
+            
+        # read  configuration file
         if not os.path.exists(config_file):
             raise ValueError('Configuration file "' + config_file
                              + '" not found!')
-        available_channels = self._get_channel_list(raw_files)
-        config, filter_file, selected_channels = (
+        config, filter_file, selected_channels, traces_config = (
             self._read_config(config_file, available_channels)
         )
         self._processing_config = config
         self._selected_channels = selected_channels
+        self._traces_config = traces_config
         
         # check channels to be processed
         if not self._selected_channels:
@@ -241,10 +247,12 @@ class FeatureProcessing:
                 save_path  = self._processing_data.get_raw_path()
                 if '/raw' in save_path:
                     save_path = save_path.replace('/raw','/processed')
+                if 'processed' not in save_path:
+                    save_path += '/processed'
 
             # add group name
             if self._input_group_name not in save_path:
-                save_path += '/' + self._input_group_name
+                save_path = save_path + '/' + self._input_group_name
 
                     
             output_group_path, output_series_num = (
@@ -449,7 +457,8 @@ class FeatureProcessing:
                 # -----------------------
 
                 success = self._processing_data.read_next_event(
-                    channels=self._selected_channels
+                    channels=self._selected_channels,
+                    traces_config=self._traces_config
                 )
 
                 # end of file
@@ -533,7 +542,7 @@ class FeatureProcessing:
 
                 # update signal trace in OF base objects
                 # -> calculate FFTs, etc.
-                self._processing_data.update_signal_OF(self._processing_config)
+                self._processing_data.update_signal_OF()
 
               
                 # Processing id   
@@ -602,17 +611,21 @@ class FeatureProcessing:
                         base_algorithm = algorithm
                         if 'base_algorithm' in algorithm_params.keys():
                             base_algorithm = algorithm_params['base_algorithm']
-
-
+                            
+                            
                         # check if different number of samples
+                        # for specified parameter
+                        nb_samples_algorithm = nb_samples
+                        nb_pretrigger_samples_algorithm = nb_pretrigger_samples
                         if 'nb_samples' in algorithm_params.keys():
-                            nb_samples = algorithms['nb_samples']
+                            nb_samples_algorithm = (
+                                algorithm_params['nb_samples']
+                            )
                         if 'nb_pretrigger_samples' in algorithm_params.keys():
-                            nb_pretrigger_samples = (
-                                algorithms['nb_pretrigger_samples']
+                            nb_pretrigger_samples_algorithm = (
+                                algorithm_params['nb_pretrigger_samples']
                             )
                                                   
-                     
                         # get feature extractor
                         extractor = None
                         if base_algorithm in self._algorithm_list:
@@ -637,8 +650,10 @@ class FeatureProcessing:
                         kwargs['fs'] = (
                             self._processing_data.get_sample_rate()
                         )
-                        kwargs['nb_samples_pretrigger'] = nb_pretrigger_samples-1
-                        kwargs['nb_samples'] = nb_samples
+                        kwargs['nb_samples_pretrigger'] = (
+                            nb_pretrigger_samples_algorithm-1
+                        )
+                        kwargs['nb_samples'] = nb_samples_algorithm
                         
                         kwargs['window_min_index'], kwargs['window_max_index'] = (
                             self._get_window_indices(**kwargs)
@@ -659,8 +674,9 @@ class FeatureProcessing:
                         else:
                             trace = self._processing_data.get_channel_trace(
                                 channel,
-                                nb_samples=nb_samples,
-                                nb_pretrigger_samples=nb_pretrigger_samples
+                                nb_samples=nb_samples_algorithm,
+                                nb_pretrigger_samples=(
+                                    nb_pretrigger_samples_algorithm)
                             )
                             extracted_features = extractor(trace, **kwargs)
 
@@ -888,7 +904,8 @@ class FeatureProcessing:
 
 
     
-    def _read_config(self, yaml_file, available_channels):
+    def _read_config(self, yaml_file, available_channels,
+                     processing_type='feature'):
         """
         Read and check yaml configuration
         file 
@@ -923,138 +940,223 @@ class FeatureProcessing:
         processing_config = dict()
         filter_file = None
         selected_channels = list()
-
+        traces_info = dict()
+        
 
         # open configuration file
         yaml_dict = dict()
         with open(yaml_file) as f:
             yaml_dict = yaml.safe_load(f)
+
+        # check if configuration loaded
         if not yaml_dict:
-            raise ValueError('Unable to read processing configuration!')
+            raise ValueError('ERROR: Unable to read processing configuration!')
 
 
-        # Let's check for unallowed duplication
-        key_list = list()
-        key_list_duplicate = list()
-        for key in yaml_dict.keys():
+        # let's first extract dictionary relevant for processing
+        if processing_type == 'feature':
+            if 'trigger' in yaml_dict.keys():
+                yaml_dict.pop('trigger')
+            if 'filter' in yaml_dict.keys():
+                yaml_dict.pop('filter')
+        elif processing_type == 'trigger':
+            yaml_dict = yaml_dict['trigger']
+        elif processing_type == 'filter':
+            yaml_dict = yaml_dict['filter']
             
-            if key=='trigger' or key=='filter':
-                continue
-            
-            if ',' in key:
-                key_split = key.split(',')
-                for key_sep in key_split:
-                    if key_sep in key_list:
-                        key_list_duplicate.append(key_sep)
-                    else:
-                        key_list.append(key_sep)
-            else:
-                if key in key_list:
-                    key_list_duplicate.append(key)
-                else:
-                    key_list.append(key)
 
 
-        if key_list_duplicate:
-            raise ValueError('Duplicate key/channel(s) found in configuration file: '
-                             + str(key_list_duplicate))
-    
-        
         # filter file
-        if 'filter_file' in yaml_dict.keys():
-            filter_file = yaml_dict['filter_file']
+        if (processing_type == 'feature'
+            or processing_type == 'trigger'):
+            if 'filter_file' in yaml_dict.keys():
+                filter_file = yaml_dict['filter_file']
+            else:
+                raise ValueError(
+                    'ERROR: Required "filter_file" parameter '
+                    'not found in yaml file!')
+            yaml_dict.pop('filter_file')
             
-                
+
+        # Let's check for duplicate keys
+        # (only case ',' used...)
+        key_list = list()
+        for key in yaml_dict.keys():
+            if ',' in key:
+                key_split,_ = utils.split_channel_name(
+                    key, available_channels, separator=','
+                )
+                key_list.extend(key_split)
+            else:
+                key_list.append(key)
+
+        if len(key_list) != len(set(key_list)):
+            raise ValueError(
+                'ERROR: Duplicate key/channel(s) found in yaml file!'
+            )
+
+
+            
         # case 'all' channels key available
         if 'all' in yaml_dict.keys():
             for chan in available_channels:
                 processing_config[chan] = yaml_dict['all'].copy()
-                
+
+
 
         # loop config to load individual channels
-        for key in yaml_dict.keys():
-                     
-            # skip "all" and "filter_file"
-            # (already taking into account)
-            if (key=='filter_file' or key=='all'):
-                continue
+        # overwriting "all" configuration
+        for chan, chan_config in yaml_dict.items():
             
-            # skip trigger or filter
-            if key=='trigger' or key=='filter':
+            # "all" already taking into account:
+            if chan == 'all':
                 continue
-            
-            # check if key contains a comma 
-            # -> need to split 
-            key_split = list()
-            if ',' in key:
-                key_split = key.split(',')
-            else:
-                key_split.append(key)
 
-            # loop single channels
-            for channel in key_split:
+            # split based on ','
+            chan_list = list()
+            if  ',' in chan:
+                chan_list,_ = utils.split_channel_name(
+                    chan, available_channels, separator=','
+                )
+            else:
+                chan_list.append(chan)
+                
+            # loop channels
+            for achan in chan_list:
                 
                 # If disable -> skip!
-                if ('disable' in yaml_dict[key].keys()
-                    and yaml_dict[key]['disable']):
-                    
-                    if channel in processing_config.keys():
-                        processing_config.pop(channel)
+                if ('disable' in chan_config.keys()
+                    and chan_config['disable']):
 
+                    # remove if already stored
+                    if achan in processing_config.keys():
+                        processing_config.pop(achan)
+                        
                     continue
-                            
+                
                 # check if chan already exist
                 # if so, add/replace feature config
-                if channel in processing_config.keys():
-                    for item_key, item_val in yaml_dict[key].items():
+                if achan in processing_config.keys():
+                    for item_key, item_val in chan_config.items():
 
                         if isinstance(item_val, dict):
                             item_val = item_val.copy()
-                        
-                        if not isinstance(processing_config[channel], dict):
-                            processing_config[channel] = dict()
                             
-                        processing_config[channel][item_key] = item_val
+                        if not isinstance(processing_config[achan], dict):
+                            processing_config[achan] = dict()
+                            
+                        processing_config[achan][item_key] = item_val
                 else:
-                    processing_config[channel] = yaml_dict[key].copy()
+                    # store all paramters 
+                    processing_config[achan] = chan_config.copy()
 
-                # remove disable if needed
-                if 'disable' in processing_config[channel]:
-                    processing_config[channel].pop('disable')
+                # remove disable if needed (no more needed)
+                if 'disable' in processing_config[achan]:
+                    processing_config[achan].pop('disable')
                 
                 
-        # Check if configuration channel  exist in file
-        channel_list_temp = list()
-        for key in processing_config.keys():
+        # Now loop configuration and
+        # make a list of all individual channels
+        # and trace shape
+        for chan, chan_items in processing_config.items():
 
-            chans = list()
-            if ',' in key:
-                chans = key.split(',')
-            elif '|' in key:
-                chans = key.split('|')
-            elif '+' in key:
-                chans = key.split('+')
-                # elif '-' in key:
-                # chans = key.split('-')
-            elif key != 'filter_file':
-                chans.append(key)
+            # check channel has any parameters
+            if not isinstance(chan_items, dict):
+                raise ValueError(
+                    'ERROR: Channel '
+                    +  chan + ' has no parameters! '
+                    + ' Remove from yaml file or disable it!')
+
+
+            # add to selected channel
+            chan_split, separator = utils.split_channel_name(
+                chan, available_channels
+            )
+            selected_channels.extend(chan_split.copy())
                 
-            for chan in chans:
-                if chan not in available_channels:
-                    raise ValueError('Channel "' + chan
-                                     + '" does not exist in '
-                                     + 'raw data! Check yaml file!')
-                else:
-                    channel_list_temp.append(chan)
 
-        # make list unique
-        for chan in available_channels:
-            if chan in channel_list_temp:
-                selected_channels.append(chan)
-            
+            # nb samples
+            nb_samples = None
+            nb_pretrigger_samples = None
+            if 'nb_samples' in chan_items.keys():
+                nb_samples = chan_items['nb_samples']
+            if 'nb_pretrigger_samples' in chan_items.keys():
+                nb_pretrigger_samples = chan_items['nb_pretrigger_samples'] 
+
+            # check
+            if (nb_samples  is not None
+                and nb_pretrigger_samples is None):
+                raise ValueError(
+                    'ERROR: Missing "nb_pretrigger_samples" '
+                    + ' for channel ' +  chan)
+            elif (nb_samples  is None
+                  and nb_pretrigger_samples is not None):
+                raise ValueError(
+                    'ERROR: Missing "nb_samples" '
+                    + ' for channel ' +  chan)
+                
+            # loop through algorithms and check if specific trace length
+            # requested
+            for alg_name, alg_config in chan_items.items():
+
+                if (alg_name == 'nb_samples'
+                    or alg_name == 'nb_pretrigger_samples'
+                    or not isinstance(alg_config, dict)):
+                    continue
+
+                if 'run' not in alg_config.keys():
+                    raise ValueError(
+                        'Missing "run" parameter for algorithm '
+                        + alg_name + ', channel ' + chan)
+                
+                if not alg_config['run']:
+                    continue
+
+
+                # overwite nb samples for this particular algorithm
+                nb_samples_alg =  nb_samples
+                nb_pretrigger_samples_alg = nb_pretrigger_samples
+                
+                if 'nb_samples' in alg_config.keys():
+                    nb_samples_alg = alg_config['nb_samples']
+                    if 'nb_pretrigger_samples' not in alg_config.keys():
+                        raise ValueError(
+                            'Missing "nb_pretrigger_samples" parameter '
+                            + 'for algorithm ' + alg_name
+                            + ', channel ' + chan)
                     
+                if 'nb_pretrigger_samples' in alg_config.keys():
+                    nb_pretrigger_samples_alg = (
+                        alg_config['nb_pretrigger_samples']
+                    )
+                    if 'nb_samples' not in alg_config.keys():
+                        raise ValueError(
+                            'Missing "nb_samples" parameter '
+                            + 'for algorithm ' + alg_name
+                            + ', channel ' + chan)
+                    
+                # add in traces indo
+                if (nb_samples_alg is not None
+                    and nb_pretrigger_samples_alg is not None):
+                    
+                    key = (str(nb_samples_alg) + '_'
+                           + str(nb_pretrigger_samples_alg))
+                    
+                    if key in traces_info.keys():
+                        traces_info[key].extend(chan_split.copy())
+                    else:
+                        traces_info[key] = chan_split.copy()
+
+        # make selected channel list unique
+        selected_channels = list(set(selected_channels))
+        for key in traces_info.keys():
+            traces_info[key] = list(set(traces_info[key]))
+            
+        if not traces_info:
+            traces_info = None
+        
         # return
-        return processing_config, filter_file, selected_channels
+        return processing_config, filter_file, selected_channels, traces_info
 
 
     def _create_output_directory(self, base_path, facility):
@@ -1150,7 +1252,7 @@ class FeatureProcessing:
                 else:
                     ext_algorithm_list.append(attribute)
 
-
+                    
         return algorithm_list, ext_algorithm_list
 
 
@@ -1332,5 +1434,8 @@ class FeatureProcessing:
         
 
         return min_index, max_index
+        
+    
+        
         
     

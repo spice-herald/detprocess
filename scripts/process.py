@@ -5,7 +5,7 @@ from detprocess import TriggerProcessing, FeatureProcessing, Randoms
 import os
 from pathlib import Path
 from pytesdaq.utils import arg_utils
-
+from datetime import datetime
 
 warnings.filterwarnings('ignore')
 
@@ -112,7 +112,7 @@ if __name__ == "__main__":
     # save path
     save_path = None
     if args.save_path:
-        save_path = args.save_path
+        save_path = str(args.save_path)
 
         
          
@@ -139,8 +139,8 @@ if __name__ == "__main__":
     # 1. Acquire randoms
     # ------------------
 
-    trigger_output_path = None
-    trigger_output_name = None
+    dataframe_path = None
+    dataframe_group_name = None
     
     if acquire_rand:
         
@@ -179,8 +179,8 @@ if __name__ == "__main__":
                        lgc_output=False,
                        save_path=save_path)
 
-        trigger_output_path = myproc.get_output_path()
-        trigger_output_name = str(Path(trigger_output_path).name)
+        dataframe_path = myproc.get_output_path()
+        dataframe_group_name = str(Path(dataframe_path).name)
         
     # ------------------
     # 2. Calc Filter
@@ -214,7 +214,7 @@ if __name__ == "__main__":
         myproc.process(ntriggers=ntriggers,
                        lgc_output=False,
                        lgc_save=True,
-                       output_group_name=trigger_output_name,
+                       output_group_name=dataframe_group_name,
                        ncores=ncores,
                        save_path=save_path)
         
@@ -231,7 +231,8 @@ if __name__ == "__main__":
         print('\n\n================================')
         print('Feature Processing')
         print('================================')
-        
+        print(str(datetime.now()))
+              
         myproc = FeatureProcessing(args.input_group_path,
                                    processing_setup,
                                    series=series, 
@@ -244,3 +245,5 @@ if __name__ == "__main__":
                        lgc_output=False,
                        ncores=ncores,
                        save_path=save_path)
+
+        print(str(datetime.now()))
