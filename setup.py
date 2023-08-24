@@ -36,7 +36,7 @@ class CleanCommand(Command):
 
 setup(
     name="detprocess",
-    version="0.3.4",
+    version="0.3.5",
     description="Detector Data Processing Package",
     long_description=long_description,
     long_description_content_type='text/markdown',
