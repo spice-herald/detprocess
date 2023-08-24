@@ -144,8 +144,10 @@ class Noise(FilterData):
     def generate_randoms(self, raw_path, series=None,
                          random_rate=None,
                          nevents=None,
+                         min_separation_msec=100,
                          ncores=1):
         """
+        Generate randoms from continuous data
         """
 
         # initialize data
@@ -170,11 +172,14 @@ class Noise(FilterData):
 
         # generate randoms
         rand_inst = Randoms(raw_path, series=series)
-        self._dataframe = rand_inst.process(random_rate=random_rate,
-                                            nrandoms=nevents,
-                                            lgc_save=False,
-                                            lgc_output=True,
-                                            ncores=ncores)
+        self._dataframe = rand_inst.process(
+            random_rate=random_rate,
+            nrandoms=nevents,
+            min_separation_msec=min_separation_msec,
+            lgc_save=False,
+            lgc_output=True,
+            ncores=ncores
+        )
          
         
     
