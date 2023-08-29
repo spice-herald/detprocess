@@ -431,7 +431,7 @@ class TriggerProcessing:
                                 + '_' + series_name)
             
         # intialize counters
-        dump_couter = 1
+        dump_counter = 1
         trigger_counter = 0
 
         # intialize output dataframe
@@ -512,7 +512,7 @@ class TriggerProcessing:
                     if lgc_save:
                         
                         # build hdf5 file name
-                        dump_str = str(dump_couter)
+                        dump_str = str(dump_counter)
                         file_name =  (output_base_file + '_F' + dump_str.zfill(4)
                                       + '.hdf5')
                         
@@ -520,7 +520,7 @@ class TriggerProcessing:
                         process_df.export_hdf5(file_name, mode='w')
                         
                         # increment dump
-                        dump_couter += 1
+                        dump_counter += 1
                         if self._verbose:
                             print('INFO' + node_num_str
                                   + ': Incrementing dump number')

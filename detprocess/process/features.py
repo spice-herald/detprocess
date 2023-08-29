@@ -410,7 +410,7 @@ class FeatureProcessing:
 
                 
         # intialize counters
-        dump_counter = 0
+        dump_counter = 1
         event_counter = 0
 
         # initialize data frame
