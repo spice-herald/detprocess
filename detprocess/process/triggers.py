@@ -20,6 +20,8 @@ from humanfriendly import parse_size
 from detprocess.process.processing_data  import ProcessingData
 from detprocess.core.eventbuilder import EventBuilder
 from detprocess.core.oftrigger import OptimumFilterTrigger
+from detprocess.utils import utils
+
 warnings.filterwarnings('ignore')
 
 
@@ -97,8 +99,8 @@ class TriggerProcessing:
         if not input_data_dict:
             raise ValueError('No files were found! Check configuration...')
 
-        self._input_base_path = input_base_path
-        self._input_group_name = group_name
+        self._input_base_path = str(input_base_path)
+        self._input_group_name = str(group_name)
         self._series_list = list(input_data_dict.keys())
 
         
@@ -207,7 +209,7 @@ class TriggerProcessing:
                     
             # add group name
             if self._input_group_name not in save_path:
-                save_path += '/' + self._input_group_name
+                save_path = save_path + '/' + self._input_group_name
                 
             output_group_path, output_series_num  = (
                 self._create_output_directory(
@@ -429,7 +431,7 @@ class TriggerProcessing:
                                 + '_' + series_name)
             
         # intialize counters
-        dump_couter = 1
+        dump_counter = 1
         trigger_counter = 0
 
         # intialize output dataframe
@@ -510,7 +512,7 @@ class TriggerProcessing:
                     if lgc_save:
                         
                         # build hdf5 file name
-                        dump_str = str(dump_couter)
+                        dump_str = str(dump_counter)
                         file_name =  (output_base_file + '_F' + dump_str.zfill(4)
                                       + '.hdf5')
                         
@@ -518,7 +520,7 @@ class TriggerProcessing:
                         process_df.export_hdf5(file_name, mode='w')
                         
                         # increment dump
-                        dump_couter += 1
+                        dump_counter += 1
                         if self._verbose:
                             print('INFO' + node_num_str
                                   + ': Incrementing dump number')
@@ -999,10 +1001,12 @@ class TriggerProcessing:
         # create directory
         if not os.path.isdir(output_dir):
             try:
-                os.makedirs(output_dir)
-                os.chmod(output_dir, stat.S_IRWXG | stat.S_IRWXU | stat.S_IROTH | stat.S_IXOTH)
+                os.makedirs(str(output_dir))
+                os.chmod(str(output_dir),
+                         stat.S_IRWXG | stat.S_IRWXU | stat.S_IROTH | stat.S_IXOTH)
             except OSError:
-                raise ValueError('\nERROR: Unable to create directory "'+ output_dir  + '"!\n')
+                raise ValueError('\nERROR: Unable to create directory "'
+                                 + output_dir  + '"!\n')
     
         return output_dir, series_num
 
