@@ -44,6 +44,7 @@ class TriggerProcessing:
     def __init__(self, raw_path, config_file,
                  series=None,
                  processing_id=None,
+                 restricted=False,
                  verbose=True):
         """
         Intialize data processing 
@@ -60,19 +61,22 @@ class TriggerProcessing:
            Full path and file name to the YAML settings for the
            processing.
 
-        output_path : str, optional (default=No saved file)
-           base directory where output feature file will be saved
-     
-
         series : str or list of str, optional
             series to be process, disregard other data from raw_path
 
+        output_path : str, optional (default=No saved file)
+           base directory where output feature file will be saved
+    
         processing_id : str, optional
             an optional processing name. This is used to be build 
             output subdirectory name and is saved as a feature in DetaFrame 
             so it can then be used later during 
             analysis to make a cut on a specific processing when mutliple 
             datasets/processing are added together.
+        
+        restricted : boolean
+            if True, use restricted data 
+            if False (default), exclude restricted data
 
         verbose : bool, optional
             if True, display info
@@ -90,10 +94,13 @@ class TriggerProcessing:
         # processing id
         self._processing_id = processing_id
 
+        # restricted
+        self._restricted = restricted
         
         # extract input file list
         input_data_dict, input_base_path, group_name = (
-            self._get_file_list(raw_path, series=series)
+            self._get_file_list(raw_path, series=series,
+                                restricted=restricted)
         )
 
         if not input_data_dict:
@@ -216,6 +223,7 @@ class TriggerProcessing:
                     save_path,
                     self._processing_data_inst.get_facility(),
                     output_group_name=output_group_name,
+                    restricted=self._restricted
                 )
             )
             if self._verbose:
@@ -420,7 +428,10 @@ class TriggerProcessing:
 
             file_prefix = 'threshtrig'
             if self._processing_id is not None:
-                file_prefix = self._processing_id +'_' + file_prefix 
+                file_prefix = self._processing_id +'_' + file_prefix
+
+            if self._restricted:
+                file_prefix += '_restricted'
                 
             series_name = h5io.extract_series_name(
                 int(output_series_num+node_num)
@@ -673,7 +684,8 @@ class TriggerProcessing:
 
         
         
-    def _get_file_list(self, file_path, series=None):
+    def _get_file_list(self, file_path, series=None,
+                       restricted=False):
         """
         Get file list from path. Return as a dictionary
         with key=series and value=list of files
@@ -688,6 +700,12 @@ class TriggerProcessing:
         
         series : str or list of str, optional
             series to be process, disregard other data from raw_path
+
+        restricted : boolean
+            if True, use restricted data
+            if False, exclude restricted data
+
+
 
         Return
         -------
@@ -790,6 +808,15 @@ class TriggerProcessing:
             if 'didv_' in file_name:
                 continue
 
+            # restricted
+            if (restricted
+                and 'restricted' not in file_name):
+                continue
+
+            # not restricted
+            if (not restricted
+                and 'restricted' in file_name):
+                continue
             
             # append file if series already in dictionary
             if (series_name is not None
@@ -956,7 +983,8 @@ class TriggerProcessing:
 
 
     def _create_output_directory(self, base_path, facility,
-                                 output_group_name=None):
+                                 output_group_name=None,
+                                 restricted=False):
         """
         Create output directory 
 
@@ -969,6 +997,10 @@ class TriggerProcessing:
         facility : int
            id of facility 
     
+         restricted : boolean
+          if True, create directory name that includes "restricted"
+          default: False
+
         Return
         ------
           output_dir : str
@@ -991,6 +1023,8 @@ class TriggerProcessing:
             prefix = 'trigger'
             if self._processing_id is not None:
                 prefix = self._processing_id + '_trigger'
+            if restricted:
+                prefix += '_restricted'
             output_dir = base_path + '/' + prefix + '_' + series_name
         else:
             if output_group_name not in base_path:

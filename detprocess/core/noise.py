@@ -145,6 +145,7 @@ class Noise(FilterData):
                          random_rate=None,
                          nevents=None,
                          min_separation_msec=100,
+                         restricted=False,
                          ncores=1):
         """
         Generate randoms from continuous data
@@ -156,7 +157,8 @@ class Noise(FilterData):
         # get file list
         raw_data, output_base_path, group_name = (
             self._get_file_list(raw_path,
-                                series=series)
+                                series=series,
+                                restricted=restricted)
         )
         
         if not raw_data:
@@ -515,7 +517,8 @@ class Noise(FilterData):
             
     def _get_file_list(self, file_path,
                        series=None,
-                       is_raw=True):
+                       is_raw=True,
+                       restricted=False):
         """
         Get file list from path. Return as a dictionary
         with key=series and value=list of files
@@ -530,6 +533,10 @@ class Noise(FilterData):
         
         series : str or list of str, optional
             series to be process, disregard other data from raw_path
+
+        restricted : boolean
+            if True, use restricted data 
+            if False (default), exclude restricted data
 
         Return
         -------
@@ -639,6 +646,18 @@ class Noise(FilterData):
 
             if 'treshtrig_' in file_name:
                 continue
+
+            # restricted
+            if (restricted
+                and 'restricted' not in file_name):
+                continue
+
+            # not restricted
+            if (not restricted
+                and 'restricted' in file_name):
+                continue
+            
+
             
             # append file if series already in dictionary
             if (series_name is not None
