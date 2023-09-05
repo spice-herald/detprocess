@@ -21,5 +21,5 @@
 module load python
 ipcluster start -n $SLURM_NTASKS &    # Start worker processes
 sleep 120                             # Wait until all worker processes have successfully started
-ipython process.py > process.pyout
+ipython process_parallel.py > process.pyout
 ipcluster stop

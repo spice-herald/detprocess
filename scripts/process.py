@@ -21,14 +21,14 @@ if __name__ == "__main__":
                         help='Path to continuous raw data group')
     parser.add_argument('--processing_setup', type=str,
                         help='Processing setup file')        
-    parser.add_argument('--enable-rand', '--enable_rand',
+    parser.add_argument('--enable-rand', '--enable-randoms', '--enable_rand',
                         dest='enable_rand',
                         action='store_true', help='Acquire randoms')
   #  parser.add_argument('--calc-filter', '--calc_filter',
   #                      dest='calc_filter',
   #                      action='store_true',
   #                      help='Calculate filter informations (PSD and template)')
-    parser.add_argument('--enable-trig', '--enable_trig',
+    parser.add_argument('--enable-trig', '--enable-triggers', '--enable_trig',
                         dest='enable_trig',
                         action='store_true', help='Acquire randoms')
     parser.add_argument('--trigger_dataframe_path', 
@@ -46,10 +46,10 @@ if __name__ == "__main__":
     parser.add_argument('--random_rate', type=float,
                         help='random event rate (either "random_rate" "nrandoms"'
                         + ' required is randoms enabled!)')
-    parser.add_argument('--nrandoms', type=int,
+    parser.add_argument('--nrandoms', type=int, dest='nrandoms',
                         help='Number random events (either "random_rate" "nrandoms"'
                         + ' required is randoms enabled!)')
-    parser.add_argument('--ntriggers', type=int,
+    parser.add_argument('--ntriggers', type=int, dest='ntriggers',
                         help='Number trigger events [Default=all available]')
     parser.add_argument('--save_path', type=str,
                         help=('Base path to save process data, '
@@ -59,6 +59,11 @@ if __name__ == "__main__":
                               'trigger processing [Default=1]'))
     parser.add_argument('--processing_id', type=str,
                         help=('Processing id (short string with no space)'))
+
+    parser.add_argument('--restricted',
+                        action='store_true',
+                        help=('Processing restricted (blinded) data'))
+    
     args = parser.parse_args()
     
    
@@ -88,6 +93,11 @@ if __name__ == "__main__":
         exit()
 
 
+    restricted = False
+    if args.restricted:
+        restricted = True
+
+        
     # processing id
     processing_id = None
     if args.processing_id:
@@ -97,6 +107,13 @@ if __name__ == "__main__":
     ncores = 1
     if args.ncores:
         ncores = int(args.ncores)
+
+    if args.ntriggers and ncores>1:
+        print('\nERROR: Multiple cores only possible when '
+              'processing all events')
+        print('Set argument "--ncores 1" ')
+        exit()
+              
         
     # threshold trigger dataframe path
     dataframe_path = None
@@ -174,6 +191,7 @@ if __name__ == "__main__":
         myproc = Randoms(args.input_group_path,
                          processing_id=processing_id,
                          series=series,
+                         restricted=restricted,
                          verbose=True)
         
         myproc.process(random_rate=random_rate,
@@ -185,7 +203,7 @@ if __name__ == "__main__":
 
         dataframe_path = myproc.get_output_path()
         dataframe_group_name = str(Path(dataframe_path).name)
-        
+             
     # ------------------
     # 2. Calc Filter
     # ------------------
@@ -213,8 +231,9 @@ if __name__ == "__main__":
                                    processing_setup,
                                    series=series,
                                    processing_id=processing_id,
+                                   restricted=restricted,
                                    verbose=True)
-        
+          
         myproc.process(ntriggers=ntriggers,
                        lgc_output=False,
                        lgc_save=True,
@@ -236,14 +255,15 @@ if __name__ == "__main__":
         print('Feature Processing')
         print('================================')
         print(str(datetime.now()))
-              
+
         myproc = FeatureProcessing(args.input_group_path,
                                    processing_setup,
                                    series=series, 
                                    trigger_dataframe_path=dataframe_path,
                                    external_file=None, 
-                                   processing_id=processing_id)
-
+                                   processing_id=processing_id,
+                                   restricted=restricted)
+        
         myproc.process(nevents=-1,
                        lgc_save=True,
                        lgc_output=False,

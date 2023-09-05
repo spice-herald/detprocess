@@ -49,6 +49,7 @@ class FeatureProcessing:
                  trigger_dataframe_path=None,
                  external_file=None,
                  processing_id=None,
+                 restricted=False,
                  verbose=True):
         """
         Intialize data processing 
@@ -85,6 +86,11 @@ class FeatureProcessing:
             and is saved as a feature in DetaFrame so it can then be used later during 
             analysis to make a cut on a specific processing when mutliple 
             datasets/processing are added together.
+ 
+        restricted : boolean
+            if True, use restricted data 
+            if False (default), exclude restricted data
+
 
         verbose : bool, optional
             if True, display info
@@ -98,6 +104,10 @@ class FeatureProcessing:
 
         # processing id
         self._processing_id = processing_id
+
+        # restricted data
+        self._restricted = restricted
+        
         
         # display
         self._verbose = verbose
@@ -105,7 +115,8 @@ class FeatureProcessing:
         # Raw file list
         raw_files, raw_path, group_name = (
             self._get_file_list(raw_path,
-                                series=series)
+                                series=series,
+                                restricted=restricted)
         )
         if not raw_files:
             raise ValueError('No raw data files were found! '
@@ -122,7 +133,8 @@ class FeatureProcessing:
             
             trigger_files, trigger_path, trigger_group_name = (
                 self._get_file_list(trigger_dataframe_path,
-                                    is_raw=False)
+                                    is_raw=False,
+                                    restricted=restricted)
             )
             if not trigger_files:
                 raise ValueError('No dataframe files were found! '
@@ -258,7 +270,8 @@ class FeatureProcessing:
             output_group_path, output_series_num = (
                 self._create_output_directory(
                     save_path,
-                    self._processing_data.get_facility()
+                    self._processing_data.get_facility(),
+                    restricted=self._restricted
                 )
             )
             
@@ -400,6 +413,9 @@ class FeatureProcessing:
             file_prefix = 'feature'
             if self._processing_id is not None:
                 file_prefix = self._processing_id + '_feature'
+            if self._restricted:
+                file_prefix += '_restricted'
+                
             series_name = h5io.extract_series_name(
                 int(output_series_num+node_num)
             )
@@ -700,8 +716,10 @@ class FeatureProcessing:
 
         
         
-    def _get_file_list(self, file_path, is_raw=True,
-                       series=None):
+    def _get_file_list(self, file_path,
+                       is_raw=True,
+                       series=None,
+                       restricted=False):
         """
         Get file list from path. Return as a dictionary
         with key=series and value=list of files
@@ -716,6 +734,12 @@ class FeatureProcessing:
         
         series : str or list of str, optional
             series to be process, disregard other data from raw_path
+
+        restricted : boolean
+            if True, use restricted data
+            if False, exclude restricted data
+
+        
 
         Return
         -------
@@ -823,6 +847,17 @@ class FeatureProcessing:
             # skip didv
             if 'didv' in file_name:
                 continue
+
+            # restricted
+            if (restricted
+                and 'restricted' not in file_name):
+                continue
+
+            # not restricted
+            if (not restricted
+                and 'restricted' in file_name):
+                continue
+            
             
             # append file if series already in dictionary
             if (series_name is not None
@@ -1159,7 +1194,8 @@ class FeatureProcessing:
         return processing_config, filter_file, selected_channels, traces_info
 
 
-    def _create_output_directory(self, base_path, facility):
+    def _create_output_directory(self, base_path, facility,
+                                 restricted=False):
         """
         Create output directory 
 
@@ -1191,6 +1227,8 @@ class FeatureProcessing:
         prefix = 'feature'
         if self._processing_id is not None:
             prefix = self._processing_id + '_feature'
+        if restricted:
+            prefix += '_restricted'
         output_dir = base_path + '/' + prefix + '_' + series_name
         
         

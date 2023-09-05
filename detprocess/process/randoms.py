@@ -33,6 +33,7 @@ class Randoms:
 
     def __init__(self, raw_path, series=None,
                  processing_id=None,
+                 restricted=False,
                  verbose=True):
         """
         Initialize randoms acquisition
@@ -48,6 +49,10 @@ class Randoms:
         series : str or list of str, optional
             series to be process, disregard other data from raw_path
 
+        restricted : boolean
+            if True, use restricted data 
+            if False (default), exclude restricted data
+       
         verbose : bool, optional
             if True, display info
 
@@ -62,10 +67,14 @@ class Randoms:
 
         # processing id
         self._processing_id = processing_id
-      
+
+        # restricted
+        self._restricted = restricted
+
         # extract input file list
         input_file_dict, input_base_path, input_group_name, facility = (
-            self._get_file_list(raw_path, series=series)
+            self._get_file_list(raw_path, series=series,
+                                restricted=restricted)
         )
 
         if not input_file_dict:
@@ -75,6 +84,8 @@ class Randoms:
         self._input_group_name = input_group_name
         self._series_dict = input_file_dict
         self._facility = facility
+
+        
 
         # initialize output path
         self._output_group_path = None
@@ -209,6 +220,7 @@ class Randoms:
                     save_path,
                     self._facility,
                     output_group_name=output_group_name,
+                    restricted=self._restricted
                 )
             )
             
@@ -328,6 +340,9 @@ class Randoms:
             file_prefix = 'rand'
             if self._processing_id is not None:
                 file_prefix = self._processing_id +'_' + file_prefix 
+
+            if self._restricted:
+                file_prefix += '_restricted'
                 
             series_name = h5io.extract_series_name(
                 int(output_series_num+node_num)
@@ -626,7 +641,8 @@ class Randoms:
 
     
     def _create_output_directory(self, base_path, facility,
-                                 output_group_name=None):
+                                 output_group_name=None,
+                                 restricted=False):
         """
         Create output directory 
 
@@ -637,7 +653,10 @@ class Randoms:
            full path to base directory 
         
         facility : int
-           id of facility 
+           id of facility
+
+        restricted : boolean
+          if True, create directory name that includes "restricted"
     
         Return
         ------
@@ -660,6 +679,8 @@ class Randoms:
             prefix = 'trigger'
             if self._processing_id is not None:
                 prefix = self._processing_id + '_trigger'
+            if restricted:
+                 prefix += '_restricted'
             output_dir = base_path + '/' + prefix + '_' + series_name
         else:
             if output_group_name not in base_path:
@@ -678,7 +699,8 @@ class Randoms:
         return output_dir, series_num
         
   
-    def _get_file_list(self, file_path, series=None):
+    def _get_file_list(self, file_path, series=None,
+                       restricted=False):
         """
         Get file list from path. Return as a dictionary
         with key=series and value=list of files
@@ -693,6 +715,12 @@ class Randoms:
         
         series : str or list of str, optional
             series to be process, disregard other data from raw_path
+
+
+        restricted : boolean
+            if True, use restricted data
+            if False, exclude restricted data
+
 
         Return
         -------
@@ -797,8 +825,20 @@ class Randoms:
             if 'didv_' in file_name:
                 continue
 
+            # skip if trigger data already
             if 'treshtrig_' in file_name:
                 continue
+
+            # restricted
+            if (restricted
+                and 'restricted' not in file_name):
+                continue
+
+            # not restricted
+            if (not restricted
+                and 'restricted' in file_name):
+                continue
+            
 
             # append file if series already in dictionary
             if (series_name is not None
