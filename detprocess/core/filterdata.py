@@ -8,7 +8,7 @@ from numpy.fft import fftfreq, rfftfreq
 
 class FilterData:
     """
-    Class to manage filter data 
+    Class to manage Optimal Filter and IV/dIdV data 
     """
 
     def __init__(self, verbose=True):
@@ -60,7 +60,8 @@ class FilterData:
 
         # Let's first loop channel and get tags/display msg
         filter_display = dict()
-        parameter_list = ['psd_fold', 'psd', 'template']
+        parameter_list = ['psd_fold', 'psd', 'template',
+                          'ivdata', 'ivresults']
 
         for chan, chan_dict in self._filter_data.items():
             
@@ -147,12 +148,7 @@ class FilterData:
                         if tag in key:
                             self._filter_data[chan].pop(key)
             
-                    
-                    
-            
-
-                        
-                
+                       
     def load_hdf5(self, file_name, overwrite=True):
         """
         Load filter data from file. Key may be overwritten if 
@@ -217,19 +213,11 @@ class FilterData:
         None
         """
 
-        # check file name
-        if 'filter' not in file_name:
-            raise ValueError(
-                'ERROR: file name required to include "filter", '
-                'for example, "xxxxxx_yyyy_filter.hdf5"')
-        
-        
         if self._verbose:
             print('INFO: Saving noise data to file '
                   + file_name)
             if overwrite:
                 print('INFO: channel data with same tag may be overwritten')
-
         
         filter_io = h5io.FilterH5IO(file_name)
         filter_io.save_fromdict(self._filter_data,
@@ -565,7 +553,64 @@ class FilterData:
             self._filter_data[chan][psd_name + '_metadata'] = metadata
             
 
+    def set_ivsweep_data(self, 
+                         channel,
+                         dataframe,
+                         metadata=None,
+                         tag='default'):
+        """
+        Set IV-dIdV Sweep processed dataframe
+        """
 
+        # create channel dictionary
+        if channel not in self._filter_data.keys():
+            self._filter_data[channel] = dict()
+        
+        # data 
+        data_tag = 'ivdata_' + tag
+        self._filter_data[channel][data_tag] = dataframe
+
+        # metadata
+        if metadata is not None:
+            metadata.update({'channe': channel})
+        else:
+            metadata = {'channe': channel}
+        self._filter_data[channel][data_tag + '_metadata'] = metadata
+
+        
+    def set_ivsweep_data_from_dict(self, data_dict,
+                                   tag='default'):
+        """
+        Set IV-dIdV sweep data from dictionary
+        (key=channel name, value=datframe)
+        """
+
+        for chan, df in data_dict.items():
+            self.set_ivsweep_data(chan,
+                                  df,
+                                  tag=tag)
+            
+    def get_ivsweep_data(self, 
+                         channel,
+                         tag='default'):
+        """
+        Get IV-dIdV Sweep processed dataframe
+        """
+
+        # check channels
+        if channel not in self._filter_data.keys():
+            raise ValueError(
+                f'ERROR: no channel {channe} available! '
+                'Did you load from file first?')
+        
+        data_tag = 'ivdata_' + tag
+        if data_tag not in self._filter_data[channel].keys():
+            raise ValueError(
+                f'ERROR: no sweep data for channel {channel} available! '
+                'Did you load from file first?')
+
+        return self._filter_data[channel][data_tag]
+        
     
     def plot_template(self, channels, tag='default'):
         """
