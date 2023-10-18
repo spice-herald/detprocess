@@ -17,12 +17,13 @@ import time
 import astropy
 from humanfriendly import parse_size
 from itertools import groupby
-
-from detprocess.utils import utils
+import matplotlib.pyplot as plt
+from detprocess.utils import find_linear_segment
 from detprocess.core import FilterData
 
 import pytesdaq.io as h5io
 import qetpy as qp
+from scipy.signal import butter, filtfilt
 
 warnings.filterwarnings('ignore')
 
@@ -87,7 +88,7 @@ class IVSweepProcessing:
         
         data_dict, path_iv, path_didv, name_iv, name_didv =  data
 
-        self._data_dict = data_dict
+        self._raw_data_dict = data_dict
         self._group_name_iv = name_iv
         self._group_name_didv = name_didv
         self._base_path_iv = path_iv
@@ -99,6 +100,11 @@ class IVSweepProcessing:
         self.describe()
 
 
+        # filter data to store results
+        self._filter_data = FilterData()
+        
+        
+
         
     def describe(self):
         """
@@ -108,41 +114,41 @@ class IVSweepProcessing:
                 
         print(f'\nIV/dIdV sweep available data:')
         
-        for chan in self._data_dict.keys():
+        for chan in self._raw_data_dict.keys():
             print(' ')
             print(f'{chan}:')
                     
             # IV 
-            if self._data_dict[chan]['IV'] is not None:
+            if self._raw_data_dict[chan]['IV'] is not None:
                 nb_points = len(
-                    list(self._data_dict[chan]['IV'].keys())
+                    list(self._raw_data_dict[chan]['IV'].keys())
                 )
                 
                 print(f' -IV: {nb_points} bias points')
 
             # dIdV 
-            if self._data_dict[chan]['dIdV'] is not None:
+            if self._raw_data_dict[chan]['dIdV'] is not None:
                 nb_points = len(
-                    list(self._data_dict[chan]['dIdV'].keys())
+                    list(self._raw_data_dict[chan]['dIdV'].keys())
                 )
                 print(f' -dIdV: {nb_points} bias points')
          
             # common
-            if self._data_dict[chan]['IV_dIdV'] is not None:
+            if self._raw_data_dict[chan]['IV_dIdV'] is not None:
                 nb_points = len(
-                    list(self._data_dict[chan]['IV_dIdV'].keys())
+                    list(self._raw_data_dict[chan]['IV_dIdV'].keys())
                 )
                 print(f' -Common IV-dIdV: {nb_points} bias points')
             else:
-                if (self._data_dict[chan]['IV'] is not None
-                    and self._data_dict[chan]['dIdV'] is not None):
+                if (self._raw_data_dict[chan]['IV'] is not None
+                    and self._raw_data_dict[chan]['dIdV'] is not None):
                     print(f' -common IV-dIdV: No bias points')
 
 
         
                     
     def process(self,
-                channels,
+                channels=None,
                 enable_iv=True,
                 enable_didv=True,
                 lgc_output=True,
@@ -156,8 +162,9 @@ class IVSweepProcessing:
         Parameters
         ---------
         
-        channels : str or list of str
+        channels : str or list of str, optional
           detector channel(s)
+          if None: use all available channels
         
 
         lgc_save : bool, optional
@@ -189,11 +196,15 @@ class IVSweepProcessing:
             self._base_path_didv = None
         
         # check channels
-        if isinstance(channels, str):
+        if channels is None:
+            channels = list(self._raw_data_dict.keys())
+            if not channels:
+                raise ValueError('ERROR: No channels available!')
+        elif isinstance(channels, str):
             channels = [channels]
-
+        
         for chan in channels:
-            if chan not in self._data_dict.keys():
+            if chan not in self._raw_data_dict.keys():
                 raise ValueError(f'ERROR: channel {chan}'
                                  ' not available!')
 
@@ -209,7 +220,7 @@ class IVSweepProcessing:
                       'processing')
             
             # data
-            channel_series = self._data_dict[chan]
+            channel_series = self._raw_data_dict[chan]
 
             # check if both IV/dIdV:
             if 'IV' not in  channel_series.keys():
@@ -275,19 +286,64 @@ class IVSweepProcessing:
          
             # sort based on bias
             output_channel_df = output_channel_df.sort_values(
-                ['tes_bias'], ascending=[True],
+                'tes_bias', ascending=False, key=abs,
+                ignore_index=True
             )
-            
+
+            # add state (normal, SC, in transition)
+            output_channel_df['state'] = np.nan
+
+            # check if SC/Normal points based on linearity
+            tes_bias = output_channel_df['tes_bias'].values
+            offset = None
+            if 'offset_noise' in output_channel_df.columns:
+                offset = output_channel_df['offset_noise'].values
+            else:
+                offset = output_channel_df['offset_didv'].values
+
+            # sc
+            sc_indices = np.array(find_linear_segment(tes_bias, offset))
+            nb_sc_points = len(sc_indices)
+            if nb_sc_points>0:
+                output_channel_df['state'].iloc[sc_indices] = 'sc'
+                
+            # normal
+            tes_bias = np.flip(tes_bias).copy()
+            offset = np.flip(offset).copy()
+            normal_indices = np.array(find_linear_segment(tes_bias, offset))
+            nb_normal_points = len(normal_indices)
+            if nb_normal_points>0:
+                normal_indices = len(tes_bias) - normal_indices - 1
+                output_channel_df['state'].iloc[normal_indices] = 'normal'
+                            
             # save  output dataframe in dictionary
             output_dict[chan] = output_channel_df
-                   
+
+            if self._verbose:
+                print(f'INFO: IV/dIdV processing done for channel {chan}!')
+
+                if nb_sc_points > 0:
+                    print(f'INFO: Found {nb_sc_points} SC points based on linearity')
+                else:
+                    print('INFO: Unable to estimate number of SC points '
+                          'based on linearity. Check data!')
+                if nb_normal_points > 0:
+                    print(f'INFO: Found {nb_normal_points} normal points based on linearity')
+                else:
+                    print('INFO: Unable to estimate number of normal points '
+                          'based on linearity. Check data!')
+                    
+        # save all dataframes in filter data
+        self._filter_data.set_ivsweep_data_from_dict(output_dict)
+
+            
         if lgc_save:
 
             if save_path is None:
                 save_path = self._base_path_didv
                 if self._base_path_iv is not None:
                     save_path = self._base_path_iv
-                save_path  +=  + '/processed'
+                save_path  +=  '/processed'
                 if '/raw/processed' in save_path:
                     save_path = save_path.replace('/raw/processed',
                                                   '/processed')
@@ -318,10 +374,7 @@ class IVSweepProcessing:
                 file_name = (save_path + '/sweep_analysis_'
                              + series_name + '.hdf5')
 
-
-            iv_data = FilterData()
-            iv_data.set_ivsweep_data_from_dict(output_dict)
-            iv_data.save_hdf5(file_name)
+            self._filter_data.save_hdf5(file_name)
             print(f'INFO: Saving dataframe in {file_name}') 
 
         if self._verbose:
@@ -330,7 +383,17 @@ class IVSweepProcessing:
         if lgc_output:
             return output_dict
         
-       
+
+        
+    def plot_ivsweep_offset(self, channel, tag='default'):
+        """
+        Plot offset vs tes_bias with errors from IV and if available
+        dIdV offset
+        """
+        self._filter_data.plot_ivsweep_offset(channel=channel,
+                                              tag=tag)
+        
+        
     def _process(self, node_num,
                  channel,
                  processing_type,
@@ -361,7 +424,7 @@ class IVSweepProcessing:
             node_num_str = 'Node #' + str(node_num)
             
         # data list
-        data_dict = self._data_dict[channel][processing_type]
+        data_dict = self._raw_data_dict[channel][processing_type]
         
         # intialize data dictionary
         output_data = {'channel':list(),
@@ -407,6 +470,7 @@ class IVSweepProcessing:
                 ptype_output_data['didvmean'] = list()
                 ptype_output_data['didvstd'] = list()
                 ptype_output_data['dutycycle'] = list()
+                ptype_output_data['rtes_estimate'] = list()
 
             output_data.update(ptype_output_data)
 
@@ -541,6 +605,23 @@ class IVSweepProcessing:
                     # Average pulse
                     avgtrace = np.mean(traces, axis=0)
 
+                    # get estimated resistance (using 75% single cycle)
+                    avgtrace_lp = qp.utils.lowpassfilter(avgtrace,
+                                                         cut_off_freq=1.5e3,
+                                                         fs=fs, order=1)
+
+                    nb_bins = len(avgtrace_lp)
+                    nb_cycles = (nb_bins/fs)*sgfreq
+                    idx_calc = range(round(nb_bins*0.1),
+                                     round(nb_bins*0.9))
+                    if nb_cycles>1.5:
+                        start_bin = round(fs/sgfreq*0.25)
+                        end_bin = 4*start_bin
+                        idx_calc = range(start_bin, end_bin)
+                    deltaI =  avgtrace_lp[idx_calc].max() - avgtrace_lp[idx_calc].min()
+                    deltaV = sgamp*rshunt
+                    rtes_estimate = deltaV/deltaI*1e3
+                                     
                     # dIdV fit
                     didvobj = qp.DIDV(
                         traces,
@@ -560,6 +641,7 @@ class IVSweepProcessing:
                     output_data['didvmean'].append(didvobj._didvmean)
                     output_data['didvstd'].append(didvobj._didvstd)
                     output_data['dutycycle'].append(dutycycle)
+                    output_data['rtes_estimate'].append(rtes_estimate)
 
                 # store common data
                 output_data['offset_' + ptype].append(offset)
