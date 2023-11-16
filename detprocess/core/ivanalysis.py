@@ -30,9 +30,7 @@ class IVSweepAnalysis(FilterData):
         verbose : bool, optional
           display information
 
-
         """
-
 
         # IV, DIDV, Noise, Template objects    
         self._iv_objects = dict()
@@ -199,9 +197,11 @@ class IVSweepAnalysis(FilterData):
             self._readout_params[chan]['rp'] =  params['rp'][ichan]
             self._readout_params[chan]['rp_err'] =  params['rp_err'][ichan]
 
-        
+
+
+            
     def analyze_sweep(self, channels=None, nnorms=None, nscs=None,
-                      lgc_invert_offset=True,
+                      lgc_invert_offset='auto',
                       lgc_plot=False, lgc_save_plot=False,
                       plot_save_path=None,
                       tag='default',
@@ -379,6 +379,8 @@ class IVSweepAnalysis(FilterData):
                                 ascending=False,
                                 key=abs,
                                 ignore_index=True)
+
+            
             # sc/normal range
             nnorm = nnorms[ichan]
             range_normal = range(nnorm)
@@ -418,9 +420,9 @@ class IVSweepAnalysis(FilterData):
 
 
             # invert offset
-            if lgc_invert_offset:
-                offset *= -1
-
+            if (lgc_invert_offset != 'auto'
+                and lgc_invert_offset):
+                offset = -1*offset.copy()
                 
             # rp guess
             rp = param_dict['rp']
@@ -442,14 +444,23 @@ class IVSweepAnalysis(FilterData):
                             fitsc=fitsc,
                             normalinds=list(range_normal),
                             scinds=list(range_sc),)
-
+                
             ivobj.analyze(**kwargs)
             
+            rn_check = ivobj.rnorm[0, 0]
+            if rn_check<0:
+                lgc_invert_offset = True
+                ivobj.dites = -1*ivobj.dites
+                ivobj.analyze(**kwargs)
+            
+                     
             # store results in dataframe/series
             df['lgc_invert_offset'] = lgc_invert_offset
             df['vb'] = ivobj.vb[0,0,:]
             df['vb_err'] = ivobj.vb_err[0,0,:]
+            
             for itype, data_type in enumerate(data_types):
+                
                 # parameter dependend of bias point
                 df['p0_' + data_type] = ivobj.ptes[0, itype]
                 df['p0_err_' + data_type] = ivobj.ptes_err[0, itype]
@@ -463,24 +474,27 @@ class IVSweepAnalysis(FilterData):
                 rp_err =  ivobj.rp_err[0, itype]
                 rn = ivobj.rnorm[0, itype]
                 rn_err = ivobj.rnorm_err[0, itype]
-                ioff = ivobj.ioff[0, itype]
-                ioff_err = ivobj.ioff_err[0, itype]
+                i0_off = ivobj.ioff[0, itype]
+                i0_off_err = ivobj.ioff_err[0, itype]
                 ibias_off = ivobj.ibias_off[0, itype]
                 ibias_off_err = ivobj.ibias_off_err[0, itype]
                 ibias_true = ivobj.ibias_true[0, itype]
                 ibias_true_err = ivobj.ibias_true_err[0, itype]
+
 
                 # store in df and dictionary
                 df['rp_' + data_type] = rp
                 df['rp_err_' + data_type] = rp_err
                 df['rn_' + data_type] = rn
                 df['rn_err_' + data_type] = rn_err
-                df['ioff_' + data_type] = ioff
-                df['ioff_err_' + data_type] = ioff_err
+                df['i0_off_' + data_type] = i0_off
+                df['i0_off_err_' + data_type] = i0_off_err
                 df['ibias_off_' + data_type] = ibias_off
                 df['ibias_off_err_' + data_type] = ibias_off_err
                 df['ibias_true_' + data_type] = ibias_true
                 df['ibias_true_err_' + data_type] = ibias_true_err
+                df['percent_rn_' + data_type] = round(1000*df['r0_' + data_type]/rn)/10
+                
 
                 # store also in in pandas series
                 results = dict()
@@ -490,8 +504,8 @@ class IVSweepAnalysis(FilterData):
                 results['rn_err'] = rn_err
                 results['rshunt'] = param_dict['rshunt']
                 results['rshunt_err'] = param_dict['rshunt_err']
-                results['ioff'] = ioff
-                results['ioff_err'] = ioff_err
+                results['i0_off'] = i0_off
+                results['i0_off_err'] = i0_off_err
                 results['ibias_off'] = ibias_off
                 results['ibias_off_err'] = ibias_off_err
                 results['lgc_invert_offset'] = lgc_invert_offset
@@ -508,6 +522,15 @@ class IVSweepAnalysis(FilterData):
                     df['group_name_' + data_type].values[0]
                 )
 
+
+                # calculate i0 variable offset
+                norm = results['close_loop_norm'] 
+                voltage_offset = results['output_variable_offset']
+                gain =  results['output_variable_gain']
+                results['i0_variable_offset'] = (
+                    voltage_offset * gain/norm
+                )
+                
                 # convert to pandas series
                 series = pd.Series(results)
                 lgc_didv_data = False
@@ -518,9 +541,7 @@ class IVSweepAnalysis(FilterData):
                                         lgc_didv_data=lgc_didv_data,
                                         metadata=None,
                                         tag=tag)
-            
-
-                
+                            
             # save data
             self._iv_objects[chan] = ivobj
             self.set_ivsweep_data(chan, df, tag=tag)

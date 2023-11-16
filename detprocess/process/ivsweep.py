@@ -761,11 +761,13 @@ class IVSweepProcessing:
             raise ValueError('ERROR: IV data should be in a single directory!')
         if  (len(base_path_didv)>1 or len(group_name_didv)>1):
             raise ValueError('ERROR: dIdV data should be in a single directory!')
-    
-        base_path_iv = base_path_iv[0]
-        base_path_didv =  base_path_didv[0]
-        group_name_iv = group_name_iv[0]
-        group_name_didv = group_name_didv[0]
+
+        if group_name_iv:
+            base_path_iv = base_path_iv[0]
+            group_name_iv = group_name_iv[0]
+        if group_name_didv:
+            base_path_didv =  base_path_didv[0]
+            group_name_didv = group_name_didv[0]
             
         # 2. find sweep channels
         channels = list()
@@ -773,7 +775,7 @@ class IVSweepProcessing:
         data_types = ['IV', 'dIdV']
         for data_type in data_types:
             
-            # check if data
+            # check if data available
             if series_dict[data_type] is None:
                 continue
             
@@ -818,7 +820,7 @@ class IVSweepProcessing:
                 
         if len(channel_dict['dIdV']) == 1:
             data_dict[chan]['dIdV'] = series_dict['dIdV']
-        else:
+        elif len(channel_dict['dIdV'])>1:
             # loop series
             for series_name in series_dict['dIdV']:
                 file_name = glob(f'{raw_path}/*_{series_name}_F0001.hdf5')[0]
@@ -839,6 +841,11 @@ class IVSweepProcessing:
         # 4) find tes bias  for each series/channels
         for chan in  data_dict.keys():
             for ptype in data_dict[chan].keys():
+                
+                # check if type available
+                if data_dict[chan][ptype] is None:
+                    continue
+                
                 # loop series and make new dictionary
                 bias_dict = dict()
                 ptype_dict = data_dict[chan][ptype]

@@ -229,7 +229,7 @@ class FilterData:
         
     def get_psd(self, channel, tag='default', fold=False):
         """
-        Get PSD for a specific channel
+        Get PSD for a specific channel in unit of  Amps^2/Hz
 
         Parameters:
         ----------
@@ -247,7 +247,7 @@ class FilterData:
         ------
 
         psd : ndarray, 
-            psd in units of amps
+            psd [Amps^2/Hz]
         f  : ndarray
             psd frequencies
 
@@ -803,8 +803,11 @@ class FilterData:
 
             if psd is None:
                 continue
-            
+
+            # convert to A/rtHz
             psd = psd**0.5
+
+            
             if unit=='pA':
                 psd *= 1e12
                 
