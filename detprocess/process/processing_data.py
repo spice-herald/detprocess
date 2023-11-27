@@ -18,7 +18,7 @@ __all__ = [
 class ProcessingData:
     """
     Class to manage data used for processing,
-    in particular  
+    in particular
       - raw data filew, event traces and metadata
       - filter file data
       - optimal filter objects containing template/PSD FFTs, etc.
@@ -32,8 +32,8 @@ class ProcessingData:
                  filter_file=None,
                  verbose=True):
         """
-        Intialize data processing 
-        
+        Intialize data processing
+
         Parameters
         -----------
 
@@ -48,10 +48,10 @@ class ProcessingData:
           full path to filter file
           default: None
 
-        verbose :  bool, optional 
+        verbose :  bool, optional
           if True, display info
            Default: True
-    
+
         """
 
         # verbose
@@ -62,10 +62,10 @@ class ProcessingData:
         self._raw_files = raw_files
         self._group_name = group_name
 
-        # trigger dataframe 
+        # trigger dataframe
         self._trigger_files = trigger_files
         self._trigger_group_name = trigger_group_name
-                
+
         # filter data
         self._filter_data = None
         if filter_file is not None:
@@ -83,15 +83,15 @@ class ProcessingData:
         if self._trigger_files is not None:
             self._is_dataframe = True
 
-              
+
         # initialize OF containers
         self._OF_base_objs = dict()
         self._OF_algorithms = dict()
-        
+
         # initialize raw data reader
         self._h5 = h5io.H5Reader()
 
-        # initialize current event traces and metadata 
+        # initialize current event traces and metadata
         self._current_traces  = None
         self._current_admin_info = None
         self._current_traces_data = None
@@ -99,27 +99,27 @@ class ProcessingData:
         self._current_dataframe_info = None
         self._current_event_number = None
         self._current_series_number = None
-        self._current_trigger_index = None 
-            
+        self._current_trigger_index = None
+
         # get ADC and file info
         self._data_info = self._extract_data_info()
-      
+
 
 
     @property
     def verbose(self):
         return self._verbose
 
-                
-        
+
+
     def instantiate_OF_base(self, processing_config, channel=None):
         """
-        Instantiate QETpy OF base class, perform pre-calculations 
+        Instantiate QETpy OF base class, perform pre-calculations
         such as FFT, etc, check trace / pre-trigger length
 
         Parameters
         ----------
-        
+
         processing_config : dict
          disctionary with processing user config (loaded
          from yaml file)
@@ -127,7 +127,7 @@ class ProcessingData:
         channel : str,  optional
           channel name
           Default: all channels from config
-        
+
         """
 
         # check if filter file data available
@@ -135,13 +135,13 @@ class ProcessingData:
             if self._verbose:
                 print('INFO: No filter file available. Skipping '
                       + ' OF instantiation!')
-            
+
         # check channel
         if (channel is not None
             and channel not in processing_config.keys()):
             raise ValueError('No channel ' + channel
                              + ' found in configuration file!')
-            
+
         # loop channels
         for chan, chan_config in processing_config.items():
 
@@ -161,17 +161,17 @@ class ProcessingData:
                 nb_pretrigger_samples = (
                     chan_config['nb_pretrigger_samples']
                 )
-                
+
             nb_samples = None
             if 'nb_samples' in chan_config.keys():
                 nb_samples = (
                     chan_config['nb_samples']
-                )  
+                )
 
             # loop configuration and get list of templates
             for alg, alg_config in chan_config.items():
 
-                # FIXME: only 1x1 OF 
+                # FIXME: only 1x1 OF
                 if (alg.find('of1x')==-1 and alg.find('psd_amp')==-1):
                     continue
 
@@ -192,21 +192,21 @@ class ProcessingData:
                         alg_config['nb_samples']
                     )
 
-                
+
                 # ----------------
                 # psd
                 # ----------------
                 psd_tag = 'default'
                 if 'psd_tag' in alg_config.keys():
                     psd_tag = alg_config['psd_tag']
-                                        
+
                 # Initialize dictionary (to store OF object)
                 if chan not in self._OF_base_objs.keys():
                     self._OF_base_objs[chan] = dict()
 
                 # instantiate
                 if psd_tag not in self._OF_base_objs[chan].keys():
-                    
+
                     # get psd
                     psd, psd_freqs, psd_metadata = self.get_psd(chan, psd_tag)
 
@@ -218,26 +218,26 @@ class ProcessingData:
                             + 'consistent between raw data '
                             + 'and psd with tag "'
                             + psd_tag + '"!')
-                    
+
                     # coupling
                     coupling = 'AC'
                     if 'coupling' in alg_config.keys():
                         coupling = alg_config['coupling']
-                        
-                        
+
+
                     # check sample rate
                     psd_fs = None
                     fs = self.get_sample_rate()
                     if (psd_metadata is not None
                         and 'sample_rate' in psd_metadata):
                         psd_fs = psd_metadata['sample_rate']
-                    
+
                         if (psd_fs is not None
                             and  (psd_fs != fs)):
                             raise ValueError('Sample rate is not '
                                              'consistent between raw data '
                                              'and psd!')
-                                       
+
                     # instantiate
                     self._OF_base_objs[chan][psd_tag] = {
                         'OF': qp.OFBase(
@@ -253,15 +253,16 @@ class ProcessingData:
                         psd,
                         coupling=coupling,
                         psd_tag=psd_tag)
-                        
+
                 # -------------
                 # Add template(s)
                 # --------------
-                
+
                 # check if there are template tag(s)
                 tag_list = list()
                 for key in alg_config.keys():
-                    if key.find('template_tag') != -1:
+                    #if key.find('template_tag') != -1:
+                    if (key.find('template') != -1 and  key.find('_tag') != -1):
                         tag_list.append(
                             alg_config[key]
                         )
@@ -272,17 +273,17 @@ class ProcessingData:
                 # make sure it is unique
                 tag_list = list(set(tag_list))
 
-                # integral or max                    
+                # integral or max
                 integralnorm=False
                 if 'integralnorm' in alg_config.keys():
                     integralnorm = alg_config['integralnorm']
-                    
+
                 # check if tag already exist
                 # and add if needed
                 template_list = (
                     self._OF_base_objs[chan][psd_tag]['OF'].template_tags()
                 )
-                    
+
                 for tag in tag_list:
 
                     # check if tag already stored
@@ -302,7 +303,7 @@ class ProcessingData:
                         nb_pretrigger_samples_temp = (
                             int(template_metadata['nb_pretrigger_samples'])
                         )
-                            
+
                     if (nb_pretrigger_samples_alg is not None
                         and nb_pretrigger_samples_temp is not None
                         and nb_pretrigger_samples_alg != nb_pretrigger_samples_temp):
@@ -313,21 +314,21 @@ class ProcessingData:
                             + 'configuration (yaml) file ('
                             + str(nb_pretrigger_samples_alg) + '). '
                             + 'Unable to process!')
-                        
+
                     #  add
                     self._OF_base_objs[chan][psd_tag]['OF'].add_template(
                         template,
                         template_tag=tag,
                         integralnorm=integralnorm
                     )
-                    
+
                     # update pretrigger in OF base as it may not have been added yet
                     if nb_pretrigger_samples_temp is not None:
                         self._OF_base_objs[chan][psd_tag]['OF']._pretrigger_samples = (
                             nb_pretrigger_samples_temp
                         )
-                        
-                                          
+
+
                 # save algorithm name and psd/signal tag
                 if chan not in self._OF_algorithms.keys():
                     self._OF_algorithms[chan] = dict()
@@ -338,28 +339,28 @@ class ProcessingData:
                 for tag in self._OF_base_objs[chan].keys():
                     self._OF_base_objs[chan][tag]['OF'].calc_phi()
 
-                   
+
     def get_OF_base(self, channel, alg_name):
         """
-        Get OF object 
+        Get OF object
 
         Parameters
         ----------
 
         channel : str
-          channel name 
+          channel name
 
         alg_name : str
-          algorithm name 
+          algorithm name
 
         Return
         ------
-        
-        OF : object 
+
+        OF : object
           optiomal filter base instance
 
         """
-        
+
         OF = None
 
         # get OF base
@@ -368,21 +369,21 @@ class ProcessingData:
 
             tag = self._OF_algorithms[channel][alg_name]
             OF = self._OF_base_objs[channel][tag]['OF']
-              
+
         return OF
 
-        
-                
-                    
+
+
+
     def get_template(self, channel, tag='default'):
         """
         Get template from filter file
-        
+
         Parameters
         ----------
 
         channel : str
-          channel name 
+          channel name
 
 
         tag : str
@@ -397,13 +398,13 @@ class ProcessingData:
 
 
         """
-        
+
         # check if channel in filter_file
         if channel not in self._filter_data:
             raise ValueError('No channel ' + channel
                              + ' found in filter file!')
 
-        # parameter name 
+        # parameter name
         template_name = 'template_' + tag
 
         # Back compatibility
@@ -417,10 +418,10 @@ class ProcessingData:
             raise ValueError('No template with tag "' + tag
                              + '" found in filter file!'
                              + ' for channel ' + channel)
-        
+
 
         template = self._filter_data[channel][template_name].values
-        
+
         # metadata
         metadata = None
         metadata_key = template_name + '_metadata'
@@ -430,17 +431,17 @@ class ProcessingData:
         return template, metadata
 
 
-    
+
     def get_psd(self, channel, tag='default'):
         """
         Get psd from filter file
 
-          
+
         Parameters
         ----------
 
         channel : str
-          channel name 
+          channel name
 
 
         tag : str
@@ -458,20 +459,20 @@ class ProcessingData:
 
 
         """
-        
+
         # check if channel in filter_file
         if channel not in self._filter_data:
             raise ValueError('No channel ' + channel
                              + ' found in filter file!')
 
-        # parameter name 
+        # parameter name
         psd_name = 'psd_' + tag
 
         # Back compatibility
         if (tag == 'default'
             and psd_name not in self._filter_data[channel]):
             psd_name = 'psd'
-            
+
         if psd_name not in self._filter_data[channel]:
             raise ValueError('No psd with tag "' + tag
                              + '" found in filter file!'
@@ -486,14 +487,14 @@ class ProcessingData:
         metadata_key = psd_name + '_metadata'
         if metadata_key in self._filter_data[channel]:
             metadata = self._filter_data[channel][metadata_key]
-            
+
         return psd_vals, psd_freqs, metadata
-    
+
 
 
     def set_series(self, series):
         """
-        Set file list for a specific 
+        Set file list for a specific
         series
 
         Parameters
@@ -508,7 +509,7 @@ class ProcessingData:
 
         """
 
-                
+
         # open/set files
 
         # case dataframe
@@ -522,20 +523,20 @@ class ProcessingData:
         else:
             file_list = self._raw_files[series]
             self._h5.set_files(file_list)
-        
+
 
     def get_raw_path(self):
         """
         """
         return self._raw_path
 
-            
-        
+
+
     def read_next_event(self, channels=None, traces_config=None):
         """
         Read next event
         """
-        
+
         if not self._is_dataframe:
 
             # read the entire trace
@@ -550,7 +551,7 @@ class ProcessingData:
             # check size
             if self._current_traces.size == 0:
                 return False
-            
+
         else:
 
             # require traces_info
@@ -559,8 +560,8 @@ class ProcessingData:
                     'ERROR: No trace info available.'
                     'Something went wrong...'
                 )
-            
-           
+
+
             # increment event pointer
             # and get event info
             self._current_dataframe_index +=1
@@ -570,7 +571,7 @@ class ProcessingData:
                 self._current_traces = []
                 return False
 
-            # get record  
+            # get record
             self._current_dataframe_info = self._dataframe.to_records(
                 index=self._current_dataframe_index
             )
@@ -597,8 +598,8 @@ class ProcessingData:
                     + '/' + group_name
                     + '/*_' + h5io.extract_series_name(series_number)
                     + '_F' + str(dump_number).zfill(4) + '.hdf5'
-                )    
-            
+                )
+
                 file_list = glob(file_search)
                 if len(file_list) != 1:
                     raise ValueError('ERROR: Unable to get raw data file. '
@@ -609,7 +610,7 @@ class ProcessingData:
             # intialize
             self._current_admin_info = None
             self._current_traces_data = dict()
-                
+
             for key_name, key_channels in traces_config.items():
 
                 key_split = key_name.split('_')
@@ -621,7 +622,7 @@ class ProcessingData:
                 # nb samples
                 nb_samples = int(key_split[0])
                 nb_pretrigger_samples = int(key_split[1])
-                
+
                 # read traces
                 traces, info = (
                     self._h5.read_single_event(
@@ -638,24 +639,24 @@ class ProcessingData:
                     'traces': traces,
                     'channels': info['detector_chans']
                 }
-                                
+
                 if self._current_admin_info is None:
                     self._current_admin_info = info
                 else:
                     self._current_admin_info['detector_config'].update(
                         info['detector_config']
                     )
-                    
+
             # update info
             self._current_event_number = event_number
             self._current_series_number = series_number
             self._current_dump_number = dump_number
             self._current_trigger_index = trigger_index
 
-            
+
         # if end of file, traces will be empty
         return True
-                
+
 
     def update_signal_OF(self):
         """
@@ -670,17 +671,17 @@ class ProcessingData:
         None
 
         """
-        
+
         # loop channels
         for chan in self._OF_base_objs.keys():
 
             # loop tags
             for tag, tag_dict in self._OF_base_objs[chan].items():
 
-                # number samples 
+                # number samples
                 nb_samples = tag_dict['nb_samples']
                 nb_pretrigger_samples = tag_dict['nb_pretrigger_samples']
-                
+
                 # get trace
                 trace = self.get_channel_trace(
                     chan,
@@ -692,7 +693,7 @@ class ProcessingData:
                 self._OF_base_objs[chan][tag]['OF'].update_signal(trace)
 
 
-                
+
 
     def get_event_admin(self, return_all=False):
         """
@@ -725,8 +726,8 @@ class ProcessingData:
                         val = np.nan
                     admin_dict[key] = val
                 return admin_dict
-        
-        # return all        
+
+        # return all
         if return_all:
             return self._current_admin_info
 
@@ -740,12 +741,12 @@ class ProcessingData:
         admin_dict['run_type'] = np.int16(self._current_admin_info['run_type'])
         admin_dict['data_type'] = np.int16(self._current_admin_info['run_type'])
 
-        # group name 
+        # group name
         if self._group_name is not None:
             admin_dict['group_name'] = self._group_name
         else:
             admin_dict['group_name'] = np.nan
-            
+
         # trigger info
         if 'trigger_type' in self._current_admin_info:
             admin_dict['trigger_type'] = np.int16(self._current_admin_info['trigger_type'])
@@ -756,7 +757,7 @@ class ProcessingData:
                 admin_dict['trigger_type'] = data_modes.index(data_mode)+1
             else:
                 admin_dict['trigger_type'] = np.nan
-        
+
         if  'trigger_amplitude' in self._current_admin_info:
             admin_dict['trigger_amplitude'] = self._current_admin_info['trigger_amplitude']
         else:
@@ -811,12 +812,12 @@ class ProcessingData:
 
         Parameters
         ---------
-        
+
         channel : str
            channel can be a single channel
            or sum of channels "chan1+chan2"
-           or multiple channels "chan1|chan2"     
-        
+           or multiple channels "chan1|chan2"
+
 
         Return
         ------
@@ -838,18 +839,18 @@ class ProcessingData:
         channels, separator = utils.split_channel_name(
             channel, self._current_admin_info['detector_chans']
         )
-        
+
         # fill dictionary
         for chan in channels:
             settings_dict['tes_bias_' + chan] =  (
                 self._current_admin_info['detector_config'][chan]['tes_bias'])
             settings_dict['output_gain_' + chan] =  (
                 self._current_admin_info['detector_config'][chan]['output_gain'])
-            
+
         return settings_dict
 
-     
-                
+
+
     def get_channel_trace(self, channel,
                           nb_samples=None,
                           nb_pretrigger_samples=None):
@@ -862,8 +863,8 @@ class ProcessingData:
         channel : str
            channel can be a single channel
            or sum of channels "chan1+chan2"
-           or multiple channels "chan1|chan2"     
-   
+           or multiple channels "chan1|chan2"
+
         Return:
         -------
         array : ndarray
@@ -873,7 +874,7 @@ class ProcessingData:
 
         array = None
 
-        #  get channels for case + or | used 
+        #  get channels for case + or | used
         channels, separator = utils.split_channel_name(
             channel, self._current_admin_info['detector_chans']
         )
@@ -894,7 +895,7 @@ class ProcessingData:
                                  + channel)
             # get array
             array = self._current_traces[channel_indices,:]
-            
+
         else:
 
             if nb_pretrigger_samples is None:
@@ -915,7 +916,7 @@ class ProcessingData:
             # get array
             array = self._current_traces_data[key]['traces'][channel_indices,:]
 
-            
+
         # Build output
         if separator == '+':
             array = np.sum(array,  axis=0)
@@ -923,11 +924,11 @@ class ProcessingData:
             array = array[0,:] - array[1,:]
         elif separator is None:
             array = array[0,:]
-            
+
         return array
 
 
-    
+
 
     def get_facility(self):
         """
@@ -942,7 +943,7 @@ class ProcessingData:
         ------
 
         facility : int
-         facility number    
+         facility number
 
         """
         facility = None
@@ -964,7 +965,7 @@ class ProcessingData:
         ------
 
         sample_rate : float
-         ADC sample rate used to take data 
+         ADC sample rate used to take data
 
 
         """
@@ -973,10 +974,10 @@ class ProcessingData:
             sample_rate = self._data_info['sample_rate']
 
         return sample_rate
-    
+
     def get_nb_samples(self):
         """
-        Function to extract number of samples information 
+        Function to extract number of samples information
         from metadata
 
         Parameters
@@ -996,10 +997,10 @@ class ProcessingData:
 
         return nb_samples
 
-    
+
     def get_nb_samples_pretrigger(self):
         """
-        Function to extract number of pretrigger samples 
+        Function to extract number of pretrigger samples
         information  from metadata
 
         Parameters
@@ -1022,7 +1023,7 @@ class ProcessingData:
         return nb_samples_pretrigger
 
 
-    
+
     def _extract_data_info(self):
         """
         Function to extract all metadata
@@ -1042,7 +1043,7 @@ class ProcessingData:
         """
 
         data_info = None
-        
+
         if not self._raw_files:
             raise ValueError('No file available to get sample rate!')
 
