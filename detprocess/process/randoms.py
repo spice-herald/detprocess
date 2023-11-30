@@ -461,7 +461,15 @@ class Randoms:
                 metadata_adc = metadata['groups'][adc_id]
                 
                 # nb of events in file
-                nb_events = metadata_adc['nb_events']
+                nb_events = 0
+                if 'nb_events' in  metadata_adc.keys():
+                    nb_events = metadata_adc['nb_events']
+                elif  'nb_datasets' in  metadata_adc.keys():
+                    nb_events = metadata_adc['nb_datasets']
+                else:
+                    raise ValueError('ERROR: Unknow file format. Unable '
+                                     'to get number of events')
+                    
                 total_event_counter += nb_events
 
                 # number of randoms requested
@@ -880,7 +888,18 @@ class Randoms:
             metadata_adc = metadata['groups'][adc_id]
             series_dict[series_name]['sample_rate'] = metadata_adc['sample_rate']
             series_dict[series_name]['nb_samples'] = metadata_adc['nb_samples']
-            series_dict[series_name]['nb_events_first_file'] = metadata_adc['nb_events']
+            
+            # nb of events in file
+            nb_events_metadata = 0
+            if 'nb_events' in  metadata_adc.keys():
+                nb_events_metadata = metadata_adc['nb_events']
+            elif  'nb_datasets' in  metadata_adc.keys():
+                nb_events_metadata = metadata_adc['nb_datasets']
+            else:
+                raise ValueError('ERROR: Unknow file format. Unable '
+                                 'to get number of events')
+            
+            series_dict[series_name]['nb_events_first_file'] = nb_events_metadata
 
 
 
