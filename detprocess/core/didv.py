@@ -143,7 +143,10 @@ class DIDVAnalysis(FilterData):
         data_config['rshunt'] = rshunt
         data_config['rp'] = rp
         data_config['tes_bias'] = tes_bias
-    
+        data_config['sgfreq'] = sgfreq
+        data_config['sgamp'] = sgamp
+
+
         # Apply cuts
         zerocut = np.all(traces!=0, axis=1)
         traces = traces[zerocut]  
@@ -151,7 +154,7 @@ class DIDVAnalysis(FilterData):
         # cut pileup
         cut = qp.autocuts_didv(traces, fs=fs)
         traces = traces[cut]
-        
+
         # Fit data
         didvobj = qp.DIDV(traces,
                           fs,

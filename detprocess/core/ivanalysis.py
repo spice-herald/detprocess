@@ -420,9 +420,10 @@ class IVSweepAnalysis(FilterData):
 
 
             # invert offset
+            offset = offset.copy()
             if (lgc_invert_offset != 'auto'
                 and lgc_invert_offset):
-                offset = -1*offset.copy()
+                offset = -1*offset
                 
             # rp guess
             rp = param_dict['rp']
@@ -448,7 +449,7 @@ class IVSweepAnalysis(FilterData):
             ivobj.analyze(**kwargs)
             
             rn_check = ivobj.rnorm[0, 0]
-            if rn_check<0:
+            if (lgc_invert_offset == 'auto' and rn_check<0):
                 lgc_invert_offset = True
                 ivobj.dites = -1*ivobj.dites
                 ivobj.analyze(**kwargs)
