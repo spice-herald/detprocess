@@ -31,9 +31,13 @@ if __name__ == "__main__":
     parser.add_argument('--enable-trig', '--enable-triggers', '--enable_trig',
                         dest='enable_trig',
                         action='store_true', help='Acquire randoms')
-    parser.add_argument('--trigger_dataframe_path', 
+    parser.add_argument('--dataframe_path', '--trigger_dataframe_path', 
                         dest='trigger_dataframe_path', type=str,
                         help='Path to trigger dataframe (threshold and/or randoms)')
+    parser.add_argument('--events_selection_file', 
+                        dest='events_selection_file', type=str,
+                        help= ('Path events selection HDF5 file for "feature" processing'
+                               ' of selected events only'))
     parser.add_argument('--enable-feature', '--enable_feature',
                         dest='enable_feature',
                         action='store_true',
@@ -120,7 +124,21 @@ if __name__ == "__main__":
     if args.trigger_dataframe_path:
         dataframe_path = args.trigger_dataframe_path
 
+    # event
+    events_selection_file = None
+    if args.events_selection_file:
+        events_selection_file = args.events_selection_file
 
+
+    # check
+    if (events_selection_file is not None
+        and (acquire_rand or acquire_trig)):
+        print('ERROR: Events selection can only be done when '
+              ' processing feature only, not with randoms or '
+              ' trigger acquisition (only --enable-feature)')
+        exit()
+        
+        
     # series
     series = None
     if args.input_series:
@@ -265,6 +283,7 @@ if __name__ == "__main__":
                                    restricted=restricted)
         
         myproc.process(nevents=-1,
+                       events_selection=events_selection_file,
                        lgc_save=True,
                        lgc_output=False,
                        ncores=ncores,

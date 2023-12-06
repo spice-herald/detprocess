@@ -457,8 +457,10 @@ class TriggerProcessing:
                       + series)
                 
             # set file list
-            self._processing_data_inst.set_series(series)
-                                
+            success = self._processing_data_inst.set_series(series)
+            if not success:
+                continue
+            
             # loop events
             do_stop = False
             while (not do_stop):

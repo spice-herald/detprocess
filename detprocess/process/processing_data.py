@@ -9,11 +9,9 @@ from glob import glob
 from detprocess.utils import utils
 
 
-
 __all__ = [
     'ProcessingData'
 ]
-
 
 class ProcessingData:
     """
@@ -83,7 +81,10 @@ class ProcessingData:
         if self._trigger_files is not None:
             self._is_dataframe = True
 
-              
+        # selection data (pandas) to filter triggers
+        self._selection_dataframe = None
+    
+            
         # initialize OF containers
         self._OF_base_objs = dict()
         self._OF_algorithms = dict()
@@ -504,26 +505,46 @@ class ProcessingData:
 
         Return
         ------
-        None
+       
+        success : bool
+         return true if non-zero events
 
         """
 
-                
+
+        success = False
+        
         # open/set files
 
         # case dataframe
         if self._is_dataframe:
+            
             if self._verbose:
                 print('INFO: Loading dataframe for trigger series '
                       + series)
             file_list = self._trigger_files[series]
             self._dataframe = vx.open_many(file_list)
+
+            # filter
+            if self._selection_dataframe is not None:
+                self._filter_dataframe()
+                
             self._current_dataframe_index = -1
+
+            if (self._dataframe is not None
+                and len(self._dataframe)>0):
+                success = True
         else:
             file_list = self._raw_files[series]
             self._h5.set_files(file_list)
-        
 
+            # TEMP
+            success = True
+
+        return success
+
+    
+            
     def get_raw_path(self):
         """
         """
@@ -576,11 +597,11 @@ class ProcessingData:
             )
 
             # get event/series number, and trigger index
-            event_number = self._current_dataframe_info['event_number']
-            dump_number = self._current_dataframe_info['dump_number']
-            series_number = self._current_dataframe_info['series_number']
-            trigger_index = self._current_dataframe_info['trigger_index']
-            group_name = self._current_dataframe_info['group_name']
+            event_number = int(self._current_dataframe_info['event_number'])
+            dump_number = int(self._current_dataframe_info['dump_number'])
+            series_number = int(self._current_dataframe_info['series_number'])
+            trigger_index = int(self._current_dataframe_info['trigger_index'])
+            group_name = str(self._current_dataframe_info['group_name'])
 
             # event index in file
             event_index = int(event_number%100000)
@@ -731,10 +752,10 @@ class ProcessingData:
             return self._current_admin_info
 
         # fill dictionary
-        admin_dict['event_number'] = np.int64(self._current_admin_info['event_num'])
+        admin_dict['event_number'] = int(self._current_admin_info['event_num'])
         admin_dict['event_index'] = np.int32(self._current_admin_info['event_index'])
         admin_dict['dump_number'] = np.int16(self._current_admin_info['dump_num'])
-        admin_dict['series_number'] = np.int64(self._current_admin_info['series_num'])
+        admin_dict['series_number'] = int(self._current_admin_info['series_num'])
         admin_dict['event_id'] = np.int32(self._current_admin_info['event_id'])
         admin_dict['event_time'] = np.int64(self._current_admin_info['event_time'])
         admin_dict['run_type'] = np.int16(self._current_admin_info['run_type'])
@@ -742,7 +763,7 @@ class ProcessingData:
 
         # group name 
         if self._group_name is not None:
-            admin_dict['group_name'] = self._group_name
+            admin_dict['group_name'] = str(self._group_name)
         else:
             admin_dict['group_name'] = np.nan
             
@@ -1022,6 +1043,49 @@ class ProcessingData:
         return nb_samples_pretrigger
 
 
+    def set_selection_dataframe(self, df_pandas):
+        """
+        Set a pandas dataframe to process only selected 
+        triggers
+        """
+
+        self._selection_dataframe = df_pandas
+
+
+    
+    def _filter_dataframe(self):
+        """
+        Filter trigger dataframe to process selected events
+        only
+        """
+
+        # Initialize an expression that evaluates to False for all rows
+        combined_expression = (self._selection_dataframe.columns[0]
+                               != self._selection_dataframe.columns[0])
+
+        for _, row in self._selection_dataframe.iterrows():
+            # Start with a True expression for each row
+            row_expression = (
+                self._dataframe[
+                    self._selection_dataframe.columns[0]
+                ] == self._dataframe[
+                    self._selection_dataframe.columns[0]
+                ]
+            )
+    
+            # Update the expression for each column
+            for col in self._selection_dataframe.columns:
+                row_expression &= (self._dataframe[col] == row[col])
+
+            # Combine the row expression with the main expression using OR
+            combined_expression |= row_expression
+
+        # filter
+        self._dataframe = self._dataframe[combined_expression]
+
+
+
+    
     
     def _extract_data_info(self):
         """

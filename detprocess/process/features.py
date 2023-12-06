@@ -25,11 +25,9 @@ from detprocess.utils import utils
 import pytesdaq.io as h5io
 warnings.filterwarnings('ignore')
 
-
 __all__ = [
     'FeatureProcessing'
 ]
-
 
 
 class FeatureProcessing:
@@ -186,7 +184,7 @@ class FeatureProcessing:
             raw_files,
             group_name=group_name,
             trigger_files=trigger_files,
-            trigger_group_name =trigger_group_name,
+            trigger_group_name=trigger_group_name,
             filter_file=filter_file,
             verbose=verbose)
                                 
@@ -194,6 +192,7 @@ class FeatureProcessing:
         
     def process(self,
                 nevents=-1,
+                events_selection=None,
                 lgc_save=False, save_path=None,
                 lgc_output=False, 
                 ncores=1,
@@ -209,6 +208,10 @@ class FeatureProcessing:
            number of events to be processed
            if not all events, requires ncores = 1
            Default: all available (=-1).
+
+        events_selection: list, pandas dataframe or full path to hdf5 file
+            events used to filter trigger dataframe so only a subset of events
+            are processed 
         
         lgc_save : bool, optional
            if True, save dataframe in hdf5 files
@@ -243,13 +246,50 @@ class FeatureProcessing:
                              + 'at the same time. Set either lgc_output '
                              + 'or lgc_save to False.')
 
-        # check number cores allowed
-        if ncores>len(self._series_list):
+
+        # events selection
+        nb_series_selection = None
+        if events_selection is not None:
+
+            if not self._processing_data._is_dataframe:
+                raise ValueError('ERROR: "events_selection" only'
+                                 ' possible for processing with'
+                                 ' trigger dataframe!')
+            
+            # convert to pandas dataframe
+            events_df = None      
+            if isinstance(events_selection, list):
+                events_df = pd.DataFrame(event_selection)
+            elif isinstance(events_selection, str):
+                # check if file exist
+                if os.path.isfile(events_selection):
+                    events_df = pd.read_hdf(events_selection)
+                else:
+                    raise ValueError(f'ERROR: Unable to find hdf5 '
+                                     f' file {events_selection}')
+
+            elif not isinstance(events_selection, pd.DataFrame):
+                raise ValueError('ERROR: "events_selection" argument '
+                                 'should a pandas dataframe or pandas hdf5 file')
+            
+            # store in processing data
+            self._processing_data.set_selection_dataframe(events_df)
+            
+            # get list of series
+            nb_series_selection = len(list(set(events_df['series_number'])))
+            
+            if (ncores > nb_series_selection):
+                ncores = nb_series_selection
+                if self._verbose:
+                    print('INFO: Changing number cores to '
+                          + str(ncores) + ' (= number of series)')
+                    
+        elif (ncores>len(self._series_list)):
             ncores = len(self._series_list)
             if self._verbose:
                 print('INFO: Changing number cores to '
-                      + str(ncores) + ' (maximum allowed)')
-                
+                      + str(ncores) + ' (= number of series)')
+
         # create output directory
         output_group_path = None
         output_series_num = None
@@ -278,7 +318,7 @@ class FeatureProcessing:
             if self._verbose:
                 print(f'INFO: Processing output group path: {output_group_path}')
 
-                
+                            
         # instantiate OF object
         # (-> calculate FFT template/noise, optimum filter)
         if self._verbose:
@@ -442,7 +482,9 @@ class FeatureProcessing:
 
             
             # set file list
-            self._processing_data.set_series(series)
+            success = self._processing_data.set_series(series)
+            if not success:
+                continue
 
             # loop events
             do_stop = False
@@ -577,13 +619,11 @@ class FeatureProcessing:
                     self._processing_data.get_channel_settings(channel)
                     )
 
-          
                 # Pulse features
             
                 # loop channels from configuration file (including sum
                 # of channels and multiple channels algoritms)  
                 for channel, algorithms in self._processing_config.items():
-
                                         
                     # check channel has any parameters
                     if not isinstance(algorithms, dict):
@@ -709,7 +749,19 @@ class FeatureProcessing:
                 feature_df = feature_df.append(event_features,
                                                ignore_index=True)
            
-        # return features
+
+                # do some conversion
+                parameters_int = ['event_number', 'trigger_index', 'series_number',
+                                  'data_type', 'trigger_type', 'dump_number',
+                                  'fridge_run_number']
+                
+                columns =  list(feature_df.columns)
+                for col in columns:
+                    if (col in parameters_int
+                        and feature_df[col].dtype != np.int64):
+                        feature_df[col] = feature_df[col].astype(int)
+                        
+        # return dataframe
         return feature_df
        
 
@@ -1472,8 +1524,5 @@ class FeatureProcessing:
         
 
         return min_index, max_index
-        
-    
-        
         
     
