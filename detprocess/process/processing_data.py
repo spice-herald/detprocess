@@ -1053,38 +1053,42 @@ class ProcessingData:
 
 
     
-    def _filter_dataframe(self):
+    def _filter_dataframe(self, batch_size=200):
         """
         Filter trigger dataframe to process selected events
-        only
+        only. It needs to be done in batches to avoid too complex
+        vaex expression that can be handled
         """
+        
+        # Function to build a combined expression for a batch of rows
+        def build_expression_for_batch(df):
+            combined_expression = (self._dataframe[df.columns[0]]
+                                   != self._dataframe[df.columns[0]])
+            for _, row in df.iterrows():
+                row_expression = (self._dataframe[df.columns[0]]
+                                  == self._dataframe[df.columns[0]])
+                for col in df.columns:
+                    row_expression &= (self._dataframe[col] == row[col])
+                combined_expression |= row_expression
+            return combined_expression
 
-        # Initialize an expression that evaluates to False for all rows
-        combined_expression = (self._selection_dataframe.columns[0]
-                               != self._selection_dataframe.columns[0])
+        # Split the Pandas DataFrame into batches and process each batch
+        num_batches = np.ceil(len(self._selection_dataframe) / batch_size)
 
-        for _, row in self._selection_dataframe.iterrows():
-            # Start with a True expression for each row
-            row_expression = (
-                self._dataframe[
-                    self._selection_dataframe.columns[0]
-                ] == self._dataframe[
-                    self._selection_dataframe.columns[0]
-                ]
-            )
-    
-            # Update the expression for each column
-            for col in self._selection_dataframe.columns:
-                row_expression &= (self._dataframe[col] == row[col])
+        # intialize list of selected batch dataframe
+        filtered_frames = []
+        for i in range(int(num_batches)):
+            batch = self._selection_dataframe.iloc[i * batch_size: (i + 1)
+                                                   * batch_size]
+            expression = build_expression_for_batch(batch)
+            filtered_frames.append(self._dataframe[expression])
 
-            # Combine the row expression with the main expression using OR
-            combined_expression |= row_expression
-
-        # filter
-        self._dataframe = self._dataframe[combined_expression]
-
-
-
+        # Concatenate the filtered DataFrames
+        if filtered_frames:
+            self._dataframe = vx.concat(filtered_frames)
+        else:
+            raise ValueError('ERROR: Selected events were not found in'
+                             ' trigger dataframe')
     
     
     def _extract_data_info(self):
