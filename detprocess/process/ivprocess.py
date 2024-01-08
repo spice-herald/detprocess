@@ -574,7 +574,8 @@ class IVSweepProcessing:
                     traces = traces[cut]
                 
                     # PSD calculation
-                    psd_freq, psd = qp.calc_psd(traces, fs=fs)
+                    psd_freq, psd = qp.calc_psd(traces, fs=fs,
+                                                folded_over=False)
                     
                     # Offset calculation
                     offset, offset_err = qp.utils.calc_offset(traces, fs=fs)

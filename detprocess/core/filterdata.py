@@ -95,6 +95,18 @@ class FilterData:
                             msg += str(type(val)) + ' '
                         msg += str(val.shape)
 
+                        if (base_par == 'ivsweep_data'
+                            and  isinstance(val, pd.DataFrame)
+                            and 'state' in val.columns):
+                            nb_norm = len(np.where(val['state']=='normal')[0])
+                            if nb_norm == 0:
+                                nb_norm = 'Unknown'
+                            nb_sc = len(np.where(val['state']=='sc')[0])
+                            if nb_sc == 0:
+                                nb_sc = 'Unknown'
+                            msg += '\n       Nb SC points: ' + str(nb_sc)
+                            msg += '\n       Nb Normal points: ' + str(nb_norm)
+                                                    
                         filter_display[chan][tag].append(msg)
                         break
                 
@@ -620,8 +632,8 @@ class FilterData:
     
     def set_ivsweep_result(self, 
                            channel,
-                           series,
-                           lgc_didv_data=False,
+                           pd_series,
+                           iv_type,
                            metadata=None,
                            tag='default'):
         """
@@ -630,7 +642,7 @@ class FilterData:
         """
 
         # check input
-        if not isinstance(series, pd.Series):
+        if not isinstance(pd_series, pd.Series):
             raise ValueError(
                 'ERROR: Input is not a pandas Series!')
         
@@ -639,10 +651,8 @@ class FilterData:
             self._filter_data[channel] = dict()
         
         # data 
-        data_tag = 'ivsweep_result_noise_' + tag
-        if lgc_didv_data:
-             data_tag = 'ivsweep_result_didv_' + tag
-        self._filter_data[channel][data_tag] = series
+        data_tag = 'ivsweep_result_' + iv_type  + '_' + tag
+        self._filter_data[channel][data_tag] = pd_series
 
         # metadata
         if metadata is not None:
@@ -653,7 +663,7 @@ class FilterData:
 
         
     def set_ivsweep_result_from_dict(self, data_dict,
-                                     lgc_didv_data=False,
+                                     iv_type,
                                      tag='default'):
         """
         Set IV-dIdV sweep result from dictionary
@@ -663,12 +673,12 @@ class FilterData:
         for chan, df in data_dict.items():
             self.set_ivsweep_result(chan,
                                     df,
-                                    lgc_didv_data=lgc_didv_data,
+                                    iv_type,
                                     tag=tag)
             
     def get_ivsweep_result(self, 
                            channel,
-                           lgc_didv_data=False,
+                           iv_type='noise',
                            tag='default',
                            lgc_return_dict=False):
         """
@@ -680,33 +690,27 @@ class FilterData:
             raise ValueError(
                 f'ERROR: no channel {channel} available! '
                 'Did you load from file first?')
-        
-        data_tag = 'ivsweep_result_noise_' + tag
-        if lgc_didv_data:
-             data_tag = 'ivsweep_result_didv_' + tag
-        
-        if data_tag not in self._filter_data[channel].keys():
-            data_type = str()
-            bool_str = "False"
-            if lgc_didv_data:
-                data_type = 'didv'
-                data_tag = 'ivsweep_result_noise_' + tag
-                bool_str = "True"
-            else:
-                data_type = 'noise'
-                data_tag = 'ivsweep_result_didv_' + tag
 
+        # data tag
+        data_tag = 'ivsweep_result_' + iv_type  + '_' + tag
+        if data_tag not in self._filter_data[channel].keys():
+            iv_type_new = str()
+            if iv_type == 'noise':
+                iv_type_new = 'didv'
+            else:
+                iv_type_new == 'noise'
+            data_tag = 'ivsweep_result_' + iv_type_new  + '_' + tag
             is_avaible = data_tag in self._filter_data[channel].keys()
 
             if is_avaible:
                 raise ValueError(
                     f'ERROR: No sweep result for channel {channel} available '
-                    'using data type "{data_type}"! Change "lgc_didv_data" '
-                    'argument to {bool_str}')
+                    'using data type "{iv_type}"! Change "iv_type'
+                    'argument to {iv_type_new}')
             else:
                 raise ValueError(
                     f'ERROR: No sweep result for channel {channel} available. Did '
-                    'you run the analysis?')
+                    'you run the sweep analysis?')
 
         series = self._filter_data[channel][data_tag]
         if lgc_return_dict:

@@ -53,9 +53,9 @@ class DIDVAnalysis(FilterData):
 
 
                     
-    def set_data_from_raw(self, channel,
-                          raw_path, series=None,
-                          overwrite=False):
+    def process_raw_data(self, channel,
+                         raw_path, series=None,
+                         overwrite=False):
         
         """
         Set dIdV data for a specific channel
@@ -84,8 +84,8 @@ class DIDVAnalysis(FilterData):
           
         # Instantiate QETpy DIDV Object
         didvobj = None
-
-        print(f'INFO: Getting raw data and processing channel {channel}')
+        if self._verbose:
+            print(f'INFO: Getting raw data and processing channel {channel}')
             
         # instantiate H5 reader
         h5 = h5io.H5Reader()
@@ -174,14 +174,15 @@ class DIDVAnalysis(FilterData):
                                     'series_name': series_name,
                                     'base_path': base_path,
                                     'ivsweep_results': None,
-                                    'data_config': data_config}
+                                    'data_config': data_config,
+                                    'resolution': None}
         
 
         
-    def set_data_from_processing(self, channel,
-                                 didv_data,
-                                 overwrite=False,
-                                 **kwargs ):
+    def set_processed_data(self, channel,
+                           didv_data,
+                           overwrite=False,
+                           **kwargs ):
         
         """
         Set dIdV data from already processed raw 
@@ -229,14 +230,19 @@ class DIDVAnalysis(FilterData):
 
         # check if other parameters are available
         rshunt = None
-        if 'rshunt_didv' in didv_data.keys():
+        if 'rshunt_noise' in didv_data.keys():
+            rshunt =  didv_data['rshunt_noise']
+        elif 'rshunt_didv' in didv_data.keys():
             rshunt =  didv_data['rshunt_didv']
-     
+            
         # parasitic resistance 
         rp = None
-        if 'rp_didv' in didv_data.keys():
+        if 'rp_noise' in didv_data.keys():
+            rp =  didv_data['rp_noise']
+        elif 'rp_didv' in didv_data.keys():
             rp =  didv_data['rp_didv']
-     
+
+            
         # duty cycle
         dutycycle = 0.5
         if 'dutycycle' in didv_data.keys():
@@ -244,25 +250,23 @@ class DIDVAnalysis(FilterData):
 
         # data config
         data_config_pars = ['series_name', 'group_name',
-                            'fs', 'output_gain', 'output_offset',
-                            'close_loop_norm', 'tes_bias']
+                            'fs', 'output_variable_gain',
+                            'output_variable_offset',
+                            'close_loop_norm', 'tes_bias',
+                            'sgfreq','sgamp']
+        
         data_config = dict()
         for config in  data_config_pars:
             config_name = config + '_didv'
             if  config_name in didv_data.keys():
-                data_config[config] = didv_data[config_didv]
-
+                data_config[config] = didv_data[config_name]
+            else:
+                data_config[config]= None
+                
         data_config['rshunt'] = rshunt
         data_config['rp'] = rp
 
-                
-        series_name = (data_config['series_name']
-                       if 'series_name' in data_config.keys()
-                       else None)
-        group_name = (data_config['group_name']
-                      if 'group_name' in data_config.keys()
-                      else None)
-        
+                 
         # Instantiate QETpy DIDV Object
         didvobj = qp.didvinitfromdata(
             didv_data['avgtrace_didv'][:len(didv_data['didvmean'])],
@@ -281,11 +285,12 @@ class DIDVAnalysis(FilterData):
 
         # store
         self._didv_data[channel] = {'didvobj': didvobj,
-                                    'group_name': group_name,
-                                    'series_name': series_name,
+                                    'group_name': data_config['group_name'],
+                                    'series_name': data_config['series_name'],
                                     'base_path': None,
                                     'ivsweep_results': None,
-                                    'data_config': data_config}
+                                    'data_config': data_config,
+                                    'resolution': None}
         
 
 
@@ -339,7 +344,7 @@ class DIDVAnalysis(FilterData):
         if r0 is not None:
             self._didv_data[channel]['didvobj']._r0 = r0
 
-        # only replace
+        # replace
         if (rshunt is not None
             and self._didv_data[channel]['data_config']['rshunt'] is None):
             self._didv_data[channel]['data_config']['rshunt'] = rshunt
@@ -348,10 +353,11 @@ class DIDVAnalysis(FilterData):
          
         
     
-    def dofit(self, channels, list_of_poles,
+    def dofit(self, list_of_poles, channels=None,
               fcutoff=np.inf, bounds=None, guess_params=None,
               guess_isloopgainsub1=None, lgc_fix=None,
               add180phase=False, dt0=1.5e-6,
+              lgc_plot=False,
               tag='default'):
         
         """
@@ -362,9 +368,12 @@ class DIDVAnalysis(FilterData):
         """
 
         # check if data available for each channel
-        if isinstance(channels, str):
+        if channels is None:
+            channels = self._didv_data.keys()
+        elif isinstance(channels, str):
             channels = [channels]
 
+            
         for chan in channels:
             if chan not in self._didv_data.keys():
                 print(f'ERROR: dIdV data for channel {chan} '
@@ -400,13 +409,19 @@ class DIDVAnalysis(FilterData):
             self._didv_data[chan]['didvobj'] =  didvobj
 
 
+        if lgc_plot:
+            self.plot_fit_result(channels)
+
+
+            
     
     
-    def calc_smallsignal_params(self, channels=None,
-                                list_of_poles=None,
-                                use_ivsweep_current=True,
+    def calc_smallsignal_params(self,
+                                channels=None,
+                                calc_true_current=True,
                                 inf_loop_gain_approx='auto',
-                                priors_fit_method=False):
+                                priors_fit_method=False,
+                                lgc_diagnostics=False):
         """
         Calculate small signal parameters with uncertainties
         (optionally) using current from IV sweep.
@@ -426,26 +441,31 @@ class DIDVAnalysis(FilterData):
        
         # loop channel
         for chan in channels:
-            
-            print(f'INFO: Calculate small signal parameters uncertainties for '
-                  f'channel {chan}')
+
+            if self._verbose:
+                print(f'INFO: Calculating small signal parameters '
+                      f'uncertainties for channel {chan}')
             
             # get didvobj
             didvobj = self._didv_data[chan]['didvobj']
             
-            # list of poles
-            list_of_fitted_poles =  didvobj.get_list_fitted_poles()
-            if list_of_poles is None:
-                list_of_poles = list_of_fitted_poles
-            elif isinstance(list_of_poles, int):
-                list_of_poles = [list_of_poles]
-                
             # IV sweep result
             ivsweep_results = self._didv_data[chan]['ivsweep_results']
-            if (use_ivsweep_current and ivsweep_results is None):
+            if ivsweep_results is None:
                 raise ValueError(f'ERROR: No IV sweep result for channel '
-                                 f'{chan}. Add result or set argument '
-                                 '"use_ivsweep_current=False"!')
+                                 f'{chan}. first set results using '
+                                 '"set_ivsweep_results" function!')
+
+            # check ivsweep results for case no true I0/R0 calculation
+            if not calc_true_current:
+                extra_pars = ['i0','i0_err', 'r0', 'r0_err']
+                for par in extra_pars:
+                    if par not in ivsweep_results:
+                        raise ValueError(
+                            'ERROR: parameters "i0", "i0_err", '
+                            '"r0", "r0_err" from IV sweep required if '
+                            'true current not calculated!'
+                        )
             
             # data config
             data_config = self._didv_data[chan]['data_config']
@@ -453,26 +473,22 @@ class DIDVAnalysis(FilterData):
             output_variable_offset = data_config['output_variable_offset']
             close_loop_norm = data_config['close_loop_norm']
             output_variable_gain = data_config['output_variable_gain']
-                        
             
-            # loop poles
-            for poles in list_of_poles:
 
-                if poles not in list_of_poles:
-                    raise ValueError(f'ERROR: No fit available for poles '
-                                     f'{poles}. Use "dofit" function first!')
-                
-                if use_ivsweep_current:
-                    
-                    didvobj.calc_params_with_true_current(
-                        poles,
-                        ivsweep_results,
-                        tes_bias,
-                        close_loop_norm,
-                        output_variable_offset,
-                        output_variable_gain,
-                        inf_loop_gain_approx=inf_loop_gain_approx,
-                    )
+            # calc small signal parameters
+            didvobj.calc_smallsignal_params(
+                ivsweep_results,
+                calc_true_current=calc_true_current,
+                tes_bias=tes_bias,
+                close_loop_norm=close_loop_norm,
+                output_variable_gain=output_variable_gain,
+                output_variable_offset=output_variable_offset,
+                inf_loop_gain_approx=inf_loop_gain_approx,
+                lgc_diagnostics=lgc_diagnostics)
+
+
+            
+            
    
     def calc_dpdi(self, freqs, channels=None, list_of_poles=None,
                   lgc_plot=False):
@@ -511,20 +527,22 @@ class DIDVAnalysis(FilterData):
                     raise ValueError(f'ERROR: No fit available for poles '
                                      f'{poles}. Use "dofit" function first!')
 
-                firesult = didvobj.fitresult(poles)
-                dpdi, dpdi_err = qp.get_dPdI_with_uncertainties(freqs, firesult,
-                                                      lgcplot=lgc_plot)
+                fitresult = didvobj.fitresult(poles)
+            
+                dpdi, dpdi_err = qp.get_dPdI_with_uncertainties(
+                    freqs, fitresult,
+                    lgcplot=lgc_plot)
                 
                 poles_str = str(poles) + 'poles'
                 self._didv_data[chan]['dpdi_' +  poles_str] = dpdi
                 self._didv_data[chan]['dpdi_err_' +  poles_str] = dpdi_err
                 self._didv_data[chan]['dpdi_freqs_' + poles_str] = freqs
 
-
                 
-    def get_energy_resolution(self, channel, poles,
-                              fs, psd, template,
-                              collection_eff=1):
+                
+    def calc_energy_resolution(self, channel, psd,
+                               poles=3, fs=None, template=None,
+                               collection_eff=1):
         """
         Get energy resolution based using  calculated dpdi
         """
@@ -535,13 +553,17 @@ class DIDVAnalysis(FilterData):
                              'channel {channel}!')
 
         # check if poles fitted
+        if poles != 3:
+            raise ValueError(f'ERROR: Resoultion can only be calculated for '
+                             '3-poles fit currently!')
         list_of_fitted_poles = (
             self._didv_data[channel]['didvobj'].get_list_fitted_poles()
         )
         if poles not in list_of_fitted_poles:
-            raise ValueError(f'ERROR: No fit found for '
+            raise ValueError(f'ERROR: No {poles}-poles fit found for '
                              'channel {channel}!')
-        
+
+            
         # check dpdi available
         poles_str = str(poles) + 'poles'
         if 'dpdi_' + poles_str not in self._didv_data[channel]:
@@ -550,9 +572,42 @@ class DIDVAnalysis(FilterData):
      
         dpdi = self._didv_data[channel]['dpdi_' +  poles_str]
         dpdi_freqs = self._didv_data[channel]['dpdi_freqs_' +  poles_str]
-        resolution = qp.utils.energy_resolution(psd, template,
-                                                dpdi, fs,
-                                                collection_eff=collection_eff)
+
+        # sample rate
+        if fs is None:
+
+            if 'fs' not in self._didv_data[channel]['data_config']:
+                raise ValueError(f'ERROR: sample rate (fs) required!')
+
+            fs = self._didv_data[channel]['data_config'][fs]
+        
+
+        if template is None:
+
+            # time array
+            dt = 1/fs
+            time_array = np.arange(psd.shape[-1])*dt
+            pretrigger = psd.shape[-1]*dt/2
+            
+            # didv results
+            fit_result = self._didv_data[channel]['didvobj'].fitresult(poles)
+            template = qp.get_didv_template(time_array, pretrigger, fit_result)
+            
+
+        # calculate energy resolution
+        resolution = qp.utils.energy_resolution(
+            psd, template, dpdi, fs,
+            collection_eff=collection_eff)
+
+        # store
+        res_dict = dict()
+        res_dict['psd'] = psd
+        res_dict['template'] = template
+        res_dict['fs'] = fs
+        res_dict['collection_efficiency'] = collection_eff
+        res_dict['energy_resolution'] = resolution
+        self._didv_data[channel]['resolution'] = res_dict
+        
         return resolution
             
                 
@@ -576,9 +631,10 @@ class DIDVAnalysis(FilterData):
         
         # loop channel
         for chan in channels:
-            
-            print(f'INFO: Do prior fit(s) for '
-                  ' channel {channel}')
+
+            if self._verbose:
+                print(f'INFO: Do prior fit(s) for '
+                      ' channel {channel}')
 
             # get didvobj
             didvobj = self._didv_data[chan]['didvobj']
@@ -683,8 +739,6 @@ class DIDVAnalysis(FilterData):
                         
             # save
             self._didv_data[chan]['didvobj_prior'] = didvobj_prior
-
-    
               
     def get_fit_result(self, channel, poles):
         """
@@ -704,6 +758,7 @@ class DIDVAnalysis(FilterData):
                       'Returning empty dictionary.')
         return result
 
+    
     def plot_fit_result(self, channels,
                         lgc_plot_fft=True, lgc_gray_mean=True,
                         lgc_didv_freq_filt=True,
@@ -739,7 +794,8 @@ class DIDVAnalysis(FilterData):
                 continue
                     
             # display
-            print(f'Channel {chan} fit results:')
+            if self._verbose:
+                print(f'{chan} dIdV Fit:')
 
             didvobj.plot_full_trace(
                 didv_freq_filt=lgc_didv_freq_filt,
