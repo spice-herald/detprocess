@@ -8,7 +8,7 @@ from numpy.fft import fftfreq, rfftfreq
 
 class FilterData:
     """
-    Class to manage Optimal Filter and IV/dIdV data 
+    Class to manage Template, noise psd,  and IV/dIdV data 
     """
 
     def __init__(self, verbose=True):
@@ -27,7 +27,6 @@ class FilterData:
       
         # filter file data dictionary
         self._filter_data = dict()
-
       
 
     @property
@@ -187,8 +186,6 @@ class FilterData:
         if self._verbose:
             print('INFO: Loading filter data from file '
                   + file_name)
-
-
         
         # update
         if overwrite or not self._filter_data:

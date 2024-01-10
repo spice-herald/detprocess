@@ -300,21 +300,21 @@ class IVSweepProcessing:
                 offset = output_channel_df['offset_noise'].values
             else:
                 offset = output_channel_df['offset_didv'].values
-
-            # sc
-            sc_indices = np.array(find_linear_segment(tes_bias, offset))
-            nb_sc_points = len(sc_indices)
-            if nb_sc_points>0:
-                output_channel_df['state'].iloc[sc_indices] = 'sc'
+                
+            # normal
+            normal_indices = np.array(find_linear_segment(tes_bias, offset))
+            nb_normal_points = len(normal_indices)
+            if nb_normal_points>0:
+                output_channel_df['state'].iloc[normal_indices] = 'normal'
                 
             # normal
             tes_bias = np.flip(tes_bias).copy()
             offset = np.flip(offset).copy()
-            normal_indices = np.array(find_linear_segment(tes_bias, offset))
-            nb_normal_points = len(normal_indices)
-            if nb_normal_points>0:
-                normal_indices = len(tes_bias) - normal_indices - 1
-                output_channel_df['state'].iloc[normal_indices] = 'normal'
+            sc_indices = np.array(find_linear_segment(tes_bias, offset))
+            nb_sc_points = len(sc_indices)
+            if nb_sc_points>0:
+                sc_indices = len(tes_bias) - sc_indices - 1
+                output_channel_df['state'].iloc[sc_indices] = 'sc'
                             
             # save  output dataframe in dictionary
             output_dict[chan] = output_channel_df

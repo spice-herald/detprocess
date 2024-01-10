@@ -49,7 +49,10 @@ class IVSweepAnalysis(FilterData):
 
         # resolution
         self._resolution_data = dict()
-        
+
+        # IV sweep nb bias point
+        self._nb_sc_normal_points = dict()
+
         # instantiate base class
         super().__init__(verbose=verbose)
         
@@ -76,8 +79,22 @@ class IVSweepAnalysis(FilterData):
         """
 
         self.load_hdf5(file_name)
-        self.describe()
 
+        # update number of SC/Norma; points
+        for chan, chan_dict in self._filter_data.items():
+
+            # loop keys
+            for data_key in chan_dict.keys():
+                if ('ivsweep_data' in data_key
+                    and 'metadata' not in data_key):
+                    tag = 'default'
+                    if len(data_key)>13:
+                        tag = data_key[13:]
+                    self.set_nb_sc_normal_points(
+                        chan,
+                        overwrite=False,
+                        tag=tag)
+                             
 
     def set_data_from_dict(self, data_dict, tag='default'):
         """
@@ -92,9 +109,13 @@ class IVSweepAnalysis(FilterData):
                     'item should be a pandas dataframe!'
                 )
             self.set_data_from_dataframe(chan, df, tag=tag)
-            
 
-        self.describe()
+            
+            # set number of bias points for SC/Normal state
+            self.set_nb_sc_normal_points(chan,
+                                         overwrite=True,
+                                         tag=tag)
+            
 
     def set_data_from_dataframe(self, channel, df,
                                 tag='default'):
@@ -120,8 +141,10 @@ class IVSweepAnalysis(FilterData):
                               metadata=None,
                               tag=tag)
         
-        self.describe()
-
+        # set number of bias points for SC/Normal state
+        self.set_nb_sc_normal_points(channel,
+                                     overwrite=True,
+                                     tag=tag)
         
     
     def set_rshunt(self, channels,
@@ -205,9 +228,83 @@ class IVSweepAnalysis(FilterData):
             self._readout_params[chan]['rp'] =  params['rp'][ichan]
             self._readout_params[chan]['rp_err'] =  params['rp_err'][ichan]
 
+            
 
-               
-    def analyze_sweep(self, channels=None, nnorms=None, nscs=None,
+    def set_nb_sc_normal_points(self, channel,
+                                nsc=None, nnorm=None,
+                                overwrite=False,
+                                tag='default'):
+        """
+        Set number of bias points for SC and Normal 
+        state. If None, number of bias points are decided 
+        based on linearity estimate (done during the processing 
+        step)  
+        
+        """
+        
+        # initialize
+        if channel not in self._nb_sc_normal_points.keys():
+            self._nb_sc_normal_points[channel] = {
+                'sc': None,
+                'normal': None
+            }
+        
+        # get dataframe
+        df = self.get_ivsweep_data(channel, tag=tag)
+        df = df.sort_values('tes_bias',
+                            ascending=False,
+                            key=abs,
+                            ignore_index=True)
+        
+        # check nb sc/normal points in dataframe
+        nsc_df = 0
+        nnorm_df = 0
+        if 'state' in df.columns:
+             nsc_df = len(np.where(df['state']=='sc')[0])
+             nnorm_df =  len(np.where(df['state']=='normal')[0])
+
+        # check number of points stored in dictionary
+        nsc_current = self._nb_sc_normal_points[channel]['sc']
+        nnorm_current = self._nb_sc_normal_points[channel]['normal']
+
+        # update SC
+        if (overwrite or nsc is not None or nsc_current is None):
+            if nsc is None:
+                nsc = nsc_df
+            self._nb_sc_normal_points[channel]['sc'] = nsc
+
+        # update Normal
+        if (overwrite or nnorm is not None or nnorm_current is None):
+            if nnorm is None:
+                nnorm = nnorm_df
+            self._nb_sc_normal_points[channel]['normal'] = nnorm
+            
+        # update dataframe if needed
+        nsc_current = self._nb_sc_normal_points[channel]['sc']
+        nnorm_current = self._nb_sc_normal_points[channel]['normal']
+
+        do_update = False
+        if (nsc_current is not None
+            and nsc_current !=  nsc_df):
+            df.loc[df['state']=='sc', 'state'] = np.nan
+            df.loc[df.index[-nsc:], 'state'] = 'sc'
+            do_update = True
+            
+        if (nnorm_current is not None
+            and nnorm_current != nnorm_df):
+            df.loc[df['state']=='normal', 'state'] = np.nan
+            df.loc[:nnorm-1, 'state'] = 'normal'
+            do_update = True
+            
+        if do_update:
+            self.set_ivsweep_data(channel,
+                                  df,
+                                  metadata=None,
+                                  tag=tag)
+                 
+
+            
+    def analyze_sweep(self, channels=None,
                       lgc_invert_offset='auto',
                       lgc_plot=False, lgc_save_plot=False,
                       plot_save_path=None,
@@ -243,27 +340,6 @@ class IVSweepAnalysis(FilterData):
                                      ' available. Set data first!')
         # number of channels
         nb_channels = len(channels)
-
-        # check number of normal / SC
-        if nnorms is not None:
-            if isinstance(nnorms, int):
-                nnorms = [nnorms]
-            elif len(nnorms) != nb_channels:
-                raise ValueError(
-                    'ERROR: "nnorms" should have same length'
-                    'as "channels"')
-        else:
-            nnorms = [None]*nb_channels
-
-        if nscs is not None:
-            if isinstance(nscs, int):
-                nscs = [nscs]
-            elif len(nscs) != nb_channels:
-                raise ValueError(
-                    'ERROR: "nscs" should have same length'
-                    'as "channels"')
-        else:
-            nscs = [None]*nb_channels
 
         # --------------------------------
         # Check sweep data for all channels
@@ -337,33 +413,28 @@ class IVSweepAnalysis(FilterData):
             self._readout_params[chan]['rshunt_err'] = rshunt_err
             
                            
-            # normal points
-            nnorm = nnorms[ichan]
+            # normal/SC  points
+            nnorm = self._nb_sc_normal_points[chan]['normal']
+            nsc = self._nb_sc_normal_points[chan]['sc']
+
             if nnorm is None:
-                normal_idx = np.where(df['state']=='normal')[0]
-                if len(normal_idx) == 0:
-                    raise ValueError(
-                        'ERROR: Unknow number of normal points for '
-                        'channel {chan}. Add "nnorms" argument!')
-                else:
-                    nnorms[ichan] = len(normal_idx)
-                    
-            # SC points
-            nsc = nscs[ichan]
+                raise ValueError(
+                    f'ERROR: Number of normal points unknown for {chan} '
+                    'Use "set_nb_sc_normal_points()" function first!'
+                )
+
             if nsc is None:
-                nsc_idx = np.where(df['state']=='sc')[0]
-                if len(nsc_idx) == 0:
-                    raise ValueError(
-                        f'ERROR: Unknow number of SC points for channel {chan}. '
-                        'To disable SC, set Rp and Rp error using "set_rp()" '
-                        'function and set "nscs=0" argument'
-                    )
-                else:
-                    nscs[ichan] = len(nsc_idx)
-            elif nsc == 0:
+                raise ValueError(
+                    f'ERROR: Number of SC points unknown for {chan} '
+                    'Use "set_nb_sc_normal_points()" function first! '
+                    'Set to 0 if no SC points and set Rp using "set_rp()" '
+                    'function'
+                )
+
+            if nsc == 0:
                 if rp is None or rp_err is None:
                     raise ValueError(
-                        f'ERROR: Rp is required for channel {chan} when nscs=0 '
+                        f'ERROR: Rp is required for channel {chan} when no SC points! '
                         'Use set_rp() function first!')
                 
             # check rshunt
@@ -388,12 +459,13 @@ class IVSweepAnalysis(FilterData):
                                 ignore_index=True)
 
             
-            # sc/normal range
-            nnorm = nnorms[ichan]
+            # normal range
+            nnorm = self._nb_sc_normal_points[chan]['normal']
             range_normal = range(nnorm)
-            
+
+            # sc range
+            nsc = self._nb_sc_normal_points[chan]['sc']
             range_sc = []
-            nsc = nscs[ichan]
             fitsc = False
             if nsc > 0:
                 fitsc = True
@@ -442,7 +514,7 @@ class IVSweepAnalysis(FilterData):
             # instantiate
             ivobj = qp.IBIS(dites=offset,
                             dites_err=offset_err,
-                             ibias=tes_bias,
+                            ibias=tes_bias,
                             ibias_err=np.zeros_like(tes_bias),
                             rsh=param_dict['rshunt'],
                             rsh_err=param_dict['rshunt_err'],
@@ -559,7 +631,6 @@ class IVSweepAnalysis(FilterData):
             self.set_ivsweep_data(chan, df, tag=tag)
             
             if lgc_plot:
-                print(f'Channel {chan} IV/dIdV Sweep Fits:')
                 ivobj.plot_all_curves(lgcsave=False,
                                       savepath=None,
                                       savename=None)
@@ -922,15 +993,16 @@ class IVSweepAnalysis(FilterData):
                 ax1.set_xlabel('% Rn')
                 ax1.set_ylabel('Energy Resolution [meV]')
                 ax1.legend()
+                ax1.set_title(f'{chan} Energy resolution ($\epsilon_p$ = {collection_eff})')
 
-                # add tes buas
-                ax2 = ax1.twiny()
-                ax2.xaxis.set_ticks_position('bottom') 
-                ax2.xaxis.set_label_position('bottom') 
-                ax2.spines['bottom'].set_position(('outward', 36))
-                ax2.set_xticks(resolution_data['percent_rn'])
-                ax2.set_xticklabels(resolution_data['tes_bias_uA'])
-                ax2.set_xlabel('TES bias [uA]')
+                # add tes bias
+                #ax2 = ax1.twiny()
+                #ax2.xaxis.set_ticks_position('bottom') 
+                #ax2.xaxis.set_label_position('bottom') 
+                #ax2.spines['bottom'].set_position(('outward', 36))
+                #ax2.set_xticks(resolution_data['percent_rn'])
+                #ax2.set_xticklabels(resolution_data['tes_bias_uA'])
+                #ax2.set_xlabel('TES bias [uA]')
                          
                 # Show the plot
                 plt.show()
@@ -994,6 +1066,10 @@ class IVSweepAnalysis(FilterData):
                 else:
                     print(f'\n{chan} Transition dIdV analysis')
 
+            # lgc plot SC/Normal
+            lgc_plot_sc = lgc_plot
+            lgc_plot_normal = lgc_plot
+                    
             # reset summary
             if chan not in self._didv_summary:
                 self._didv_summary[chan] = {}
@@ -1061,10 +1137,19 @@ class IVSweepAnalysis(FilterData):
             for ind in range(nb_points):
 
                 pd_series = df_filter.iloc[ind]
+                state = pd_series['state']
+                
 
+                # ignore if "transtion" data but state "sc" or "normal"
+                # based on linearity
+                if (data_type == 'transition'
+                    and (state == 'sc' or state == 'normal')):
+                    continue
+
+                
                 # display case transiton
                 if data_type == 'transition':
-                    
+                                       
                     iv_result['r0'] = pd_series['r0_' + iv_type]
                     iv_result['r0_err'] = pd_series['r0_err_' + iv_type]
                     iv_result['i0'] = pd_series['i0_' + iv_type]
@@ -1200,11 +1285,22 @@ class IVSweepAnalysis(FilterData):
                         
                 # display
                 if lgc_plot:
-                    didvanalysis.plot_fit_result(chan)
 
-                    # plot only 1 point for normal / SC
-                    if (data_type == 'normal' or data_type == 'sc'):
-                        lgc_plot = False
+                    # sc 
+                    if (lgc_plot_sc and data_type == 'sc'):
+                        didvanalysis.plot_fit_result(chan)
+                        lgc_plot_sc = False
+
+                    # normal 
+                    if (lgc_plot_normal and data_type == 'normal'):
+                        didvanalysis.plot_fit_result(chan)
+                        lgc_plot_normal = False
+
+
+                    # transition
+                    if data_type == 'transition':
+                        didvanalysis.plot_fit_result(chan)
+                  
 
                 # save didvobjects
                 if chan not in self._didv_objects:
@@ -1234,7 +1330,7 @@ class IVSweepAnalysis(FilterData):
                     'rp_err': rpn_err_didv_fit,
                     'rp_iv': rn_iv,
                     'rp_iv_err': rn_iv_err}
-                
+
             if self._verbose:
                 
                 if data_type == 'normal':
