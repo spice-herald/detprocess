@@ -51,9 +51,59 @@ class DIDVAnalysis(FilterData):
                     self._didv_data.pop(chan)
 
 
+    def get_didv_data(self, channel):
+        """
+        Get dictionary with didv data
+        """
 
-                    
-    def process_raw_data(self, channel,
+        if channel in self._didv_data.keys():
+            return self._didv_data[channel]
+        else:
+            raise ValueError(f'ERROR: No didv data available '
+                             f'for channel "{channel}"!')
+        
+    def get_qetpy_object(self, channel):
+        """
+        Get QETpy object
+        """
+        
+        didv_data = self.get_didv_data(channel)
+        if 'didvobj' in didv_data.keys():
+            return  didv_data['didvobj']
+        else:
+            raise ValueError(f'ERROR: No dIdV QETpy object available '
+                             f'for channel "{channel}"!')
+
+    def get_bias_params(self, channel, poles=3):
+        """
+        Get "bias" (I0, R0, P0) parameters
+        (can be either "true" current or set by user)
+        """
+        
+        fit_result = self.get_fit_result(channel, poles=poles)
+        if 'biasparams' in fit_result.keys():
+            return fit_result['biasparams']
+        else:
+            raise ValueError(f'ERROR: No bias parameters available '
+                             f'for channel "{channel}"!')
+
+
+    def get_bias_params_infinite_loop_gain(self, channel, poles=3):
+        """
+        Get "bias" (I0, R0, P0) parameters
+        (can be either "true" current or set by user)
+        """
+        
+        fit_result = self.get_fit_result(channel, poles=poles)
+        if 'biasparams_infinite_lgain' in fit_result.keys():
+            return fit_result['biasparams_infinite_lgain']
+        else:
+            raise ValueError(f'ERROR: No bias parameters available '
+                             f'for channel "{channel}"!')
+
+
+        
+    def process_raw_data(self, channels,
                          raw_path, series=None,
                          overwrite=False):
         
@@ -64,125 +114,20 @@ class DIDVAnalysis(FilterData):
         times for different channels 
         """
 
-        # check if data can be overwritte
-        if  self._didv_data is None:
-             self._didv_data = dict()
-        else:
-            if (not overwrite and
-                channel in self._didv_data.keys()):
-                print(f'ERROR: Data for channel {channel} '
-                      'already available. Set overwrite=True')
-                return
-        
-        # get file list 
-        file_list, base_path, group_name = self._get_file_list(raw_path, series)
-        if file_list is None:
-            raise ValueError(
-                'ERROR: No didv raw data found!'
-            )
+        # loop channel and process data
+        if isinstance(channels, str):
+            channels = [channels]
 
-          
-        # Instantiate QETpy DIDV Object
-        didvobj = None
-        if self._verbose:
-            print(f'INFO: Getting raw data and processing channel {channel}')
+        for chan in channels:
+            self._process_raw_data(chan, raw_path,
+                                   series=series,
+                                   overwrite=overwrite)
+
             
-        # instantiate H5 reader
-        h5 = h5io.H5Reader()
         
-        # get traces
-        traces, info = h5.read_many_events(
-            filepath=file_list,
-            detector_chans=channel,
-            output_format=2, 
-            include_metadata=True,
-            adctoamp=True)
-        
-        traces = traces[:,0,:]
-        fs = info[0]['sample_rate']
-            
-        # get detector settings
-        detector_settings = h5.get_detector_config(file_name=file_list[0])
-
-        tes_bias = float(detector_settings[channel]['tes_bias'])
-        output_gain = float(detector_settings[channel]['output_gain'])
-        close_loop_norm = float(detector_settings[channel]['close_loop_norm'])
-        output_offset = float(detector_settings[channel]['output_offset'])
-        sgamp = float(detector_settings[channel]['signal_gen_current'])
-        sgfreq = float(detector_settings[channel]['signal_gen_frequency'])
-        group_name = str(info[0]['group_name'])
-        series_name = h5io.extract_series_name(int(info[0]['series_num']))
-
-        # rshunt resistance
-        rshunt = None
-        if 'shunt_resistance' in detector_settings[channel].keys():
-            rshunt = float(detector_settings[channel]['shunt_resistance'])
-        elif 'rshunt' in detector_settings[channel].keys():
-            rshunt = float(detector_settings[channel]['rshunt'])
-        if rshunt == np.nan:
-            rshunt = None
-            
-        # parasitic resistance 
-        rp = None
-        if 'parasitic_resistance' in detector_settings[channel].keys():
-            rp = float(detector_settings[channel]['parasitic_resistance'])
-        elif 'rp' in detector_settings[channel].keys():
-            rp = float(detector_settings[channel]['rp'])
-        if rp == np.nan:
-            rp = None
-            
-                        
-        # save relevant detector settings in dictionary
-        data_config = dict()
-        data_config['series_name'] = series_name
-        data_config['group_name'] = group_name
-        data_config['fs'] = fs
-        data_config['output_variable_gain'] = output_gain
-        data_config['output_variable_offset'] = output_offset
-        data_config['close_loop_norm'] = close_loop_norm
-        data_config['rshunt'] = rshunt
-        data_config['rp'] = rp
-        data_config['tes_bias'] = tes_bias
-        data_config['sgfreq'] = sgfreq
-        data_config['sgamp'] = sgamp
-
-
-        # Apply cuts
-        zerocut = np.all(traces!=0, axis=1)
-        traces = traces[zerocut]  
-    
-        # cut pileup
-        cut = qp.autocuts_didv(traces, fs=fs)
-        traces = traces[cut]
-
-        # Fit data
-        didvobj = qp.DIDV(traces,
-                          fs,
-                          sgfreq, 
-                          sgamp, 
-                          rshunt, 
-                          rp=rp,
-                          dutycycle=0.5,
-                          add180phase=False)
-            
-        # process
-        didvobj.processtraces()
-        
-        # store
-        self._didv_data[channel] = {'didvobj': didvobj,
-                                    'group_name': group_name,
-                                    'series_name': series_name,
-                                    'base_path': base_path,
-                                    'ivsweep_results': None,
-                                    'data_config': data_config,
-                                    'resolution': None}
-        
-
-        
-    def set_processed_data(self, channel,
-                           didv_data,
-                           overwrite=False,
-                           **kwargs ):
+    def set_processed_data(self, channels,
+                           data,
+                           overwrite=False):
         
         """
         Set dIdV data from already processed raw 
@@ -191,166 +136,138 @@ class DIDVAnalysis(FilterData):
         times for different channels 
         """
 
-        # check if data can be overwritte
-        if  self._didv_data is None:
-             self._didv_data = dict()
-        else:
-            if (not overwrite and
-                 channel in self._didv_data.keys()):
-                raise ValueError(f'ERROR: Data for channel {channel} '
-                                 'already available. Set overwrite=True')
-            
-        # check didv data
-        if isinstance(didv_data, pd.Series):
-            didv_data = didv_data.to_dict()
-        elif not isinstance(didv_data, dict):
-            raise ValueError(
-                'ERROR: "didv_data" should be a dictionary '
-                ' or pandas series')
-               
-        # check variables 
-        available_vars = list(didv_data.keys())
-        required_vars = ['avgtrace_didv', 'didvmean','didvstd',
-                         'offset_didv','offset_err_didv',
-                         'sgamp', 'sgfreq',
-                         'fs_didv']
+
+        didv_data = data.copy()
         
-        for var in required_vars:
-            if var not in available_vars:
-                raise ValueError(f'ERROR: Missing variable {var} '
-                                 ' in didv_data')
-            
-        # check if channel stored in didv_data
-        if 'channel' in didv_data.keys():
-            channel_didv = str(didv_data['channel'])
-            if channel != channel_didv:
-                raise ValueError(
-                    f'ERROR: Channel name in didv data "{channel_didv}" '
-                    'is different than input channel!')
-
-        # check if other parameters are available
-        rshunt = None
-        if 'rshunt_noise' in didv_data.keys():
-            rshunt =  didv_data['rshunt_noise']
-        elif 'rshunt_didv' in didv_data.keys():
-            rshunt =  didv_data['rshunt_didv']
-            
-        # parasitic resistance 
-        rp = None
-        if 'rp_noise' in didv_data.keys():
-            rp =  didv_data['rp_noise']
-        elif 'rp_didv' in didv_data.keys():
-            rp =  didv_data['rp_didv']
-
-            
-        # duty cycle
-        dutycycle = 0.5
-        if 'dutycycle' in didv_data.keys():
-            dutycycle = didv_data['dutycycle']
-
-        # data config
-        data_config_pars = ['series_name', 'group_name',
-                            'fs', 'output_variable_gain',
-                            'output_variable_offset',
-                            'close_loop_norm', 'tes_bias',
-                            'sgfreq','sgamp']
+        # check channels and data
+        if isinstance(channels, str):
+            if channels not in data.keys():
+                didv_data = dict()
+                didv_data[channels] = data     
+            channels = [channels]
         
-        data_config = dict()
-        for config in  data_config_pars:
-            config_name = config + '_didv'
-            if  config_name in didv_data.keys():
-                data_config[config] = didv_data[config_name]
-            else:
-                data_config[config]= None
-                
-        data_config['rshunt'] = rshunt
-        data_config['rp'] = rp
+        for chan in channels:
+            if chan not in didv_data.keys():
+                raise ValueError(f'ERROR: Unable to find channel '
+                                 f' {chan} in data dictionary!')
 
-                 
-        # Instantiate QETpy DIDV Object
-        didvobj = qp.didvinitfromdata(
-            didv_data['avgtrace_didv'][:len(didv_data['didvmean'])],
-            didv_data['didvmean'],
-            didv_data['didvstd'],
-            didv_data['offset_didv'],
-            didv_data['offset_err_didv'],
-            didv_data['fs_didv'],
-            didv_data['sgfreq'],
-            didv_data['sgamp'],
-            rsh=rshunt,
-            rp=rp,
-            dutycycle=dutycycle,
-        )
+        # set data
+        for chan in channels:
+            self._set_processed_data(chan,
+                                     didv_data[chan],
+                                     overwrite=overwrite)
+      
 
-
-        # store
-        self._didv_data[channel] = {'didvobj': didvobj,
-                                    'group_name': data_config['group_name'],
-                                    'series_name': data_config['series_name'],
-                                    'base_path': None,
-                                    'ivsweep_results': None,
-                                    'data_config': data_config,
-                                    'resolution': None}
-        
-
-
-    def set_ivsweep_results(self, channel, results, **kwargs):
+    def set_ivsweep_results(self, channels,
+                            results=None,
+                            file_name=None,
+                            iv_type='noise',
+                            include_bias_parameters=False):
         """
         Set results from IV sweeps, in particular
-        I0 offset, V0 offset, R0, Rp
+        I0 offset, V0 offset
         """
 
-        # check if data has been set
-        if channel not in self._didv_data.keys():
-            raise ValueError(f'ERROR: Channel {channel} not found. '
-                             ' You first need to set data!' )
-             
-        # convert to dictionary if needed 
-        if isinstance(results, pd.Series):
-            results = results.to_dict()
-        elif not isinstance(results, dict):
-            raise ValueError(
-                'ERROR: "results" should be a dictionary '
-                ' or pandas series')
 
-        # save
-        self._didv_data[channel]['ivsweep_results'] = results
+        # check input
+        if (file_name is None and results is None):
+            raise ValueError('ERROR: A file name or results dictionary '
+                             'need to be provided!')
         
-        # check if Rp, Rshunt, R0 available
-        rp = None
-        if 'rp' in results.keys():
-            rp = results['rp']
-        elif 'rp' in kwargs:
-            rp = kwargs['rp']
+        if (file_name is not None and results is not None):
+            raise ValueError('ERROR: Choose between "file_name" or '
+                             '"results", not both!')
 
-                  
-        r0 = None
-        if 'r0' in results.keys():
-            r0 = results['r0']
-        elif 'r0' in kwargs:
-            r0 = kwargs['r0']
-
-        rshunt = None
-        if 'rshunt' in results.keys():
-            rshunt = results['rshunt']
-        elif 'rshunt' in kwargs:
-            rshunt = kwargs['rshunt']
-                
-        # replace internal object data
-        if rp is not None:
-            self._didv_data[channel]['data_config']['rp'] = rp
-            self._didv_data[channel]['didvobj']._rp = rp
+        if (file_name is None and include_bias_parameters):
+            raise ValueError('ERROR: A file name needs to be provided '
+                             'when "include_bias_parameters"=True')
+        
+        
+        # convert results to a dictionary if needed
+        if results is not None:
+            if isinstance(results, pd.Series):
+                results = results.to_dict()
+            elif not isinstance(results, dict):
+                raise ValueError(
+                    'ERROR: "results" should be a dictionary '
+                    ' or pandas series')
+        
+        # check channels
+        if isinstance(channels, str):
+            if (results is not None
+                and channels not in results.keys()):
+                results[channels] = results.copy()
+            channels = [channels]
             
-        if r0 is not None:
-            self._didv_data[channel]['didvobj']._r0 = r0
+        for chan in channels:
+            if chan not in self._didv_data.keys():
+                raise ValueError(f'ERROR: Channel {channel} not found. '
+                                 ' You first need to set data!' )
+            if (results is not None
+                and chan not in results.keys()):
+                raise ValueError(f'ERROR: Unable to find channel '
+                                 f' {chan} in results dictionary!')
 
-        # replace
-        if (rshunt is not None
-            and self._didv_data[channel]['data_config']['rshunt'] is None):
-            self._didv_data[channel]['data_config']['rshunt'] = rshunt
-            self._didv_data[channel]['didvobj']._rsh = rshunt
+     
+        # load data from file
+        if file_name is not None:
+            self.load_hdf5(file_name)
+
+            
+        # loop channels
+        for chan in channels:
+
+            tes_bias = None
+            if include_bias_parameters:
+                data_config = self._didv_data[chan]['data_config']
+                tes_bias = data_config['tes_bias']
+                
+            if results is None:
+                results =  self.get_ivsweep_results(
+                    chan,
+                    iv_type=iv_type,
+                    include_bias_parameters=include_bias_parameters,
+                    tes_bias=tes_bias,
+                )
+
+                # save in include bias parameters
+                if include_bias_parameters:
+                    pd_series = pd.Series(results)
+                    data_tag = 'ivsweep_results_' + iv_type  + '_default'
+                    self._filter_data[chan][data_tag] = pd_series
+
+            # keep a copy as part of didv data
+            self._didv_data[chan]['ivsweep_results'] = results.copy()
+            
+            # check if Rp, Rshunt, R0 available
+            if 'rp' in results.keys():
+                rp = results['rp']
+            else:
+                raise ValueError(f'ERROR: "rp" is missing from IV results for '
+                                 f'channel {chan}. It needs to be added!')
+            
+            r0 = None
+            if 'r0' in results.keys():
+                r0 = results['r0']
+            
+            rshunt = None
+            if 'rshunt' in results.keys():
+                rshunt = results['rshunt']
+                      
+            # replace internal object data
+            if rp is not None:
+                self._didv_data[chan]['data_config']['rp'] = rp
+                self._didv_data[chan]['didvobj']._rp = rp
+            
+            if r0 is not None:
+                self._didv_data[chan]['didvobj']._r0 = r0
+                
+            if (rshunt is not None
+                and self._didv_data[chan]['data_config']['rshunt'] is None):
+                self._didv_data[chan]['data_config']['rshunt'] = rshunt
+                self._didv_data[chan]['didvobj']._rsh = rshunt
         
-         
+            
         
     
     def dofit(self, list_of_poles, channels=None,
@@ -486,8 +403,86 @@ class DIDVAnalysis(FilterData):
                 inf_loop_gain_approx=inf_loop_gain_approx,
                 lgc_diagnostics=lgc_diagnostics)
 
+            # replace
+            self._didv_data[chan]['didvobj'] = didvobj
+      
+    def calc_bias_params_infinite_loop_gain(self, channels=None):
+                                           
+        """
+        Calculate I0,R0, and P0 with infinite loop gain
+        approximation
+        """
+                    
+        # check channels
+        if channels is None:
+            channels = self._didv_data.keys()
+        elif isinstance(channels, str):
+            channels = [channels]
+        nb_channels = len(channels)
 
+
+        for chan in channels:
+            if chan not in self._didv_data.keys():
+                raise ValueError(f'ERROR: channel {chan} not available!')
+            didvobj = self._didv_data[chan]['didvobj']
+            list_of_fitted_poles =  didvobj.get_list_fitted_poles()
+            if (list_of_fitted_poles is None
+                or (2 not in list_of_fitted_poles
+                    and 3 not in list_of_fitted_poles)):
+                raise ValueError(f'ERROR: No fit available for '
+                                 f'channel {chan}!')
             
+        # loop channel
+        for chan in channels:
+
+            if self._verbose:
+                print(f'INFO: Calculating bias parameters with '
+                      f'infinite loop gain approximation '
+                      f'for channel {chan}')
+            # get data config
+            data_config = self._didv_data[chan]['data_config']
+
+                
+            # get didvobj
+            didvobj = self._didv_data[chan]['didvobj']
+            list_of_fitted_poles =  didvobj.get_list_fitted_poles()
+         
+            # loop poles
+            for poles in list_of_fitted_poles:
+                
+                if (poles != 2 and poles != 3):
+                    continue
+                
+                fitresult = didvobj.fitresult(poles)
+
+                ibias = None
+                ibias_err = 0
+                rp = None
+                if ('biasparams' in fitresult.keys() and
+                    fitresult['biasparams'] is not None):
+                 
+                    ibias = fitresult['biasparams']['ibias']
+                    if 'ibias_err' in  fitresult['biasparams']:
+                        ibias_err =  fitresult['biasparams']['ibias_err']
+                    else:
+                        ibias_err = 0
+                    rp = fitresult['biasparams']['rp']
+                else:
+                    ibias = data_config['tes_bias']
+                    if 'rp' not in data_config:
+                        raise ValueError('ERROR: Unable to find rp!'
+                                         'use "set_ivsweep_results()"  first')
+                    rp =  data_config['rp']
+
+                didvobj.calc_bias_params_infinite_loop_gain(
+                    poles,
+                    tes_bias=ibias,
+                    tes_bias_err=ibias_err,
+                    rp=rp)
+
+                self._didv_data[chan]['didvobj'] = didvobj
+               
+                                                          
             
    
     def calc_dpdi(self, freqs, channels=None, list_of_poles=None,
@@ -748,7 +743,7 @@ class DIDVAnalysis(FilterData):
         # check if object available
         if channel not in self._didv_data.keys():
             raise ValueError(f'ERROR: dIdV data not available for '
-                             'channel {chan}!')
+                             f'channel {chan}!')
         
         # check if fit done
         result = self._didv_data[channel]['didvobj'].fitresult(poles)
@@ -759,7 +754,7 @@ class DIDVAnalysis(FilterData):
         return result
 
     
-    def plot_fit_result(self, channels,
+    def plot_fit_result(self, channels=None,
                         lgc_plot_fft=True, lgc_gray_mean=True,
                         lgc_didv_freq_filt=True,
                         zoom_factor=None, fcutoff=2e4,
@@ -769,16 +764,20 @@ class DIDVAnalysis(FilterData):
         Plot fit results for multiple channels
         """
 
-        # check if data available for each channel
-        if isinstance(channels, str):
+        
+        # check channels
+        if channels is None:
+            channels = self._didv_data.keys()
+        elif isinstance(channels, str):
             channels = [channels]
-            
+
+        for chan in channels:
+            if chan not in self._didv_data.keys():
+                raise ValueError(f'ERROR: dIdV fit result not found for '
+                                 'channel {chan}! Use "dofit" first.')
+                  
         # look chanels
         for chan in channels:
-            
-            if chan not in self._didv_data.keys():
-                raise ValueError(f'ERROR: dIdV data not available for '
-                                 'channel {chan}!')
             
             didvobj = self._didv_data[chan]['didvobj']
 
@@ -795,7 +794,7 @@ class DIDVAnalysis(FilterData):
                     
             # display
             if self._verbose:
-                print(f'{chan} dIdV Fit:')
+                print(f'{chan} dIdV Fit Result:')
 
             didvobj.plot_full_trace(
                 didv_freq_filt=lgc_didv_freq_filt,
@@ -822,8 +821,102 @@ class DIDVAnalysis(FilterData):
                     saveplot=lgc_save,
                     savepath=save_path,
                     savename=save_name,
-                )        
+                )
+                
+    def compare_with_ivsweep(self, channel):
+        """
+        Create a dataframe to compare results with
+        IV sweep
+        """
 
+        # check channel
+        if channel not in self._didv_data.keys():
+            raise ValueError(f'ERROR:  channel {channel} not found!')
+                 
+
+        didv_results = self.get_fit_result(channel, poles=3)
+        ivsweep_results = self.get_ivsweep_results(channel)
+
+        data = dict()
+        
+        # bias params
+        param_list = ['r0','i0','p0']
+        norm_list = [1e3, 1e6, 1e15]
+        label_list = ['R0 [mOhms]','I0 [muAmps]','P0 [fWatts]']
+        label_inf_lgain_list = ['R0 Inf loop gain [mOhms]',
+                                'I0 Inf loop gain [muAmps]',
+                                'P0 Inf loop gain [fWatts]']
+
+        
+        if ('biasparams' in didv_results
+            and didv_results['biasparams'] is not None):
+
+            results = didv_results['biasparams']
+            results_infinite_lgain = None
+            if 'biasparams_infinite_lgain' in didv_results:
+                results_infinite_lgain = (
+                    didv_results['biasparams_infinite_lgain']
+                )
+                
+            for iparam, param in enumerate(param_list):
+                
+                if param not in ivsweep_results:
+                    continue
+
+                # normalization/label
+                norm = norm_list[iparam]
+                label = label_list[iparam]
+                label_infinite_lgain = label_inf_lgain_list[iparam]
+
+                
+                # build string dIdV
+                val = results[param]
+                val_err = results[param + '_err']
+                val_str = '{:.3g} +/- {:.3g}'.format(
+                    val*norm, val_err*norm
+                )
+
+                
+                # build string IV 
+                iv_val = ivsweep_results[param]
+                iv_val_err = ivsweep_results[param + '_err']
+                iv_val_str = '{:.3g} +/- {:.3g}'.format(
+                    iv_val*norm, iv_val_err*norm
+                )
+                    
+                data[label] = [val_str, iv_val_str]
+
+                    
+                # infinite loop gain
+                if (results_infinite_lgain is not None
+                    and 'r0_infinite_lgain' in ivsweep_results):
+
+                    # build string dIdV
+                    val = results_infinite_lgain[param]
+                    val_err = results_infinite_lgain[param + '_err']
+                    val_str = '{:.3g} +/- {:.3g}'.format(
+                        val*norm, val_err*norm
+                    )
+
+                    # build string IV 
+                    iv_val = ivsweep_results[param + '_infinite_lgain']
+                    iv_val_err = ivsweep_results[param + '_err_infinite_lgain']
+                    iv_val_str = '{:.3g} +/- {:.3g}'.format(
+                        iv_val*norm, iv_val_err*norm
+                    )
+                    
+                    data[label_infinite_lgain] = [val_str, iv_val_str]
+
+                    
+                
+        df = None
+        if data:
+            df = pd.DataFrame.from_dict(data, orient='index', columns=['dIdV', 'IV Sweep'])
+            
+        return df
+
+
+                        
             
     def _get_file_list(self, file_path,
                        series=None):
@@ -932,4 +1025,245 @@ class DIDVAnalysis(FilterData):
       
         return file_list, base_path, group_name
 
-  
+
+    
+    def _process_raw_data(self, channel,
+                          raw_path, series=None,
+                          overwrite=False):
+        
+        """
+        Set dIdV data for a specific channel
+        form raw traces. Apply cuts and pre-process
+        data. The function can be called multiple
+        times for different channels 
+        """
+
+        # check if data can be overwritte
+        if  self._didv_data is None:
+             self._didv_data = dict()
+        else:
+            if (not overwrite and
+                channel in self._didv_data.keys()):
+                print(f'ERROR: Data for channel {channel} '
+                      'already available. Set overwrite=True')
+                return
+        
+        # get file list 
+        file_list, base_path, group_name = self._get_file_list(raw_path, series)
+        if file_list is None:
+            raise ValueError(
+                'ERROR: No didv raw data found!'
+            )
+
+          
+        # Instantiate QETpy DIDV Object
+        didvobj = None
+        if self._verbose:
+            print(f'INFO: Getting raw data and processing channel {channel}')
+            
+        # instantiate H5 reader
+        h5 = h5io.H5Reader()
+        
+        # get traces
+        traces, info = h5.read_many_events(
+            filepath=file_list,
+            detector_chans=channel,
+            output_format=2, 
+            include_metadata=True,
+            adctoamp=True)
+        
+        traces = traces[:,0,:]
+        fs = info[0]['sample_rate']
+            
+        # get detector settings
+        detector_settings = h5.get_detector_config(file_name=file_list[0])
+
+        tes_bias = float(detector_settings[channel]['tes_bias'])
+        output_gain = float(detector_settings[channel]['output_gain'])
+        close_loop_norm = float(detector_settings[channel]['close_loop_norm'])
+        output_offset = float(detector_settings[channel]['output_offset'])
+        sgamp = float(detector_settings[channel]['signal_gen_current'])
+        sgfreq = float(detector_settings[channel]['signal_gen_frequency'])
+        group_name = str(info[0]['group_name'])
+        series_name = h5io.extract_series_name(int(info[0]['series_num']))
+
+        # rshunt resistance
+        rshunt = None
+        if 'shunt_resistance' in detector_settings[channel].keys():
+            rshunt = float(detector_settings[channel]['shunt_resistance'])
+        elif 'rshunt' in detector_settings[channel].keys():
+            rshunt = float(detector_settings[channel]['rshunt'])
+        if rshunt == np.nan:
+            rshunt = None
+            
+        # parasitic resistance 
+        rp = None
+        if 'parasitic_resistance' in detector_settings[channel].keys():
+            rp = float(detector_settings[channel]['parasitic_resistance'])
+        elif 'rp' in detector_settings[channel].keys():
+            rp = float(detector_settings[channel]['rp'])
+        if rp == np.nan:
+            rp = None
+            
+                        
+        # save relevant detector settings in dictionary
+        data_config = dict()
+        data_config['series_name'] = series_name
+        data_config['group_name'] = group_name
+        data_config['fs'] = fs
+        data_config['output_variable_gain'] = output_gain
+        data_config['output_variable_offset'] = output_offset
+        data_config['close_loop_norm'] = close_loop_norm
+        data_config['rshunt'] = rshunt
+        data_config['rp'] = rp
+        data_config['tes_bias'] = tes_bias
+        data_config['sgfreq'] = sgfreq
+        data_config['sgamp'] = sgamp
+
+
+        # Apply cuts
+        zerocut = np.all(traces!=0, axis=1)
+        traces = traces[zerocut]  
+    
+        # cut pileup
+        cut = qp.autocuts_didv(traces, fs=fs)
+        traces = traces[cut]
+
+        # Fit data
+        didvobj = qp.DIDV(traces,
+                          fs,
+                          sgfreq, 
+                          sgamp, 
+                          rshunt, 
+                          rp=rp,
+                          dutycycle=0.5,
+                          add180phase=False)
+            
+        # process
+        didvobj.processtraces()
+        
+        # store
+        self._didv_data[channel] = {'didvobj': didvobj,
+                                    'group_name': group_name,
+                                    'series_name': series_name,
+                                    'base_path': base_path,
+                                    'ivsweep_results': None,
+                                    'data_config': data_config,
+                                    'resolution': None}
+
+
+        
+    def _set_processed_data(self, channel,
+                            didv_data,
+                            overwrite=False,
+                            **kwargs ):
+        
+        """
+        Set dIdV data from already processed raw 
+        data, in the form of pandas series or 
+        dictionary. The function can be called multiple
+        times for different channels 
+        """
+
+        # check if data can be overwritte
+        if  self._didv_data is None:
+             self._didv_data = dict()
+        else:
+            if (not overwrite and
+                 channel in self._didv_data.keys()):
+                raise ValueError(f'ERROR: Data for channel {channel} '
+                                 'already available. Set overwrite=True')
+            
+        # check didv data
+        if isinstance(didv_data, pd.Series):
+            didv_data = didv_data.to_dict()
+        elif not isinstance(didv_data, dict):
+            raise ValueError(
+                'ERROR: "didv_data" should be a dictionary '
+                ' or pandas series')
+               
+        # check variables 
+        available_vars = list(didv_data.keys())
+        required_vars = ['avgtrace_didv', 'didvmean','didvstd',
+                         'offset_didv','offset_err_didv',
+                         'sgamp', 'sgfreq',
+                         'fs_didv']
+        
+        for var in required_vars:
+            if var not in available_vars:
+                raise ValueError(f'ERROR: Missing variable {var} '
+                                 ' in didv_data')
+            
+        # check if channel stored in didv_data
+        if 'channel' in didv_data.keys():
+            channel_didv = str(didv_data['channel'])
+            if channel != channel_didv:
+                raise ValueError(
+                    f'ERROR: Channel name in didv data "{channel_didv}" '
+                    'is different than input channel!')
+
+        # check if other parameters are available
+        rshunt = None
+        if 'rshunt_noise' in didv_data.keys():
+            rshunt =  didv_data['rshunt_noise']
+        elif 'rshunt_didv' in didv_data.keys():
+            rshunt =  didv_data['rshunt_didv']
+            
+        # parasitic resistance 
+        rp = None
+        if 'rp_noise' in didv_data.keys():
+            rp =  didv_data['rp_noise']
+        elif 'rp_didv' in didv_data.keys():
+            rp =  didv_data['rp_didv']
+
+            
+        # duty cycle
+        dutycycle = 0.5
+        if 'dutycycle' in didv_data.keys():
+            dutycycle = didv_data['dutycycle']
+
+        # data config
+        data_config_pars = ['series_name', 'group_name',
+                            'fs', 'output_variable_gain',
+                            'output_variable_offset',
+                            'close_loop_norm', 'tes_bias',
+                            'sgfreq','sgamp']
+        
+        data_config = dict()
+        for config in  data_config_pars:
+            config_name = config + '_didv'
+            if  config_name in didv_data.keys():
+                data_config[config] = didv_data[config_name]
+            else:
+                data_config[config]= None
+                
+        data_config['rshunt'] = rshunt
+        data_config['rp'] = rp
+
+                 
+        # Instantiate QETpy DIDV Object
+        didvobj = qp.didvinitfromdata(
+            didv_data['avgtrace_didv'][:len(didv_data['didvmean'])],
+            didv_data['didvmean'],
+            didv_data['didvstd'],
+            didv_data['offset_didv'],
+            didv_data['offset_err_didv'],
+            didv_data['fs_didv'],
+            didv_data['sgfreq'],
+            didv_data['sgamp'],
+            rsh=rshunt,
+            rp=rp,
+            dutycycle=dutycycle,
+        )
+
+
+        # store
+        self._didv_data[channel] = {'didvobj': didvobj,
+                                    'group_name': data_config['group_name'],
+                                    'series_name': data_config['series_name'],
+                                    'base_path': None,
+                                    'ivsweep_results': None,
+                                    'data_config': data_config,
+                                    'resolution': None}
+        
+    

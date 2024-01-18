@@ -7,10 +7,13 @@ import qetpy as qp
 from glob import glob
 import vaex as vx
 from pathlib import Path
+import matplotlib.pyplot as plt
+from datetime import datetime
+import stat
+
 from detprocess.core.filterdata import FilterData
 from detprocess.core.didv import DIDVAnalysis
 from detprocess.core.noise import Noise
-import matplotlib.pyplot as plt
 
 
 __all__ = [
@@ -24,7 +27,9 @@ class IVSweepAnalysis(FilterData):
     QETpy
     """
 
-    def __init__(self, verbose=True):
+    def __init__(self, verbose=True,
+                 auto_save_hdf5=False,
+                 file_path_name=None):
         """
         Initialize class
 
@@ -53,8 +58,32 @@ class IVSweepAnalysis(FilterData):
         # IV sweep nb bias point
         self._nb_sc_normal_points = dict()
 
+
+        # save results
+        self._save_hdf5 = auto_save_hdf5
+        self._save_path = None
+        self._file_name = self._set_file_name()
+        
+        if file_path_name is not None:
+            if os.path.isfile(file_path_name):
+                self._save_path = os.path.dirname(file_path_name)
+                self._file_name = os.path.basename(file_path_name)
+            elif os.path.isdir(file_path_name):
+                self._save_path = file_path_name
+            else:
+                raise ValueError('ERROR: "file_path_name" should be a '
+                                 'file or path!')
+
+
+        if self._save_hdf5:
+            full_path_file = self._file_name
+            if self._save_path is not None:
+                full_path_file = self._save_path + '/' + self._file_name
+            print(f'INFO: Results will be automatically saved '
+                  f'in {full_path_file}')
+
         # instantiate base class
-        super().__init__(verbose=verbose)
+        super().__init__(verbose=True)
         
         
     def clear(self, channels=None):
@@ -94,7 +123,27 @@ class IVSweepAnalysis(FilterData):
                         chan,
                         overwrite=False,
                         tag=tag)
-                             
+
+
+        # update path
+        if self._save_path is None:
+            dir_name = os.path.dirname(file_name)
+            dir_name = str(Path(dir_name).parent)
+                    
+            if '/processed' in dir_name:
+                dir_name = dir_name.replace('/processed',
+                                            '/filterdata')
+            self._save_path = dir_name
+
+            if not os.path.isdir(dir_name):
+                try:
+                    os.makedirs(dir_name)
+                    os.chmod(dir_name, stat.S_IRWXG | stat.S_IRWXU |
+                             stat.S_IROTH | stat.S_IXOTH)
+                except OSError:
+                    raise ValueError('\nERROR: Unable to create directory "'
+                                     + dir_name  + '"!\n')
+                
 
     def set_data_from_dict(self, data_dict, tag='default'):
         """
@@ -146,7 +195,7 @@ class IVSweepAnalysis(FilterData):
                                      overwrite=True,
                                      tag=tag)
         
-    
+        
     def set_rshunt(self, channels,
                    rshunt=None, rshunt_err=None):
         """
@@ -619,11 +668,11 @@ class IVSweepAnalysis(FilterData):
                               
                 # convert to pandas series
                 series = pd.Series(results)
-                self.set_ivsweep_result(chan,
-                                        series,
-                                        data_type,
-                                        metadata=None,
-                                        tag=tag)
+                self.set_ivsweep_results(chan,
+                                         series,
+                                         data_type,
+                                         metadata=None,
+                                         tag=tag)
 
                        
             # save data
@@ -634,6 +683,21 @@ class IVSweepAnalysis(FilterData):
                 ivobj.plot_all_curves(lgcsave=False,
                                       savepath=None,
                                       savename=None)
+
+
+
+        # save hdf5
+        if self._save_hdf5:
+            
+            # build full path
+            dir_name = './'
+            if self._save_path is not None:
+                dir_name = self._save_path + '/'
+            file_path_name = dir_name + self._file_name
+
+            # save
+            self.save_hdf5(file_path_name, overwrite=True)
+              
 
 
                 
@@ -701,6 +765,7 @@ class IVSweepAnalysis(FilterData):
                 tag=tag,
                 **kwargs
             )            
+
             
 
     def fit_didv_sc(self, channels=None,
@@ -721,7 +786,19 @@ class IVSweepAnalysis(FilterData):
                        tag=tag,
                        **kwargs)
         
+        # save hdf5
+        if self._save_hdf5:
+            
+            # build full path
+            dir_name = './'
+            if self._save_path is not None:
+                dir_name = self._save_path + '/'
+            file_path_name = dir_name + self._file_name
 
+            # save
+            self.save_hdf5(file_path_name, overwrite=True)
+            
+              
 
 
     def fit_didv_normal(self, channels=None,
@@ -741,6 +818,21 @@ class IVSweepAnalysis(FilterData):
                        plot_save_path=plot_save_path,
                        tag=tag,
                        **kwargs)
+
+        
+        # save hdf5
+        if self._save_hdf5:
+
+            # build full path
+            dir_name = './'
+            if self._save_path is not None:
+                dir_name = self._save_path + '/'
+            file_path_name = dir_name + self._file_name
+
+            # save
+            self.save_hdf5(file_path_name, overwrite=True)
+        
+
         
     def fit_didv_transition(self, channels=None,
                             percent_rn_min=5,
@@ -763,7 +855,18 @@ class IVSweepAnalysis(FilterData):
                        tag=tag,
                        **kwargs)
         
+        # save hdf5
+        if self._save_hdf5:
 
+            # build full path
+            dir_name = './'
+            if self._save_path is not None:
+                dir_name = self._save_path + '/'
+            file_path_name = dir_name + self._file_name
+
+            # save
+            self.save_hdf5(file_path_name, overwrite=True)
+        
 
     def plot_didv_summary(self, channel):
         """
@@ -938,7 +1041,8 @@ class IVSweepAnalysis(FilterData):
 
                 # get psd amps2/Hz
                 df_bias = df[df.tes_bias_uA==bias]
-
+                df_index = df_bias.index[0]
+                
                 if df_bias.empty:
                     raise ValueError(f'ERROR: Unable to get psd for {chan},'
                                      f' tes bias = {bias}')
@@ -961,13 +1065,16 @@ class IVSweepAnalysis(FilterData):
                 resolution_data['tes_bias_uA'].append(bias)
                 resolution_data['percent_rn'].append(percent_rn)
                 resolution_data['resolution_dirac'].append(resolution_dirac)
+                df.loc[df_index, 'resolution_dirac'] = resolution_dirac
+                df.loc[df_index, 'resolution_collection_efficiency'] = collection_eff
                 if template is not None:
                     resolution_data['resolution_template'].append(resolution_template)
-
+                    df.loc[df_index, 'resolution_template'] = resolution_template
                 
             # save
             self._resolution_data[chan] = resolution_data
-
+            self.set_ivsweep_data(chan, df, tag=tag)
+            
             # display
             if lgc_plot:
 
@@ -1008,6 +1115,19 @@ class IVSweepAnalysis(FilterData):
                 plt.show()
 
 
+                
+        # save hdf5
+        if self._save_hdf5:
+            
+            # build full path
+            dir_name = './'
+            if self._save_path is not None:
+                dir_name = self._save_path + '/'
+            file_path_name = dir_name + self._file_name
+
+            # save
+            self.save_hdf5(file_path_name, overwrite=True)
+        
 
                 
                      
@@ -1083,13 +1203,13 @@ class IVSweepAnalysis(FilterData):
             iv_type = 'noise'
             if ('rp_noise' not in df.columns):
                 iv_type = 'didv'
-            iv_result = self.get_ivsweep_result(chan,
-                                                iv_type=iv_type,
-                                                tag=tag)
-            rp_iv = iv_result['rp']
-            rp_iv_err = iv_result['rp_err']
-            rn_iv =  iv_result['rn']
-            rn_iv_err =  iv_result['rn_err']
+            iv_results = self.get_ivsweep_results(chan,
+                                                  iv_type=iv_type,
+                                                  tag=tag)
+            rp_iv = iv_results['rp']
+            rp_iv_err = iv_results['rp_err']
+            rn_iv =  iv_results['rn']
+            rn_iv_err =  iv_results['rn_err']
 
                                   
             # filter dataframe
@@ -1133,11 +1253,15 @@ class IVSweepAnalysis(FilterData):
             if nb_points_max is not None:
                 nb_points = min(len(df_filter), nb_points_max)
 
-            
+            # list of index
+            df_indices = df_filter.index.to_list()
+
+            # loop
             for ind in range(nb_points):
 
                 pd_series = df_filter.iloc[ind]
                 state = pd_series['state']
+                df_index = df_indices[ind]
                 
 
                 # ignore if "transtion" data but state "sc" or "normal"
@@ -1149,11 +1273,12 @@ class IVSweepAnalysis(FilterData):
                 
                 # display case transiton
                 if data_type == 'transition':
-                                       
-                    iv_result['r0'] = pd_series['r0_' + iv_type]
-                    iv_result['r0_err'] = pd_series['r0_err_' + iv_type]
-                    iv_result['i0'] = pd_series['i0_' + iv_type]
-                    iv_result['i0_err'] = pd_series['i0_err_' + iv_type]
+                    iv_results['ibias'] = pd_series['tes_bias_' + iv_type]
+                    iv_results['ibias_err'] = 0
+                    iv_results['r0'] = pd_series['r0_' + iv_type]
+                    iv_results['r0_err'] = pd_series['r0_err_' + iv_type]
+                    iv_results['i0'] = pd_series['i0_' + iv_type]
+                    iv_results['i0_err'] = pd_series['i0_err_' + iv_type]
 
                     # display
                     if self._verbose:
@@ -1161,7 +1286,7 @@ class IVSweepAnalysis(FilterData):
                               'R0 = {:.2f} mOhms (% Rn = {:.2f})'.format(
                                   chan,
                                   pd_series['tes_bias_uA'],
-                                  iv_result['r0']*1e3,
+                                  iv_results['r0']*1e3,
                                   pd_series[var_name])
                         )
 
@@ -1179,16 +1304,20 @@ class IVSweepAnalysis(FilterData):
                     result = didvanalysis.get_fit_result(chan,1)
                 else:
                     didvanalysis.dofit([2,3])
-                    didvanalysis.set_ivsweep_results(chan, iv_result)
+                    didvanalysis.set_ivsweep_results(chan, iv_results)
                     didvanalysis.calc_smallsignal_params(
                         calc_true_current=False,
                         inf_loop_gain_approx=inf_loop_gain_approx,
                     )
+
+                    didvanalysis.calc_bias_params_infinite_loop_gain()
+                    
                     if 'psd_freq' in  pd_series:
                         freqs = pd_series['psd_freq']
                         didvanalysis.calc_dpdi(freqs, channels=chan,
                                                list_of_poles=3)
                     result = didvanalysis.get_fit_result(chan,3)
+
                     
                 # store result
                 rpn = result['smallsignalparams']['rp']
@@ -1198,7 +1327,7 @@ class IVSweepAnalysis(FilterData):
                 dt_list.append(result['smallsignalparams']['dt'])
 
 
-                # display
+                # transitiobn
                 if data_type == 'transition':
                     
                     cov_matrix = np.abs(result['ssp_light']['cov'])
@@ -1282,7 +1411,63 @@ class IVSweepAnalysis(FilterData):
                         current['L'].append(vals_vector['L'])
                         current['L_err'].append(sigmas_vector['sigma_L'])
                         self._didv_summary[chan]['transition'] = current
-                        
+
+
+                    # store in dataframe
+                    df.loc[df_index, 'didv_3poles_chi2'] = result['cost']
+                    
+                    df.loc[df_index, 'didv_3poles_tau+'] = result['falltimes'][0]
+                    df.loc[df_index, 'didv_3poles_tau-'] = result['falltimes'][1]
+                    df.loc[df_index, 'didv_3poles_tau3'] = result['falltimes'][2]
+                    
+                    df.loc[df_index, 'didv_3poles_l'] = vals_vector['l']
+                    df.loc[df_index, 'didv_3poles_l_err'] = (
+                        sigmas_vector['sigma_l']
+                    )
+                    df.loc[df_index, 'didv_3poles_beta'] = vals_vector['beta']
+                    df.loc[df_index, 'didv_3poles_beta_err'] = (
+                        sigmas_vector['sigma_beta']
+                    )
+
+                    df.loc[df_index, 'didv_3poles_gratio'] = vals_vector['gratio']
+                    df.loc[df_index, 'didv_3poles_gratio_err'] = (
+                        sigmas_vector['sigma_gratio']
+                    )
+
+                    df.loc[df_index, 'didv_3poles_tau0'] = vals_vector['tau0']
+                    df.loc[df_index, 'didv_3poles_tau0_err'] = (
+                        sigmas_vector['sigma_tau0']
+                    )
+
+                    df.loc[df_index, 'didv_3poles_L'] = vals_vector['L']
+                    df.loc[df_index, 'didv_3poles_L_err'] = (
+                        sigmas_vector['sigma_L']
+                    )
+
+
+                    # infinite loop gain bias
+                    bias_params_inf_lgain = result['biasparams_infinite_lgain']
+                    df.loc[df_index, 'didv_3poles_r0_infinite_lgain'] = (
+                        bias_params_inf_lgain['r0']
+                    )
+                    df.loc[df_index, 'didv_3poles_r0_err_infinite_lgain'] = (
+                        bias_params_inf_lgain['r0_err']
+                    )
+                    df.loc[df_index, 'didv_3poles_i0_infinite_lgain'] = (
+                        bias_params_inf_lgain['i0']
+                    )
+                    df.loc[df_index, 'didv_3poles_i0_err_infinite_lgain'] = (
+                        bias_params_inf_lgain['i0_err']
+                    )
+
+                    df.loc[df_index, 'didv_3poles_p0_infinite_lgain'] = (
+                        bias_params_inf_lgain['p0']
+                    )
+                    df.loc[df_index, 'didv_3poles_p0_err_infinite_lgain'] = (
+                        bias_params_inf_lgain['p0_err']
+                    )
+
+                    
                 # display
                 if lgc_plot:
 
@@ -1343,3 +1528,23 @@ class IVSweepAnalysis(FilterData):
                         chan, rpn_didv_fit*1e3,rpn_err_didv_fit*1e3))
                     print('{} Rp from IV Sweep = {:.2f} +/- {:.3f} mOhms'.format(
                         chan, rp_iv*1e3, rp_iv_err*1e3))
+
+            # store df
+            self.set_ivsweep_data(chan, df, tag=tag)
+            
+
+    def _set_file_name(self):
+        """
+        Set file name 
+        """
+
+        
+        now = datetime.now()
+        series_day = now.strftime('%Y') +  now.strftime('%m') + now.strftime('%d') 
+        series_time = now.strftime('%H') + now.strftime('%M')
+        series_name = ('D' + series_day + '_T'
+                       + series_time + now.strftime('%S'))
+
+        file_name = 'ivsweep_analysis_' + series_name + '.hdf5'
+        
+        return file_name

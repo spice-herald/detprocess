@@ -371,7 +371,7 @@ class IVSweepProcessing:
                              + self._processing_id
                              + '_' + series_name + '.hdf5')
             else:
-                file_name = (save_path + '/sweep_analysis_'
+                file_name = (save_path + '/ivsweep_processing_'
                              + series_name + '.hdf5')
 
             self._filter_data.save_hdf5(file_name)

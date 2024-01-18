@@ -60,7 +60,9 @@ class FilterData:
         # Let's first loop channel and get tags/display msg
         filter_display = dict()
         parameter_list = ['psd_fold', 'psd', 'template',
-                          'ivsweep_data', 'ivsweep_results']
+                          'ivsweep_data',
+                          'ivsweep_results_noise',
+                          'ivsweep_results_didv']
 
         for chan, chan_dict in self._filter_data.items():
             
@@ -186,7 +188,7 @@ class FilterData:
         if self._verbose:
             print('INFO: Loading filter data from file '
                   + file_name)
-        
+            
         # update
         if overwrite or not self._filter_data:
             self._filter_data.update(data)
@@ -223,7 +225,7 @@ class FilterData:
         """
 
         if self._verbose:
-            print('INFO: Saving noise data to file '
+            print('INFO: Saving filter/TES data to file '
                   + file_name)
             if overwrite:
                 print('INFO: channel data with same tag may be overwritten')
@@ -627,14 +629,14 @@ class FilterData:
         return self._filter_data[channel][data_tag]
         
     
-    def set_ivsweep_result(self, 
+    def set_ivsweep_results(self, 
                            channel,
                            pd_series,
                            iv_type,
                            metadata=None,
                            tag='default'):
         """
-        Set IV-dIdV Sweep analysis result
+        Set IV-dIdV Sweep analysis results
         (independent of bias point)
         """
 
@@ -648,7 +650,7 @@ class FilterData:
             self._filter_data[channel] = dict()
         
         # data 
-        data_tag = 'ivsweep_result_' + iv_type  + '_' + tag
+        data_tag = 'ivsweep_results_' + iv_type  + '_' + tag
         self._filter_data[channel][data_tag] = pd_series
 
         # metadata
@@ -659,7 +661,7 @@ class FilterData:
         self._filter_data[channel][data_tag + '_metadata'] = metadata
 
         
-    def set_ivsweep_result_from_dict(self, data_dict,
+    def set_ivsweep_results_from_dict(self, data_dict,
                                      iv_type,
                                      tag='default'):
         """
@@ -668,55 +670,137 @@ class FilterData:
         """
 
         for chan, df in data_dict.items():
-            self.set_ivsweep_result(chan,
+            self.set_ivsweep_results(chan,
                                     df,
                                     iv_type,
                                     tag=tag)
             
-    def get_ivsweep_result(self, 
-                           channel,
-                           iv_type='noise',
-                           tag='default',
-                           lgc_return_dict=False):
+    def get_ivsweep_results(self, 
+                            channel,
+                            iv_type='noise',
+                            include_bias_parameters=False,
+                            tes_bias=None,
+                            lgc_return_series=False,
+                            tag='default'):
         """
         Get IV-dIdV Sweep result
         """
-
+        
         # check channels
         if channel not in self._filter_data.keys():
             raise ValueError(
                 f'ERROR: no channel {channel} available! '
                 'Did you load from file first?')
 
-        # data tag
-        data_tag = 'ivsweep_result_' + iv_type  + '_' + tag
+        # check argument
+        if (include_bias_parameters
+            and tes_bias is None):
+            raise ValueError(
+                f'ERROR: "tes_bias" needs to be provided '
+                f'when "include_bias_parameters" = True!')
+        
+        # result data tag
+        data_tag = 'ivsweep_results_' + iv_type  + '_' + tag
         if data_tag not in self._filter_data[channel].keys():
             iv_type_new = str()
             if iv_type == 'noise':
                 iv_type_new = 'didv'
             else:
                 iv_type_new == 'noise'
-            data_tag = 'ivsweep_result_' + iv_type_new  + '_' + tag
+            data_tag = 'ivsweep_results_' + iv_type_new  + '_' + tag
             is_avaible = data_tag in self._filter_data[channel].keys()
 
             if is_avaible:
                 raise ValueError(
-                    f'ERROR: No sweep result for channel {channel} available '
-                    'using data type "{iv_type}"! Change "iv_type'
-                    'argument to {iv_type_new}')
+                    f'ERROR: No sweep results for channel {channel} available '
+                    f'using data type "{iv_type}"! Change "iv_type'
+                    f'argument to {iv_type_new}')
             else:
                 raise ValueError(
-                    f'ERROR: No sweep result for channel {channel} available. Did '
+                    f'ERROR: No sweep results for channel {channel} available. Did '
                     'you run the sweep analysis?')
 
-        series = self._filter_data[channel][data_tag]
-        if lgc_return_dict:
-            series = series.to_dict()
+        results = self._filter_data[channel][data_tag].to_dict()
+      
+        # include bias parameters
+        if include_bias_parameters:
 
-        return series
+            # get dataframe
+            df = self.get_ivsweep_data(channel, tag=tag)
+            absolute_difference = abs(df['tes_bias'] - tes_bias)
+            closest_index = absolute_difference.idxmin()
+            params = df.loc[closest_index].to_dict()
+            
+            # add parameters
+            results['tes_bias'] = params['tes_bias']
+            results['ibias'] = params['ibias_true_' + iv_type]
+            results['ibias_err'] = params['ibias_true_err_' + iv_type]
+            results['i0'] = params['i0_' + iv_type]
+            results['i0_err'] = params['i0_err_' + iv_type]
+            results['r0'] = params['r0_' + iv_type]
+            results['r0_err'] = params['r0_err_' + iv_type]
+            results['p0'] = params['p0_' + iv_type]
+            results['p0_err'] = params['p0_err_' + iv_type]
+
+            # infinite loop gain
+            if 'didv_3poles_r0_infinite_lgain' in params:
+
+                results['i0_infinite_lgain'] = (
+                    params['didv_3poles_i0_infinite_lgain']
+                )
+                results['i0_err_infinite_lgain'] = (
+                    params['didv_3poles_i0_err_infinite_lgain']
+                )
+                
+                results['r0_infinite_lgain'] = (
+                    params['didv_3poles_r0_infinite_lgain']
+                )
+                results['r0_err_infinite_lgain'] = (
+                     params['didv_3poles_r0_err_infinite_lgain']
+                )
+                
+                results['p0_infinite_lgain'] = (
+                    params['didv_3poles_p0_infinite_lgain']
+                )
+                results['p0_err_infinite_lgain'] = (
+                    params['didv_3poles_p0_err_infinite_lgain']
+                )
+                
+                
+            # ssp
+            if 'didv_3poles_chi2' in params:
+                results['didv_fit_chi2'] = params['didv_3poles_chi2']
+                results['didv_fit_tau+'] = params['didv_3poles_tau+']
+                results['didv_fit_tau-'] = params['didv_3poles_tau-']
+                results['didv_fit_tau3'] = params['didv_3poles_tau3']
+                results['didv_fit_l'] = params['didv_3poles_l']
+                results['didv_fit_l_err'] = params['didv_3poles_l_err']
+                results['didv_fit_beta'] = params['didv_3poles_beta']
+                results['didv_fit_beta_err'] = params['didv_3poles_beta_err']
+                results['didv_fit_gratio'] = params['didv_3poles_gratio']
+                results['didv_fit_gratio_err'] = params['didv_3poles_gratio_err']
+                results['didv_fit_tau0'] = params['didv_3poles_tau0']
+                results['didv_fit_tau0_err'] = params['didv_3poles_tau0_err']
+                results['didv_fit_L'] = params['didv_3poles_L']
+                results['didv_fit_L_err'] = params['didv_3poles_L_err']
+          
+            if 'resolution_dirac' in params:
+                results['resolution_dirac'] =  params['resolution_dirac']
+                results['resolution_collection_efficiency'] = (
+                    params['resolution_collection_efficiency']
+                )
+            if 'resolution_template' in params:
+                results['resolution_template'] =  params['resolution_template']
+                
+        if lgc_return_series:
+            results = pd.Series(results)
+
+        return results
         
     
-    def plot_template(self, channels, tag='default'):
+    def plot_template(self, channels,
+                      xmin=None, xmax=None,
+                      tag='default'):
         """
         Plot template for specified channel(s)
 
@@ -758,7 +842,10 @@ class FilterData:
         ax.grid(which='major')
         ax.set_title('Template',fontweight='bold')
         ax.set_xlabel('Time [msec]',fontweight='bold')
-     
+
+        if (xmin is not None or xmax is not None):
+            ax.set_xlim(xmin=xmin, xmax=xmax)
+        
 
 
     def plot_psd(self, channels, tag='default', fold=True, unit='pA'):
