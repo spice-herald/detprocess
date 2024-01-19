@@ -667,7 +667,7 @@ class IVSweepAnalysis(FilterData):
                 self._readout_params[chan]['rn_err'] =  rn_err
                               
                 # convert to pandas series
-                series = pd.Series(results)
+                series = pd.Series(results.copy())
                 self.set_ivsweep_results(chan,
                                          series,
                                          data_type,
@@ -1298,13 +1298,13 @@ class IVSweepAnalysis(FilterData):
                 didvanalysis.set_processed_data(chan, pd_series)
                 
                 # fit
-                result = None
+                results = None
                 if (data_type == 'normal' or data_type == 'sc'):
                     didvanalysis.dofit(1)
-                    result = didvanalysis.get_fit_result(chan,1)
+                    results = didvanalysis.get_fit_results(chan,1)
                 else:
                     didvanalysis.dofit([2,3])
-                    didvanalysis.set_ivsweep_results(chan, iv_results)
+                    didvanalysis.set_ivsweep_results_from_data(chan, iv_results)
                     didvanalysis.calc_smallsignal_params(
                         calc_true_current=False,
                         inf_loop_gain_approx=inf_loop_gain_approx,
@@ -1316,37 +1316,37 @@ class IVSweepAnalysis(FilterData):
                         freqs = pd_series['psd_freq']
                         didvanalysis.calc_dpdi(freqs, channels=chan,
                                                list_of_poles=3)
-                    result = didvanalysis.get_fit_result(chan,3)
+                    results = didvanalysis.get_fit_results(chan,3)
 
                     
                 # store result
-                rpn = result['smallsignalparams']['rp']
+                rpn = results['smallsignalparams']['rp']
                 if data_type == 'normal':
                     rpn -= rp_iv
                 rpn_list.append(rpn)
-                dt_list.append(result['smallsignalparams']['dt'])
+                dt_list.append(results['smallsignalparams']['dt'])
 
 
                 # transitiobn
                 if data_type == 'transition':
                     
-                    cov_matrix = np.abs(result['ssp_light']['cov'])
-                    vals_vector = result['ssp_light']['vals']
-                    sigmas_vector = result['ssp_light']['sigmas']
+                    cov_matrix = np.abs(results['ssp_light']['cov'])
+                    vals_vector = results['ssp_light']['vals']
+                    sigmas_vector = results['ssp_light']['sigmas']
 
                     if self._verbose:
-                        print('Fit chi2/Ndof = {:.3f}'.format(result['cost']))
+                        print('Fit chi2/Ndof = {:.3f}'.format(results['cost']))
 
                         print('\nFit time constants, NOT dIdV Poles: ')
-                        print('Tau1: {:.3g} s'.format(np.abs(result['params']['tau1'])))
-                        print('Tau2: {:.3g} s'.format(result['params']['tau2']))
-                        print('Tau3: {:.4g} s'.format(result['params']['tau3']))
+                        print('Tau1: {:.3g} s'.format(np.abs(results['params']['tau1'])))
+                        print('Tau2: {:.3g} s'.format(results['params']['tau2']))
+                        print('Tau3: {:.4g} s'.format(results['params']['tau3']))
                         print(' ')
 
                         print('\nTrue dIdV Poles: ')
-                        print('Tau_plus: {:.3g} s'.format(result['falltimes'][0]))
-                        print('Tau_minus: {:.3g} s'.format(result['falltimes'][1]))
-                        print('Tau_third: {:.4g} s'.format(result['falltimes'][2]))
+                        print('Tau_plus: {:.3g} s'.format(results['falltimes'][0]))
+                        print('Tau_minus: {:.3g} s'.format(results['falltimes'][1]))
+                        print('Tau_third: {:.4g} s'.format(results['falltimes'][2]))
                         
                         print('\nSmall Signal Parameters:')
                         print('l (loop gain) = {:.3f} +/- {:.4f}'.format(
@@ -1396,10 +1396,10 @@ class IVSweepAnalysis(FilterData):
                         current = self._didv_summary[chan]['transition']
                         current['Rn %'].append(pd_series[var_name])
                         current['tes_bias_uA'].append(pd_series['tes_bias_uA'])
-                        current['chi2'].append(result['cost'])
-                        current['tau+'].append(result['falltimes'][0])
-                        current['tau-'].append(result['falltimes'][1])
-                        current['tau3'].append(result['falltimes'][2])
+                        current['chi2'].append(results['cost'])
+                        current['tau+'].append(results['falltimes'][0])
+                        current['tau-'].append(results['falltimes'][1])
+                        current['tau3'].append(results['falltimes'][2])
                         current['l'].append(vals_vector['l'])
                         current['l_err'].append(sigmas_vector['sigma_l'])
                         current['beta'].append(vals_vector['beta'])
@@ -1414,11 +1414,11 @@ class IVSweepAnalysis(FilterData):
 
 
                     # store in dataframe
-                    df.loc[df_index, 'didv_3poles_chi2'] = result['cost']
+                    df.loc[df_index, 'didv_3poles_chi2'] = results['cost']
                     
-                    df.loc[df_index, 'didv_3poles_tau+'] = result['falltimes'][0]
-                    df.loc[df_index, 'didv_3poles_tau-'] = result['falltimes'][1]
-                    df.loc[df_index, 'didv_3poles_tau3'] = result['falltimes'][2]
+                    df.loc[df_index, 'didv_3poles_tau+'] = results['falltimes'][0]
+                    df.loc[df_index, 'didv_3poles_tau-'] = results['falltimes'][1]
+                    df.loc[df_index, 'didv_3poles_tau3'] = results['falltimes'][2]
                     
                     df.loc[df_index, 'didv_3poles_l'] = vals_vector['l']
                     df.loc[df_index, 'didv_3poles_l_err'] = (
@@ -1446,7 +1446,7 @@ class IVSweepAnalysis(FilterData):
 
 
                     # infinite loop gain bias
-                    bias_params_inf_lgain = result['biasparams_infinite_lgain']
+                    bias_params_inf_lgain = results['biasparams_infinite_lgain']
                     df.loc[df_index, 'didv_3poles_r0_infinite_lgain'] = (
                         bias_params_inf_lgain['r0']
                     )

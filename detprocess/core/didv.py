@@ -80,7 +80,7 @@ class DIDVAnalysis(FilterData):
         (can be either "true" current or set by user)
         """
         
-        fit_result = self.get_fit_result(channel, poles=poles)
+        fit_result = self.get_fit_results(channel, poles=poles)
         if 'biasparams' in fit_result.keys():
             return fit_result['biasparams']
         else:
@@ -94,7 +94,7 @@ class DIDVAnalysis(FilterData):
         (can be either "true" current or set by user)
         """
         
-        fit_result = self.get_fit_result(channel, poles=poles)
+        fit_result = self.get_fit_results(channel, poles=poles)
         if 'biasparams_infinite_lgain' in fit_result.keys():
             return fit_result['biasparams_infinite_lgain']
         else:
@@ -156,58 +156,90 @@ class DIDVAnalysis(FilterData):
             self._set_processed_data(chan,
                                      didv_data[chan],
                                      overwrite=overwrite)
-      
 
-    def set_ivsweep_results(self, channels,
-                            results=None,
-                            file_name=None,
-                            iv_type='noise',
-                            include_bias_parameters=False):
+    def set_ivsweep_results_from_data(self,
+                                      channel,
+                                      results,
+                                      iv_type='noise'):
         """
         Set results from IV sweeps, in particular
         I0 offset, V0 offset
         """
 
+        # check
+        if isinstance(results, pd.Series):
+            results = results.to_dict()
+        elif not isinstance(results, dict):
+            raise ValueError(
+                'ERROR: "results" should be a dictionary '
+                ' or pandas series')
+        
+        # check channel
+        if not isinstance(channel, str):
+            raise ValueError(f'ERROR: This function is for single channel!' )
+        
+        if channel not in self._didv_data.keys():
+            raise ValueError(f'ERROR: Channel {channel} not found. '
+                             ' You first need to set data!' )
+    
 
-        # check input
-        if (file_name is None and results is None):
-            raise ValueError('ERROR: A file name or results dictionary '
-                             'need to be provided!')
+        # save
+        pd_series = pd.Series(results.copy())
+        self.set_ivsweep_results(channel,
+                                 pd_series,
+                                 iv_type)
+                    
+        # keep a copy as part of didv data
+        self._didv_data[channel]['ivsweep_results'] = results.copy()
+            
+        # check if Rp, Rshunt, R0 available
+        if 'rp' in results.keys():
+            rp = results['rp']
+        else:
+            raise ValueError(f'ERROR: "rp" is missing from IV results for '
+                             f'channel {channel}. It needs to be added!')
+            
+        r0 = None
+        if 'r0' in results.keys():
+            r0 = results['r0']
+            
+        rshunt = None
+        if 'rshunt' in results.keys():
+            rshunt = results['rshunt']
+                      
+        # replace internal object data
+        if rp is not None:
+            self._didv_data[channel]['data_config']['rp'] = rp
+            self._didv_data[channel]['didvobj']._rp = rp
+            
+        if r0 is not None:
+            self._didv_data[channel]['didvobj']._r0 = r0
+            
+        if (rshunt is not None
+            and self._didv_data[channel]['data_config']['rshunt'] is None):
+            self._didv_data[channel]['data_config']['rshunt'] = rshunt
+            self._didv_data[channel]['didvobj']._rsh = rshunt
         
-        if (file_name is not None and results is not None):
-            raise ValueError('ERROR: Choose between "file_name" or '
-                             '"results", not both!')
 
-        if (file_name is None and include_bias_parameters):
-            raise ValueError('ERROR: A file name needs to be provided '
-                             'when "include_bias_parameters"=True')
-        
-        
-        # convert results to a dictionary if needed
-        if results is not None:
-            if isinstance(results, pd.Series):
-                results = results.to_dict()
-            elif not isinstance(results, dict):
-                raise ValueError(
-                    'ERROR: "results" should be a dictionary '
-                    ' or pandas series')
+    def set_ivsweep_results_from_file(self,
+                                      channels,
+                                      file_name,
+                                      iv_type='noise',
+                                      include_bias_parameters=False):
+        """
+        Set results from IV sweeps, in particular
+        I0 offset, V0 offset
+        """
         
         # check channels
         if isinstance(channels, str):
-            if (results is not None
-                and channels not in results.keys()):
-                results[channels] = results.copy()
             channels = [channels]
-            
+           
         for chan in channels:
             if chan not in self._didv_data.keys():
                 raise ValueError(f'ERROR: Channel {channel} not found. '
                                  ' You first need to set data!' )
-            if (results is not None
-                and chan not in results.keys()):
-                raise ValueError(f'ERROR: Unable to find channel '
-                                 f' {chan} in results dictionary!')
-
+           
      
         # load data from file
         if file_name is not None:
@@ -217,25 +249,27 @@ class DIDVAnalysis(FilterData):
         # loop channels
         for chan in channels:
 
+            #  get tes bias
             tes_bias = None
             if include_bias_parameters:
                 data_config = self._didv_data[chan]['data_config']
                 tes_bias = data_config['tes_bias']
+
+            # get results
+            results =  self.get_ivsweep_results(
+                chan,
+                iv_type=iv_type,
+                include_bias_parameters=include_bias_parameters,
+                tes_bias=tes_bias,
+            )
+
+            # save in include bias parameters
+            if include_bias_parameters:
+                pd_series = pd.Series(results.copy())
+                self.set_ivsweep_results(chan,
+                                         pd_series,
+                                         iv_type)
                 
-            if results is None:
-                results =  self.get_ivsweep_results(
-                    chan,
-                    iv_type=iv_type,
-                    include_bias_parameters=include_bias_parameters,
-                    tes_bias=tes_bias,
-                )
-
-                # save in include bias parameters
-                if include_bias_parameters:
-                    pd_series = pd.Series(results)
-                    data_tag = 'ivsweep_results_' + iv_type  + '_default'
-                    self._filter_data[chan][data_tag] = pd_series
-
             # keep a copy as part of didv data
             self._didv_data[chan]['ivsweep_results'] = results.copy()
             
@@ -326,8 +360,14 @@ class DIDVAnalysis(FilterData):
             self._didv_data[chan]['didvobj'] =  didvobj
 
 
-        if lgc_plot:
-            self.plot_fit_result(channels)
+            if lgc_plot:
+                
+                if 3 in list_of_poles:
+                    self.print_fit_result(chan, poles=3)
+                elif 2 in list_of_poles:
+                    self.print_fit_result(chan, poles=2)
+                
+                self.plot_fit_result(chan)
 
 
             
@@ -735,7 +775,7 @@ class DIDVAnalysis(FilterData):
             # save
             self._didv_data[chan]['didvobj_prior'] = didvobj_prior
               
-    def get_fit_result(self, channel, poles):
+    def get_fit_results(self, channel, poles):
         """
         Get fit result
         """
@@ -758,7 +798,7 @@ class DIDVAnalysis(FilterData):
                         lgc_plot_fft=True, lgc_gray_mean=True,
                         lgc_didv_freq_filt=True,
                         zoom_factor=None, fcutoff=2e4,
-                        lgc_save=False,save_path=None,
+                        lgc_save=False, save_path=None,
                         save_name=None):
         """
         Plot fit results for multiple channels
@@ -794,7 +834,7 @@ class DIDVAnalysis(FilterData):
                     
             # display
             if self._verbose:
-                print(f'{chan} dIdV Fit Result:')
+                print(f'\n{chan} dIdV Fit Plots:')
 
             didvobj.plot_full_trace(
                 didv_freq_filt=lgc_didv_freq_filt,
@@ -822,8 +862,71 @@ class DIDVAnalysis(FilterData):
                     savepath=save_path,
                     savename=save_name,
                 )
+
                 
-    def compare_with_ivsweep(self, channel):
+    def print_fit_result(self, channels=None, poles=3):
+        """
+        Print fit information
+        """
+
+        # check channels
+        if channels is None:
+            channels = self._didv_data.keys()
+        elif isinstance(channels, str):
+            channels = [channels]
+
+        for chan in channels:
+            if chan not in self._didv_data.keys():
+                raise ValueError(f'ERROR: dIdV fit result not found for '
+                                 'channel {chan}! Use "dofit" first.')
+                  
+        # look chanels
+        for chan in channels:
+            
+            didvobj = self._didv_data[chan]['didvobj']
+
+            # check if any results
+            results = didvobj.fitresult(poles)
+            if not results:
+                print(f'WARNING: No fit result available for '
+                      'channel {chan}!')
+                continue
+            
+            print(f'\n{chan} dIdV Fit Result:')
+
+            
+            print('Fit chi2/Ndof = {:.3f}'.format(results['cost']))
+            print('\nFit time constants, NOT dIdV Poles: ')
+            print('Tau1: {:.3g} s'.format(np.abs(results['params']['tau1'])))
+            print('Tau2: {:.3g} s'.format(results['params']['tau2']))
+            print('Tau3: {:.4g} s'.format(results['params']['tau3']))
+            print(' ')
+            print('\nTrue dIdV Poles: ')
+            print('Tau_plus: {:.3g} s'.format(results['falltimes'][0]))
+            print('Tau_minus: {:.3g} s'.format(results['falltimes'][1]))
+            print('Tau_third: {:.4g} s'.format(results['falltimes'][2]))
+            
+            if 'ssp_light' in results:
+                vals_vector = results['ssp_light']['vals']
+                sigmas_vector = results['ssp_light']['sigmas']
+                print('\nSmall Signal Parameters:')
+                print('l (loop gain) = {:.3f} +/- {:.4f}'.format(
+                    vals_vector['l'], sigmas_vector['sigma_l']))
+                print('beta = {:.3f} +/- {:.4f}'.format(
+                    vals_vector['beta'], sigmas_vector['sigma_beta']))
+                print('gratio = {:.3f} +/- {:.4f}'.format(
+                    vals_vector['gratio'], sigmas_vector['sigma_gratio']))
+                print('tau0 = {:.3g} +/- {:.4g} ms'.format(
+                    vals_vector['tau0']*1e3, sigmas_vector['sigma_tau0']*1e3))
+                print('L = {:.3f} +/- {:.4f} nH'.format(
+                    vals_vector['L']*1e9, sigmas_vector['sigma_L']*1e9))
+                
+        
+
+
+
+                
+    def compare_with_ivsweep(self, channel, poles=3):
         """
         Create a dataframe to compare results with
         IV sweep
@@ -834,30 +937,32 @@ class DIDVAnalysis(FilterData):
             raise ValueError(f'ERROR:  channel {channel} not found!')
                  
 
-        didv_results = self.get_fit_result(channel, poles=3)
+        didv_results = self.get_fit_results(channel, poles=poles)
         ivsweep_results = self.get_ivsweep_results(channel)
 
         data = dict()
         
-        # bias params
-        param_list = ['r0','i0','p0']
-        norm_list = [1e3, 1e6, 1e15]
-        label_list = ['R0 [mOhms]','I0 [muAmps]','P0 [fWatts]']
-        label_inf_lgain_list = ['R0 Inf loop gain [mOhms]',
-                                'I0 Inf loop gain [muAmps]',
-                                'P0 Inf loop gain [fWatts]']
-
         
         if ('biasparams' in didv_results
             and didv_results['biasparams'] is not None):
 
+            # define parameter list
+            param_list = ['r0','i0','p0']
+            norm_list = [1e3, 1e6, 1e15]
+            label_list = ['R0 [mOhms]','I0 [muAmps]','P0 [fWatts]']
+            label_inf_lgain_list = ['R0 Inf loop gain [mOhms]',
+                                    'I0 Inf loop gain [muAmps]',
+                                    'P0 Inf loop gain [fWatts]']
+
+            # results
             results = didv_results['biasparams']
             results_infinite_lgain = None
             if 'biasparams_infinite_lgain' in didv_results:
                 results_infinite_lgain = (
                     didv_results['biasparams_infinite_lgain']
                 )
-                
+
+            # loop parameters
             for iparam, param in enumerate(param_list):
                 
                 if param not in ivsweep_results:
@@ -872,7 +977,7 @@ class DIDVAnalysis(FilterData):
                 # build string dIdV
                 val = results[param]
                 val_err = results[param + '_err']
-                val_str = '{:.3g} +/- {:.3g}'.format(
+                val_str = '{:.3g} +/- {:.4g}'.format(
                     val*norm, val_err*norm
                 )
 
@@ -880,7 +985,7 @@ class DIDVAnalysis(FilterData):
                 # build string IV 
                 iv_val = ivsweep_results[param]
                 iv_val_err = ivsweep_results[param + '_err']
-                iv_val_str = '{:.3g} +/- {:.3g}'.format(
+                iv_val_str = '{:.3g} +/- {:.4g}'.format(
                     iv_val*norm, iv_val_err*norm
                 )
                     
@@ -894,21 +999,103 @@ class DIDVAnalysis(FilterData):
                     # build string dIdV
                     val = results_infinite_lgain[param]
                     val_err = results_infinite_lgain[param + '_err']
-                    val_str = '{:.3g} +/- {:.3g}'.format(
+                    val_str = '{:.3g} +/- {:.4g}'.format(
                         val*norm, val_err*norm
                     )
 
                     # build string IV 
                     iv_val = ivsweep_results[param + '_infinite_lgain']
                     iv_val_err = ivsweep_results[param + '_err_infinite_lgain']
-                    iv_val_str = '{:.3g} +/- {:.3g}'.format(
+                    iv_val_str = '{:.3g} +/- {:.4g}'.format(
                         iv_val*norm, iv_val_err*norm
                     )
                     
                     data[label_infinite_lgain] = [val_str, iv_val_str]
 
-                    
+
+        # small signal parmaters
+        if ('ssp_light' in didv_results
+            and 'didv_fit_l' in ivsweep_results):
+            
+            # define parameter list
+            param_list = ['l','beta','gratio', 'L', 'tau0']
+            norm_list = [1, 1, 1, 1e9, 1e3]
+            label_list = ['l (loop gain)','beta', 'gratio',
+                          'L [nH]', 'tau0 [ms]']
+
+            
+            vals_vector = didv_results['ssp_light']['vals']
+            sigmas_vector = didv_results['ssp_light']['sigmas']
+
+
+            # loop parameters
+            for iparam, param in enumerate(param_list):
+
+                param_iv = 'didv_fit_' + param
                 
+                # normalization/label
+                norm = norm_list[iparam]
+                label = label_list[iparam]
+             
+                
+                # build string dIdV
+                val = vals_vector[param]
+                val_err = sigmas_vector['sigma_' + param]
+                val_str = '{:.3g} +/- {:.4g}'.format(
+                    val*norm, val_err*norm
+                )
+                
+                # build string IV 
+                iv_val = ivsweep_results[param_iv]
+                iv_val_err = ivsweep_results[param_iv + '_err']
+                iv_val_str = '{:.3g} +/- {:.4g}'.format(
+                    iv_val*norm, iv_val_err*norm
+                )
+
+                # store data
+                data[label] = [val_str, iv_val_str]
+
+        #  fall times
+        if ('falltimes' in didv_results
+            and 'didv_fit_tau+' in ivsweep_results):
+            
+            # define parameter list
+            param_list = ['tau+','tau-','tau3']
+            norm_list = [1e6, 1e6, 1e6]
+            label_list = ['tau+ [usec]', 'tau- [usec]', 'tau3 [usec]']
+
+
+            falltimes = didv_results['falltimes']      
+        
+
+            # loop parameters
+            for iparam, param in enumerate(param_list):
+
+                if (poles == 2 and iparam>1):
+                    break
+
+                
+                param_iv = 'didv_fit_' + param
+                
+                # normalization/label
+                norm = norm_list[iparam]
+                label = label_list[iparam]
+             
+                
+                # build string dIdV
+                val = falltimes[iparam]
+                val_str = '{:.3g}'.format(val*norm)
+                
+                
+                # build string IV 
+                iv_val = ivsweep_results[param_iv]
+                iv_val_str = '{:.3g}'.format(iv_val*norm)
+
+                # save
+                data[label] = [val_str, iv_val_str]
+
+                  
+                        
         df = None
         if data:
             df = pd.DataFrame.from_dict(data, orient='index', columns=['dIdV', 'IV Sweep'])
