@@ -61,6 +61,38 @@ class DIDVAnalysis(FilterData):
         else:
             raise ValueError(f'ERROR: No didv data available '
                              f'for channel "{channel}"!')
+
+    
+    def get_dpdi(self, channel, poles=3):
+        """
+        Get dpdi data and frequencies
+        """
+
+        
+        if channel not in self._didv_data.keys():
+            raise ValueError(f'ERROR: No didv data available '
+                             f'for channel "{channel}"!')
+        
+        list_of_fitted_poles = (
+            self._didv_data[channel]['didvobj'].get_list_fitted_poles()
+        )
+        
+        if poles not in list_of_fitted_poles:
+            raise ValueError(f'ERROR: No {poles}-poles fit found for '
+                             f'channel {channel}!')
+
+            
+        # check dpdi available
+        poles_str = str(poles) + 'poles'
+        if 'dpdi_' + poles_str not in self._didv_data[channel]:
+            raise ValueError(f'ERROR: No dpdi found for '
+                             'channel {channel}!')
+     
+        dpdi = self._didv_data[channel]['dpdi_' +  poles_str]
+        dpdi_freqs = self._didv_data[channel]['dpdi_freqs_' +  poles_str]
+
+        return dpdi_freqs, dpdi
+        
         
     def get_qetpy_object(self, channel):
         """
