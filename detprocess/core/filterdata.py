@@ -955,9 +955,9 @@ class FilterData:
                          label='Offset from didv')            
 
         # Some basic plot settings
-        plt.title(f'TES bias sweep {channel}')
-        plt.xlabel('TES bias [uA]')
-        plt.ylabel('Offset [uA]')
+        plt.title(f'TES bias sweep {channel}',fontweight='bold')
+        plt.xlabel('TES bias [uA]',fontweight='bold')
+        plt.ylabel('Offset [uA]', fontweight='bold')
         plt.legend(loc='best')
         plt.grid(True)
         plt.show()

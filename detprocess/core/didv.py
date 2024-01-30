@@ -7,6 +7,7 @@ import qetpy as qp
 from glob import glob
 import vaex as vx
 from pathlib import Path
+from scipy.signal import unit_impulse
 from detprocess.core.filterdata import FilterData
 
 
@@ -609,9 +610,12 @@ class DIDVAnalysis(FilterData):
                 
     def calc_energy_resolution(self, channel, psd,
                                poles=3, fs=None, template=None,
-                               collection_eff=1):
+                               collection_eff=1,
+                               lgc_power_template=False):
         """
-        Get energy resolution based using  calculated dpdi
+        Get energy resolution based using  calculated dpdi and input
+        psd and template (dirac delta power input if template is None)
+        Default is template in current. 
         """
 
         # check data availability
@@ -651,16 +655,15 @@ class DIDVAnalysis(FilterData):
 
         if template is None:
 
-            # time array
-            dt = 1/fs
-            time_array = np.arange(psd.shape[-1])*dt
-            pretrigger = psd.shape[-1]*dt/2
-            
-            # didv results
-            fit_result = self._didv_data[channel]['didvobj'].fitresult(poles)
-            template = qp.get_didv_template(time_array, pretrigger, fit_result)
-            
+            # dirac delta input power
+            nbins = psd.shape[-1]
+            pretrigger_index = nbins//2
+            template = unit_impulse(nbins, idx=pretrigger_index)
 
+        elif not lgc_power_template:
+            template = qp.convert_template_to_power(template,  dpdi=dpdi)
+
+            
         # calculate energy resolution
         resolution = qp.utils.energy_resolution(
             psd, template, dpdi, fs,

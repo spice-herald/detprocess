@@ -909,9 +909,9 @@ class IVSweepAnalysis(FilterData):
 
                   
             plt.plot(data['Rn %'], data['chi2'],  'bo')
-            plt.title(f'{channel} dIdV Fit chi2')
-            plt.xlabel('Rn %')
-            plt.ylabel('Chi2/Ndof')
+            plt.title(f'{channel} dIdV Fit chi2', fontweight='bold')
+            plt.xlabel('Rn %', fontweight='bold')
+            plt.ylabel('Chi2/Ndof', fontweight='bold')
             plt.grid(True)
             plt.show()
             
@@ -922,18 +922,18 @@ class IVSweepAnalysis(FilterData):
             plt.errorbar(data['Rn %'], data['l'], yerr=data['l_err'],
                          fmt='o', ecolor='red', capsize=5,
                          linestyle='-', color='blue')
-            plt.title(f'{channel} loop gain (l)')
-            plt.xlabel('Rn %')
-            plt.ylabel('loop gain (l)')
+            plt.title(f'{channel} loop gain (l)', fontweight='bold')
+            plt.xlabel('Rn %', fontweight='bold')
+            plt.ylabel('loop gain (l)', fontweight='bold')
             plt.grid(True)
             plt.show()
         
             plt.errorbar(data['Rn %'], data['beta'], yerr=data['beta_err'],
                          fmt='o', ecolor='red', capsize=5,
                          linestyle='-', color='blue')
-            plt.title(f'{channel} beta')
-            plt.xlabel('Rn %')
-            plt.ylabel('beta')
+            plt.title(f'{channel} beta', fontweight='bold')
+            plt.xlabel('Rn %', fontweight='bold')
+            plt.ylabel('beta', fontweight='bold')
             plt.grid(True)
             plt.show()
 
@@ -941,9 +941,9 @@ class IVSweepAnalysis(FilterData):
                          yerr=np.array(data['L_err'])*1e9,
                          fmt='o', ecolor='red', capsize=5,
                          linestyle='-', color='blue')
-            plt.title(f'{channel} Effective inductance L')
-            plt.xlabel('Rn %')
-            plt.ylabel('L [nH]')
+            plt.title(f'{channel} Effective inductance L', fontweight='bold')
+            plt.xlabel('Rn %', fontweight='bold')
+            plt.ylabel('L [nH]', fontweight='bold')
             plt.grid(True)
             plt.show()
 
@@ -951,18 +951,18 @@ class IVSweepAnalysis(FilterData):
                          yerr=np.array(data['tau0_err'])*1e3,
                          fmt='o', ecolor='red', capsize=5,
                          linestyle='-', color='blue')
-            plt.title(f'{channel} Tau0 ')
-            plt.xlabel('Rn %')
-            plt.ylabel('Tau0 [ms]')
+            plt.title(f'{channel} Tau0', fontweight='bold')
+            plt.xlabel('Rn %', fontweight='bold')
+            plt.ylabel('Tau0 [ms]', fontweight='bold')
             plt.grid(True)
             plt.show()
             
             plt.errorbar(data['Rn %'], data['gratio'], yerr=data['gratio_err'],
                          fmt='o', ecolor='red', capsize=5,
                          linestyle='-', color='blue')
-            plt.title(f'{channel} gratio')
-            plt.xlabel('Rn %')
-            plt.ylabel('gratio')
+            plt.title(f'{channel} gratio', fontweight='bold')
+            plt.xlabel('Rn %', fontweight='bold')
+            plt.ylabel('gratio', fontweight='bold')
             plt.grid(True)
             plt.show()
 
@@ -972,15 +972,16 @@ class IVSweepAnalysis(FilterData):
             for par in pars:
                 plt.plot(np.array(data['Rn %']),
                          np.array(data[par])*1e3,  'bo')
-                plt.title(f'{channel} {par}')
-                plt.xlabel('Rn %')
-                plt.ylabel(f'{par} [ms]')
+                plt.title(f'{channel} {par}', fontweight='bold')
+                plt.xlabel('Rn %', fontweight='bold')
+                plt.ylabel(f'{par} [ms]', fontweight='bold')
                 plt.grid(True)
                 plt.show()
 
 
     def calc_energy_resolution(self, channels=None, template=None, template_name=None,
-                               collection_eff=1, lgc_plot=False, tag='default'):
+                               collection_eff=1, lgc_power_template=False,
+                               lgc_plot=False, tag='default'):
         """
         Calculate resolution
         """
@@ -1059,7 +1060,8 @@ class IVSweepAnalysis(FilterData):
                 if template is not None:
                     resolution_template = obj.calc_energy_resolution(
                         chan, psd, fs=fs, template=template,
-                        collection_eff=collection_eff)
+                        collection_eff=collection_eff,
+                        lgc_power_template=lgc_power_template)
 
                 # store
                 resolution_data['tes_bias_uA'].append(bias)
@@ -1097,10 +1099,11 @@ class IVSweepAnalysis(FilterData):
                              label=label_ext)
 
                 # axis label
-                ax1.set_xlabel('% Rn')
-                ax1.set_ylabel('Energy Resolution [meV]')
+                ax1.set_xlabel('% Rn', fontweight='bold')
+                ax1.set_ylabel('Energy Resolution [meV]', fontweight='bold')
                 ax1.legend()
-                ax1.set_title(f'{chan} Energy resolution ($\epsilon_p$ = {collection_eff})')
+                ax1.set_title(f'{chan} Energy resolution ($\epsilon_p$ = {collection_eff})',
+                              fontweight='bold')
 
                 # add tes bias
                 #ax2 = ax1.twiny()
