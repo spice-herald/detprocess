@@ -8,7 +8,7 @@ from numpy.fft import fftfreq, rfftfreq
 
 class FilterData:
     """
-    Class to manage filter data 
+    Class to manage Template, noise psd,  and IV/dIdV data 
     """
 
     def __init__(self, verbose=True):
@@ -27,7 +27,6 @@ class FilterData:
       
         # filter file data dictionary
         self._filter_data = dict()
-
       
 
     @property
@@ -60,7 +59,10 @@ class FilterData:
 
         # Let's first loop channel and get tags/display msg
         filter_display = dict()
-        parameter_list = ['psd_fold', 'psd', 'template']
+        parameter_list = ['psd_fold', 'psd', 'template',
+                          'ivsweep_data',
+                          'ivsweep_results_noise',
+                          'ivsweep_results_didv']
 
         for chan, chan_dict in self._filter_data.items():
             
@@ -94,6 +96,18 @@ class FilterData:
                             msg += str(type(val)) + ' '
                         msg += str(val.shape)
 
+                        if (base_par == 'ivsweep_data'
+                            and  isinstance(val, pd.DataFrame)
+                            and 'state' in val.columns):
+                            nb_norm = len(np.where(val['state']=='normal')[0])
+                            if nb_norm == 0:
+                                nb_norm = 'Unknown'
+                            nb_sc = len(np.where(val['state']=='sc')[0])
+                            if nb_sc == 0:
+                                nb_sc = 'Unknown'
+                            msg += '\n       Nb SC points: ' + str(nb_sc)
+                            msg += '\n       Nb Normal points: ' + str(nb_norm)
+                                                    
                         filter_display[chan][tag].append(msg)
                         break
                 
@@ -147,12 +161,7 @@ class FilterData:
                         if tag in key:
                             self._filter_data[chan].pop(key)
             
-                    
-                    
-            
-
-                        
-                
+                       
     def load_hdf5(self, file_name, overwrite=True):
         """
         Load filter data from file. Key may be overwritten if 
@@ -179,9 +188,7 @@ class FilterData:
         if self._verbose:
             print('INFO: Loading filter data from file '
                   + file_name)
-
-
-        
+            
         # update
         if overwrite or not self._filter_data:
             self._filter_data.update(data)
@@ -217,19 +224,11 @@ class FilterData:
         None
         """
 
-        # check file name
-        if 'filter' not in file_name:
-            raise ValueError(
-                'ERROR: file name required to include "filter", '
-                'for example, "xxxxxx_yyyy_filter.hdf5"')
-        
-        
         if self._verbose:
-            print('INFO: Saving noise data to file '
+            print('INFO: Saving filter/TES data to file '
                   + file_name)
             if overwrite:
                 print('INFO: channel data with same tag may be overwritten')
-
         
         filter_io = h5io.FilterH5IO(file_name)
         filter_io.save_fromdict(self._filter_data,
@@ -241,7 +240,7 @@ class FilterData:
         
     def get_psd(self, channel, tag='default', fold=False):
         """
-        Get PSD for a specific channel
+        Get PSD for a specific channel in unit of  Amps^2/Hz
 
         Parameters:
         ----------
@@ -259,7 +258,7 @@ class FilterData:
         ------
 
         psd : ndarray, 
-            psd in units of amps
+            psd [Amps^2/Hz]
         f  : ndarray
             psd frequencies
 
@@ -565,9 +564,243 @@ class FilterData:
             self._filter_data[chan][psd_name + '_metadata'] = metadata
             
 
+    def set_ivsweep_data(self, 
+                         channel,
+                         dataframe,
+                         metadata=None,
+                         tag='default'):
+        """
+        Set IV-dIdV Sweep processed dataframe
+        """
 
+
+        # check dataframe
+        if not isinstance(dataframe, pd.DataFrame):
+            raise ValueError(
+                'ERROR: Input is not a pandas Datafame!')
+                
+        # create channel dictionary
+        if channel not in self._filter_data.keys():
+            self._filter_data[channel] = dict()
+        
+        # data 
+        data_tag = 'ivsweep_data_' + tag
+        self._filter_data[channel][data_tag] = dataframe
+
+        # metadata
+        if metadata is not None:
+            metadata.update({'channel': channel})
+        else:
+            metadata = {'channel': channel}
+        self._filter_data[channel][data_tag + '_metadata'] = metadata
+
+        
+    def set_ivsweep_data_from_dict(self, data_dict,
+                                   tag='default'):
+        """
+        Set IV-dIdV sweep data from dictionary
+        (key=channel name, value=datframe)
+        """
+
+        for chan, df in data_dict.items():
+            self.set_ivsweep_data(chan,
+                                  df,
+                                  tag=tag)
+            
+    def get_ivsweep_data(self, 
+                         channel,
+                         tag='default'):
+        """
+        Get IV-dIdV Sweep processed dataframe
+        """
+
+        # check channels
+        if channel not in self._filter_data.keys():
+            raise ValueError(
+                f'ERROR: no channel {channel} available! '
+                'Did you load from file first?')
+        
+        data_tag = 'ivsweep_data_' + tag
+        if data_tag not in self._filter_data[channel].keys():
+            raise ValueError(
+                f'ERROR: no sweep data for channel {channel} available! '
+                'Did you load from file first?')
+
+        return self._filter_data[channel][data_tag]
+        
     
-    def plot_template(self, channels, tag='default'):
+    def set_ivsweep_results(self, 
+                           channel,
+                           pd_series,
+                           iv_type,
+                           metadata=None,
+                           tag='default'):
+        """
+        Set IV-dIdV Sweep analysis results
+        (independent of bias point)
+        """
+
+        # check input
+        if not isinstance(pd_series, pd.Series):
+            raise ValueError(
+                'ERROR: Input is not a pandas Series!')
+        
+        # create channel dictionary
+        if channel not in self._filter_data.keys():
+            self._filter_data[channel] = dict()
+        
+        # data 
+        data_tag = 'ivsweep_results_' + iv_type  + '_' + tag
+        self._filter_data[channel][data_tag] = pd_series
+
+        # metadata
+        if metadata is not None:
+            metadata.update({'channel': channel})
+        else:
+            metadata = {'channel': channel}
+        self._filter_data[channel][data_tag + '_metadata'] = metadata
+
+        
+    def set_ivsweep_results_from_dict(self, data_dict,
+                                     iv_type,
+                                     tag='default'):
+        """
+        Set IV-dIdV sweep result from dictionary
+        (key=channel name, value=series)
+        """
+
+        for chan, df in data_dict.items():
+            self.set_ivsweep_results(chan,
+                                    df,
+                                    iv_type,
+                                    tag=tag)
+            
+    def get_ivsweep_results(self, 
+                            channel,
+                            iv_type='noise',
+                            include_bias_parameters=False,
+                            tes_bias=None,
+                            lgc_return_series=False,
+                            tag='default'):
+        """
+        Get IV-dIdV Sweep result
+        """
+        
+        # check channels
+        if channel not in self._filter_data.keys():
+            raise ValueError(
+                f'ERROR: no channel {channel} available! '
+                'Did you load from file first?')
+
+        # check argument
+        if (include_bias_parameters
+            and tes_bias is None):
+            raise ValueError(
+                f'ERROR: "tes_bias" needs to be provided '
+                f'when "include_bias_parameters" = True!')
+        
+        # result data tag
+        data_tag = 'ivsweep_results_' + iv_type  + '_' + tag
+        if data_tag not in self._filter_data[channel].keys():
+            iv_type_new = str()
+            if iv_type == 'noise':
+                iv_type_new = 'didv'
+            else:
+                iv_type_new == 'noise'
+            data_tag = 'ivsweep_results_' + iv_type_new  + '_' + tag
+            is_avaible = data_tag in self._filter_data[channel].keys()
+
+            if is_avaible:
+                raise ValueError(
+                    f'ERROR: No sweep results for channel {channel} available '
+                    f'using data type "{iv_type}"! Change "iv_type'
+                    f'argument to {iv_type_new}')
+            else:
+                raise ValueError(
+                    f'ERROR: No sweep results for channel {channel} available. Did '
+                    'you run the sweep analysis?')
+
+        results = self._filter_data[channel][data_tag].to_dict()
+      
+        # include bias parameters
+        if include_bias_parameters:
+
+            # get dataframe
+            df = self.get_ivsweep_data(channel, tag=tag)
+            absolute_difference = abs(df['tes_bias'] - tes_bias)
+            closest_index = absolute_difference.idxmin()
+            params = df.loc[closest_index].to_dict()
+            
+            # add parameters
+            results['tes_bias'] = params['tes_bias']
+            results['ibias'] = params['ibias_true_' + iv_type]
+            results['ibias_err'] = params['ibias_true_err_' + iv_type]
+            results['i0'] = params['i0_' + iv_type]
+            results['i0_err'] = params['i0_err_' + iv_type]
+            results['r0'] = params['r0_' + iv_type]
+            results['r0_err'] = params['r0_err_' + iv_type]
+            results['p0'] = params['p0_' + iv_type]
+            results['p0_err'] = params['p0_err_' + iv_type]
+
+            # infinite loop gain
+            if 'didv_3poles_r0_infinite_lgain' in params:
+
+                results['i0_infinite_lgain'] = (
+                    params['didv_3poles_i0_infinite_lgain']
+                )
+                results['i0_err_infinite_lgain'] = (
+                    params['didv_3poles_i0_err_infinite_lgain']
+                )
+                
+                results['r0_infinite_lgain'] = (
+                    params['didv_3poles_r0_infinite_lgain']
+                )
+                results['r0_err_infinite_lgain'] = (
+                     params['didv_3poles_r0_err_infinite_lgain']
+                )
+                
+                results['p0_infinite_lgain'] = (
+                    params['didv_3poles_p0_infinite_lgain']
+                )
+                results['p0_err_infinite_lgain'] = (
+                    params['didv_3poles_p0_err_infinite_lgain']
+                )
+                
+                
+            # ssp
+            if 'didv_3poles_chi2' in params:
+                results['didv_fit_chi2'] = params['didv_3poles_chi2']
+                results['didv_fit_tau+'] = params['didv_3poles_tau+']
+                results['didv_fit_tau-'] = params['didv_3poles_tau-']
+                results['didv_fit_tau3'] = params['didv_3poles_tau3']
+                results['didv_fit_l'] = params['didv_3poles_l']
+                results['didv_fit_l_err'] = params['didv_3poles_l_err']
+                results['didv_fit_beta'] = params['didv_3poles_beta']
+                results['didv_fit_beta_err'] = params['didv_3poles_beta_err']
+                results['didv_fit_gratio'] = params['didv_3poles_gratio']
+                results['didv_fit_gratio_err'] = params['didv_3poles_gratio_err']
+                results['didv_fit_tau0'] = params['didv_3poles_tau0']
+                results['didv_fit_tau0_err'] = params['didv_3poles_tau0_err']
+                results['didv_fit_L'] = params['didv_3poles_L']
+                results['didv_fit_L_err'] = params['didv_3poles_L_err']
+          
+            if 'resolution_dirac' in params:
+                results['resolution_dirac'] =  params['resolution_dirac']
+                results['resolution_collection_efficiency'] = (
+                    params['resolution_collection_efficiency']
+                )
+            if 'resolution_template' in params:
+                results['resolution_template'] =  params['resolution_template']
+                
+        if lgc_return_series:
+            results = pd.Series(results)
+
+        return results
+        
+    
+    def plot_template(self, channels,
+                      xmin=None, xmax=None,
+                      tag='default'):
         """
         Plot template for specified channel(s)
 
@@ -609,7 +842,10 @@ class FilterData:
         ax.grid(which='major')
         ax.set_title('Template',fontweight='bold')
         ax.set_xlabel('Time [msec]',fontweight='bold')
-     
+
+        if (xmin is not None or xmax is not None):
+            ax.set_xlim(xmin=xmin, xmax=xmax)
+        
 
 
     def plot_psd(self, channels, tag='default', fold=True, unit='pA'):
@@ -655,8 +891,11 @@ class FilterData:
 
             if psd is None:
                 continue
-            
+
+            # convert to A/rtHz
             psd = psd**0.5
+
+            
             if unit=='pA':
                 psd *= 1e12
                 
@@ -675,4 +914,51 @@ class FilterData:
             ax.set_ylabel('PSD [pA/rtHz]',fontweight='bold')
         else:
             ax.set_ylabel('PSD [A/rtHz]',fontweight='bold')
+        
+
+
+
+    def plot_ivsweep_offset(self, channel, tag='default'):
+        """
+        Plot offset vs tes_bias with errors from IV and if available
+        dIdV offset
+        """
+
+
+        # get data frame
+        df =  self.get_ivsweep_data(channel=channel,
+                                    tag=tag)
+
+
+        bias = df['tes_bias_uA'].values
+        offset_noise = None
+        offset_noise_err = None
+        offset_didv = None
+        offset_didv_err = None
+        if 'offset_noise' in df.columns:
+            offset_noise = df['offset_noise'].values*1e6
+            offset_noise_err = df['offset_err_noise'].values*1e6
+        if 'offset_didv' in df.columns:
+            offset_didv = df['offset_didv'].values*1e6
+            offset_didv_err = df['offset_err_didv'].values*1e6
+
+        # Plotting the data with error bars
+        if offset_noise is not None:
+            plt.errorbar(bias, offset_noise,
+                         yerr=offset_noise_err,
+                         fmt='o', color='b',capsize=5,
+                         label='Offset from noise')
+        if offset_didv is not None:
+            plt.errorbar(bias, offset_didv,
+                         yerr=offset_didv_err,
+                         fmt='+', color='r', capsize=5,
+                         label='Offset from didv')            
+
+        # Some basic plot settings
+        plt.title(f'TES bias sweep {channel}',fontweight='bold')
+        plt.xlabel('TES bias [uA]',fontweight='bold')
+        plt.ylabel('Offset [uA]', fontweight='bold')
+        plt.legend(loc='best')
+        plt.grid(True)
+        plt.show()
         

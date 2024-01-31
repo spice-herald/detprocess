@@ -315,7 +315,16 @@ class Noise(FilterData):
             self._filter_data[chan][psd_name + '_metadata'] = traces_metadata
             self._filter_data[chan][psd_fold_name + '_metadata'] = traces_metadata
 
-                    
+
+    def get_sample_rate(self):
+        """
+        Get sample rate in Hz ("calc_psd" needs to be 
+        called before)
+        """
+
+        return self._fs
+
+    
 
     def _get_traces(self, channels, 
                     trace_length_msec=None,

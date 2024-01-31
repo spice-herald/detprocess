@@ -223,4 +223,98 @@ class Template(FilterData):
             
 
                         
+    def create_template_sum_twopoles(self, channels,
+                                     amplitudes,
+                                     rise_times,
+                                     fall_times,
+                                     sample_rate=None,
+                                     trace_length_msec=None,
+                                     trace_length_samples=None,
+                                     pretrigger_length_msec=None,
+                                     pretrigger_length_samples=None,
+                                     tag='default'):
+        """
+        Create sum two-poles functional forms. The number of 
+        two-poles is the lenght of amplitudes
+
+        
+        2-poles functions:
+        A*(exp(-t/\tau_f1)) - A*(exp(-t/\tau_r))
+
+        """
+
+        # check arguments
+        if sample_rate is None:
+            raise ValueError('ERROR: "sample_rate" argument required')
+                
+        if (trace_length_msec is None
+            and trace_length_samples is None):
+            raise ValueError(
+                'ERROR: Trace length required ("trace_length_msec" or '
+                '"trace_length_samples")!')
+
+        if (pretrigger_length_msec is None
+            and pretrigger_length_samples is None):
+            raise ValueError(
+                'ERROR: Pretrigger length required ("pretrigger_length_msec"'
+                ' or "pretrigger_length_samples")!')
+
+                
+        # define time axis
+        if trace_length_samples is None:
+            trace_length_samples = int(
+                round(1e-3*trace_length_msec*sample_rate)
+            )
     
+        # define time axis
+        if pretrigger_length_msec is None:
+            pretrigger_length_msec = (
+                1e3*pretrigger_length_samples/sample_rate
+            )
+        else:
+            pretrigger_length_samples = int(
+                round(1e-3*pretrigger_length_msec*sample_rate)
+            )
+            
+        # time array
+        dt = 1/sample_rate
+        t0 = pretrigger_length_msec*1e-3
+        time_array =  np.asarray(list(range(trace_length_samples)))*dt
+         
+
+        template =  qp.utils.make_template_sum_twopoles(time_array,
+                                                        amplitudes, 
+                                                        rise_times,
+                                                        fall_times,
+                                                        normalize=True)
+                  
+        # parameter name
+        template_name = 'template' + '_' + tag
+
+        # metadata
+        metadata = {'sample_rate': sample_rate,
+                    'nb_samples': trace_length_samples,
+                    'nb_pretrigger_samples': pretrigger_length_samples,
+                    'nb_sum_twopoles': len(amplitudes)}
+
+      
+        # loop channels
+        if isinstance(channels, str):
+            channels = [channels]
+        for chan in channels:
+
+            # add channel
+            if chan not in self._filter_data.keys():
+                self._filter_data[chan] = dict()
+                
+            self._filter_data[chan][template_name] = (
+                pd.Series(template, time_array))
+            
+            # add channel nanme metadata
+            metadata['channel'] = chan
+            self._filter_data[chan][template_name + '_metadata'] = metadata
+            
+
+                        
+    
+

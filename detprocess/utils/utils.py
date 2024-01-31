@@ -1,7 +1,12 @@
 import os
 import sys
+import numpy as np
+from scipy.optimize import curve_fit
 
-__all__ = ['split_channel_name', 'extract_window_indices']
+
+
+__all__ = ['split_channel_name', 'extract_window_indices',
+           'find_linear_segment']
 
 
 
@@ -182,3 +187,58 @@ def extract_window_indices(nb_samples,
         
 
     return min_index, max_index
+
+
+def find_linear_segment(x, y, tolerance=0.05):
+    """
+    Find linear segment within tolerance using first 3 points
+    fit (distance based on standardized X and Y using 
+    first 3 points mean/std). 
+    """
+    # check length
+    if len(x)<3:
+        print('WARNING: Not enough points to check linearity!')
+        return []
+
+    if len(x) != len(y):
+        raise ValueError('ERROR: X and Y arrays should have same length!')
+    
+    # standardize data using mean/std first 3 points
+    xmean = np.mean(x[:3])
+    xstd = np.std(x[:3])
+    x = (x - xmean) / xstd
+    
+    ymean = np.mean(y[:3])
+    ystd = np.std(y[:3])
+    y = (y - ymean) / ystd
+    
+    # Use only the first three points to fit a linear
+    # regression line
+    slope, intercept = np.polyfit(x[:3], y[:3], 1)
+    
+    # Calculate fitted values for all points
+    y_fit = slope * x + intercept
+    
+    # Compute deviations for all points
+    deviations = np.abs(y - y_fit)
+
+
+    # get linear index list
+    # the deviation for the first 3 points used for the fit
+    # should be very small. Will use tolerance/10
+    index_list = list()
+    nb_points = len(deviations)
+    for idx in range(nb_points):
+        deviation = deviations[idx]
+        if (idx<3 and deviation>tolerance/10):
+            return []
+        if deviation>tolerance:
+            if nb_points>idx+1:
+                if deviations[idx+1]>tolerance:
+                    break
+            else:
+                break    
+        else:
+            index_list.append(idx)
+        
+    return index_list

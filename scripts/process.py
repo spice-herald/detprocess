@@ -1,7 +1,7 @@
 import warnings
 import argparse
 from pprint import pprint
-from detprocess import TriggerProcessing, FeatureProcessing, Randoms
+from detprocess import TriggerProcessing, IVSweepProcessing, FeatureProcessing, Randoms
 import os
 from pathlib import Path
 from pytesdaq.utils import arg_utils
@@ -24,10 +24,12 @@ if __name__ == "__main__":
     parser.add_argument('--enable-rand', '--enable-randoms', '--enable_rand',
                         dest='enable_rand',
                         action='store_true', help='Acquire randoms')
-  #  parser.add_argument('--calc-filter', '--calc_filter',
-  #                      dest='calc_filter',
-  #                      action='store_true',
-  #                      help='Calculate filter informations (PSD and template)')
+    #  parser.add_argument('--calc-filter', '--calc_filter',
+    #                      dest='calc_filter',
+    #                      action='store_true',
+    #                      help='Calculate filter informations (PSD and template)')
+    parser.add_argument('--enable-ivsweep', dest='enable_ivsweep',
+                        action='store_true', help='Process IV sweep data')
     parser.add_argument('--enable-trig', '--enable-triggers', '--enable_trig',
                         dest='enable_trig',
                         action='store_true', help='Acquire randoms')
@@ -70,12 +72,15 @@ if __name__ == "__main__":
     # ---------------------------
     # Processing type(s)
     # ---------------------------
+    process_ivsweep = False
     acquire_rand = False
     acquire_trig = False
     calc_filter = False
     process_feature = False
 
-    if args.enable_rand:
+    if args.enable_ivsweep:
+        process_ivsweep = True
+    if (args.enable_rand or args.random_rate or args.nrandoms):
         acquire_rand = True
     if args.enable_trig:
         acquire_trig = True
@@ -83,15 +88,24 @@ if __name__ == "__main__":
     #    calc_filter = True
     if args.enable_feature:
         process_feature = True
-    if not (acquire_rand
+    if not (process_ivsweep
+            or acquire_rand
             or acquire_trig
             or calc_filter
             or process_feature):
         print('An action is required!')
-        print('("enable_rand", "calc_filter", "enable_trig",'
+        print('("enable_ivsweep", "enable_rand", "calc_filter", "enable_trig",'
               + ' and/or "enable_feature)')
         exit()
 
+    if (process_ivsweep and
+        (acquire_rand  or acquire_trig or  process_feature)):
+
+        print('ERROR: IV sweep processing can only be done without other '
+              'type of processing (trigger or feature processing)')
+        exit()
+
+        
 
     restricted = False
     if args.restricted:
@@ -159,7 +173,7 @@ if __name__ == "__main__":
  
         
     # ------------------
-    # 1. Acquire randoms
+    # Acquire randoms
     # ------------------
 
     dataframe_group_name = None
@@ -205,14 +219,14 @@ if __name__ == "__main__":
         dataframe_group_name = str(Path(dataframe_path).name)
              
     # ------------------
-    # 2. Calc Filter
+    # Calc Filter
     # ------------------
     if calc_filter:
         print('CALC FILTER NOT AVAILABLE')
         
         
     # ------------------
-    # 3. Acquire trigger
+    # Acquire trigger
     # ------------------
     
     if acquire_trig:
@@ -246,7 +260,7 @@ if __name__ == "__main__":
 
         
     # ------------------
-    # 4. Process feature
+    # Process feature
     # ------------------
      
     if process_feature:
@@ -271,4 +285,26 @@ if __name__ == "__main__":
                        save_path=save_path)
 
 
+
+    # ------------------
+    # IV - dIdV sweep
+    # processing
+    # ------------------
+
+    if process_ivsweep:
+
+
+        print('\n\n================================')
+        print('IV/dIdV Sweep Processing')
+        print('================================')
+        print(str(datetime.now()))
+        
+        myproc = IVSweepProcessing(args.input_group_path)
+        df = myproc.process(ncores=ncores, lgc_save=True, save_path=save_path)
+
+        
+
+
+
+    # done
     print('Processing done! ' + str(datetime.now()))
