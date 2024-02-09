@@ -59,18 +59,34 @@ class FilterData:
 
         # Let's first loop channel and get tags/display msg
         filter_display = dict()
-        parameter_list = ['psd_fold', 'psd', 'template',
-                          'ivsweep_data',
-                          'ivsweep_results_noise',
-                          'ivsweep_results_didv']
-
+        parameter_list = [
+            'psd_fold', 'psd', 'template',
+            'dpdi', 'dpdi_fold',
+            'ivsweep_data',
+            'ivsweep_results_noise',
+            'ivsweep_results_didv',
+            'didv_results_2poles_fit',
+            'didv_results_2poles_params',
+            'didv_results_2poles_errors',
+            'didv_results_2poles_biasparams',
+            'didv_results_2poles_biasparams_infinite_lgain',
+            'didv_results_2poles_smallsignalparams',
+            'didv_results_3poles_fit',
+            'didv_results_3poles_params',
+            'didv_results_3poles_errors',
+            'didv_results_3poles_biasparams',
+            'didv_results_2poles_biasparams_infinite_lgain',
+            'didv_results_3poles_smallsignalparams',
+            'didv_results_3poles_ssp_light'
+        ]
+            
         for chan, chan_dict in self._filter_data.items():
             
             if chan not in  filter_display.keys():
                 filter_display[chan] = dict()
                 
             for par_name, val in chan_dict.items():
-
+                
                 # check if metadata
                 if 'metadata' in par_name:
                     continue
@@ -78,9 +94,14 @@ class FilterData:
                 for base_par in parameter_list:
                     
                     if base_par in par_name:
+                        
+                        # tag
                         tag = par_name.replace(base_par, '')
-                        if tag and tag[0] == '_':
-                            tag  = tag[1:]
+                        if 'infinite_lgain' in tag:
+                            continue
+                        if tag:
+                            if tag[0] == '_':
+                                tag = tag[1:]
                         else:
                             tag = 'default'
                         
@@ -303,6 +324,7 @@ class FilterData:
     
         psd_series = self._filter_data[channel][psd_name]
         freq = psd_series.index
+        freq = freq.to_numpy()
         val = psd_series.values
 
         return val, freq
@@ -366,11 +388,84 @@ class FilterData:
 
         template_series = self._filter_data[channel][template_name]
         time = template_series.index
+        time = time.to_numpy()
         val = template_series.values
 
         return val, time
 
 
+
+    def get_dpdi(self, channel, tag='default', fold=False):
+        """
+        Get dpdi for a specific channel in units of Volts
+
+        Parameters:
+        ----------
+
+        channel :  str 
+           channel name
+        
+        tag : str, optional
+            dpdi tag, default: No tag
+
+        fold : boolean, option
+            if True, return folded dpdi
+
+        Return
+        ------
+        
+        f  : ndarray
+            dpdi frequencies
+
+        dpdi : ndarray, 
+            dpdi [Volts]
+    
+        """
+        
+        # check channel
+        if (channel not in self._filter_data.keys()):
+            msg = ('ERROR: Channel "'
+                   + channel + '" not available!')
+            
+            if self._filter_data.keys():
+                msg += ' List of channels in filter file:'
+                msg += str(list(self._filter_data.keys()))
+                
+            raise ValueError(msg)
+
+        
+        # parameter name
+        dpdi_name = 'dpdi' + '_' + tag
+        if fold:
+            dpdi_name = 'dpdi_fold' + '_' + tag
+
+            
+        # back compatibility
+        if (tag=='default'
+            and dpdi_name not in self._filter_data[channel].keys()):
+            dpdi_name = 'dpdi'
+            if fold:
+                dpdi_name = 'dpdi_fold'
+                
+
+        # check available tag
+        if dpdi_name not in self._filter_data[channel].keys():
+            msg = 'ERROR: Parameter not found!'            
+            if  self._filter_data[channel].keys():
+                msg += ('List of parameters for channel '
+                        + channel + ':')
+                msg += str(list(self._filter_data[channel].keys()))
+                
+            raise ValueError(msg)
+            
+    
+        dpdi_series = self._filter_data[channel][dpdi_name]
+        freq = dpdi_series.index
+        freq = freq.to_numpy()
+        val = dpdi_series.values
+
+        return freq, val
+        
 
     def set_template(self, channels, array,
                      sample_rate=None,
@@ -530,7 +625,7 @@ class FilterData:
             chan = channels[ichan]
 
             # psd
-            psd = array[ichan,:]
+            psd =  np.squeeze(array[ichan,:])
             freqs = None
             if fold:
                 freqs = rfftfreq(len(psd), d=1.0/sample_rate)
@@ -562,8 +657,93 @@ class FilterData:
             # add channel nanme metadata
             metadata['channel'] = chan
             self._filter_data[chan][psd_name + '_metadata'] = metadata
-            
 
+
+
+            
+    def set_dpdi(self, channels,
+                 dpdi, dpdi_freqs,
+                 sample_rate=None,
+                 didv_fit_poles=None,
+                 metadata=None,
+                 tag='default'):
+        """
+        set dpdi array
+        """
+        
+        #  check array type/dim
+        if isinstance(dpdi, list):
+            dpdi = np.array(dpdi)
+        elif not isinstance(dpdi, np.ndarray):
+            raise ValueError('ERROR: Expecting numpy array!')
+        if dpdi.ndim == 1:
+            dpdi = dpdi[np.newaxis, :]
+
+
+        #  check array type/dim
+        if isinstance(dpdi_freqs, list):
+            dpdi_freqs = np.array(dpdi_freqs)
+        elif not isinstance(dpdi_freqs, np.ndarray):
+            raise ValueError('ERROR: Expecting numpy array!')
+        if dpdi_freqs.ndim == 1:
+            dpdi_freqs = dpdi_freqs[np.newaxis, :]
+           
+
+        fold = not np.any(dpdi_freqs<0)
+
+        # number of channels
+        if isinstance(channels, str):
+            channels = [channels]
+        nb_channels = len(channels)
+
+        # check array shape
+        if (dpdi.shape[0] != nb_channels):
+            raise ValueError(
+                'ERROR: Array shape is not consistent with '
+                'number of channels')
+        
+        # sample rate 
+        if sample_rate is None:
+            sample_rate = np.max(np.abs(dpdi_freqs))*2
+
+             
+        # parameter name
+        dpdi_name = 'dpdi' + '_' + tag
+        if fold:
+            dpdi_name = 'dpdi_fold' + '_' + tag
+         
+            
+        # metadata
+        if metadata is None:
+            metadata = dict()
+        metadata['sample_rate'] =  sample_rate
+        metadata['nb_samples'] = dpdi.shape[-1]
+        if  didv_fit_poles is not None:
+            metadata['didv_fit_poles'] = didv_fit_poles
+        
+        # loop channels and store 
+        for ichan in range(nb_channels):
+
+            # channel name
+            chan = channels[ichan]
+
+            # psd
+            dpdi_chan = np.squeeze(dpdi[ichan,:])
+            dpdi_freqs_chan = np.squeeze(dpdi_freqs[ichan,:])
+            
+            # add channel if needed
+            if chan not in self._filter_data.keys():
+                self._filter_data[chan] = dict()
+
+            self._filter_data[chan][dpdi_name] = (
+                pd.Series(dpdi_chan, dpdi_freqs_chan)
+            )
+            
+            # add channel name metadata
+            metadata['channel'] = chan
+            self._filter_data[chan][dpdi_name + '_metadata'] = metadata
+
+            
     def set_ivsweep_data(self, 
                          channel,
                          dataframe,
@@ -674,7 +854,9 @@ class FilterData:
                                     df,
                                     iv_type,
                                     tag=tag)
-            
+
+
+
     def get_ivsweep_results(self, 
                             channel,
                             iv_type='noise',
@@ -796,6 +978,126 @@ class FilterData:
             results = pd.Series(results)
 
         return results
+
+
+
+    def set_didv_results(self, 
+                         channel,
+                         results,
+                         poles,
+                         metadata=None,
+                         tag='default'):
+        """
+        Set results from dIdV fit
+        """
+
+        # check input
+        if not isinstance(results, dict):
+            raise ValueError(
+                'ERROR: "results" argument should be a dictionary!')
+        
+        if not isinstance(poles, int):
+            raise ValueError(
+                'ERROR: "poles" argument should be an interger!')
+        
+        # create channel dictionary
+        if channel not in self._filter_data.keys():
+            self._filter_data[channel] = dict()
+
+
+        # base name, poles
+        base_name = 'didv_results_' + str(poles) + 'poles'
+        
+        # sub-dictionaries
+        subdict_list = ['biasparams', 'biasparams_infinite_lgain',
+                        'errors','params', 'smallsignalparams',
+                        'ssp_light']
+        
+        # fit results
+        par_name_fit =  base_name + '_fit_' + tag
+        fit_data = dict()
+        for par_name, par_val  in results.items():
+            if not isinstance(par_val, dict):
+                fit_data[par_name] = par_val
+
+        if fit_data:
+            pd_series  = pd.Series(fit_data)
+            data_name =  base_name + '_fit_' + tag
+            self._filter_data[channel][data_name] = pd_series
+
+        for keyname in subdict_list:
+
+            if (keyname not in results.keys() or
+                not isinstance(results[keyname], dict)):
+                continue
+            
+            data_dict = results[keyname]
+            if (keyname == 'ssp_light'
+                and 'vals' in results['ssp_light'].keys()):
+                data_dict = dict()
+                data_dict['cov'] = results['ssp_light']['cov']
+                data_dict.update(results['ssp_light']['vals'])
+                data_dict.update(results['ssp_light']['sigmas'])
+                
+            pd_series  = pd.Series(data_dict)
+            data_name =  base_name + '_' + keyname + '_' + tag
+            self._filter_data[channel][data_name] = pd_series
+            
+        # metadata
+        if metadata is not None:
+            metadata.update({'channel': channel})
+        else:
+            metadata = {'channel': channel}
+            
+        self._filter_data[channel][base_name + '_metadata'] = metadata
+
+
+        
+    def get_didv_results(self, 
+                         channel,
+                         poles,
+                         tag='default'):
+        """
+        Get dIdV fit results
+        """
+        
+        # check channels
+        if channel not in self._filter_data.keys():
+            raise ValueError(
+                f'ERROR: no channel {channel} available! '
+            )
+
+        output_data = dict()
+        
+        # base name 
+        base_name = 'didv_results_' + str(poles) + 'poles'
+        
+        # fit
+        par_name =  base_name + '_fit_' + tag
+        if par_name not in self._filter_data[channel].keys():
+            raise ValueError(f'ERROR: No dIdV {poles}-poles fit results '
+                             f'for channel {channel}!')
+
+        output_data.update(self._filter_data[channel][par_name].to_dict())
+
+        # other par list
+        par_list = ['biasparams', 'biasparams_infinite_lgain',
+                    'errors','params', 'smallsignalparams',
+                    'ssp_light']
+
+        for par in par_list:
+            par_name =   base_name + '_' + par + '_' + tag
+            if par_name in self._filter_data[channel].keys():
+                output_data[par] = self._filter_data[channel][par_name].to_dict()
+                
+        # metadata
+        par_name = base_name + '_metadata'
+        if par_name in self._filter_data[channel].keys():
+            output_data['metadata'] = self._filter_data[channel][par_name].to_dict()
+            
+        return  output_data
+
+
         
     
     def plot_template(self, channels,

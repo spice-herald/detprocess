@@ -8,7 +8,10 @@ from glob import glob
 import vaex as vx
 from pathlib import Path
 from scipy.signal import unit_impulse
+from datetime import datetime
 from detprocess.core.filterdata import FilterData
+import stat
+
 
 
 class DIDVAnalysis(FilterData):
@@ -17,7 +20,9 @@ class DIDVAnalysis(FilterData):
     QETpy. DIDV data are stored 
     """
 
-    def __init__(self, verbose=True):
+    def __init__(self, verbose=True,
+                 auto_save_hdf5=False,
+                 file_path_name=None):
         """
         Initialize class
 
@@ -36,6 +41,30 @@ class DIDVAnalysis(FilterData):
         self._didv_data = None
         
 
+        # save results
+        self._save_hdf5 = auto_save_hdf5
+        self._save_path = None
+        self._file_name = self._set_file_name()
+        
+        if file_path_name is not None:
+            if os.path.isfile(file_path_name):
+                self._save_path = os.path.dirname(file_path_name)
+                self._file_name = os.path.basename(file_path_name)
+            elif os.path.isdir(file_path_name):
+                self._save_path = file_path_name
+            else:
+                raise ValueError('ERROR: "file_path_name" should be a '
+                                 'file or path!')
+
+        # display
+        if self._save_hdf5:
+            full_path_file = self._file_name
+            if self._save_path is not None:
+                full_path_file = self._save_path + '/' + self._file_name
+            print(f'INFO: Results will be automatically saved '
+                  f'in {full_path_file}')
+
+            
     def clear(self, channels=None):
         """
         Clear all data
@@ -87,7 +116,7 @@ class DIDVAnalysis(FilterData):
         poles_str = str(poles) + 'poles'
         if 'dpdi_' + poles_str not in self._didv_data[channel]:
             raise ValueError(f'ERROR: No dpdi found for '
-                             'channel {channel}!')
+                             f'channel {channel}!')
      
         dpdi = self._didv_data[channel]['dpdi_' +  poles_str]
         dpdi_freqs = self._didv_data[channel]['dpdi_freqs_' +  poles_str]
@@ -156,7 +185,30 @@ class DIDVAnalysis(FilterData):
                                    series=series,
                                    overwrite=overwrite)
 
+
+
+        # save path
+        if self._save_path is None:
             
+            dir_name = raw_path
+            if '/processed' in dir_name:
+                dir_name = dir_name.replace('/processed',
+                                            '/filterdata')
+            if '/raw' in dir_name:
+                dir_name = dir_name.replace('/raw',
+                                            '/filterdata')
+            self._save_path = dir_name
+
+            if not os.path.isdir(dir_name):
+                try:
+                    os.makedirs(dir_name)
+                    os.chmod(dir_name, stat.S_IRWXG | stat.S_IRWXU |
+                             stat.S_IROTH | stat.S_IXOTH)
+                except OSError:
+                    raise ValueError('\nERROR: Unable to create directory "'
+                                     + dir_name  + '"!\n')
+        else:
+            self._save_path = './'       
         
     def set_processed_data(self, channels,
                            data,
@@ -561,7 +613,7 @@ class DIDVAnalysis(FilterData):
     def calc_dpdi(self, freqs, channels=None, list_of_poles=None,
                   lgc_plot=False):
         """
-        calculate dpdi
+        calculate dpdi in units of Volts
         """
 
         # check channels
@@ -810,7 +862,7 @@ class DIDVAnalysis(FilterData):
             # save
             self._didv_data[chan]['didvobj_prior'] = didvobj_prior
               
-    def get_fit_results(self, channel, poles):
+    def get_fit_results(self, channel, poles, verbose=True):
         """
         Get fit result
         """
@@ -823,7 +875,7 @@ class DIDVAnalysis(FilterData):
         # check if fit done
         result = self._didv_data[channel]['didvobj'].fitresult(poles)
         if not result:
-            if self._verbose:
+            if self._verbose and verbose:
                 print(f'WARNING: {channel}: No fit result found for poles {poles}! '
                       'Returning empty dictionary.')
         return result
@@ -897,7 +949,7 @@ class DIDVAnalysis(FilterData):
                     savepath=save_path,
                     savename=save_name,
                 )
-
+    
                 
     def print_fit_result(self, channels=None, poles=3):
         """
@@ -956,11 +1008,7 @@ class DIDVAnalysis(FilterData):
                 print('L = {:.3f} +/- {:.4f} nH'.format(
                     vals_vector['L']*1e9, sigmas_vector['sigma_L']*1e9))
                 
-        
-
-
-
-                
+                    
     def compare_with_ivsweep(self, channel, poles=3):
         """
         Create a dataframe to compare results with
@@ -1138,6 +1186,92 @@ class DIDVAnalysis(FilterData):
         return df
 
 
+    def save_didv_data(self, channels=None, file_path_name=None):
+        """
+        Save didv data
+        """
+
+        # file_name
+        file_path = self._save_path
+        if file_path is None:
+            file_path = './'
+        file_name = self._file_name
+        
+        if  file_path_name is not None:
+            if os.path.isfile(file_path_name):
+                file_path = os.path.dirname(file_path_name)
+                file_name = os.path.basename(file_path_name)
+            elif os.path.isdir(file_path_name):
+                file_path = file_path_name
+            else:
+                raise ValueError('ERROR: "file_path_name" should be a '
+                                 'file or path!')
+        full_file_name = file_path + '/' + file_name
+        if file_path[-1] == '/':
+            full_file_name = file_path + file_name
+
+
+        # channels
+        if channels is None:
+            channels = self._didv_data.keys()
+        elif isinstance(channels, str):
+            channels = [channels]
+
+        for chan in channels:
+            if chan not in self._didv_data.keys():
+                raise ValueError(f'ERROR: No data found for '
+                                 'channel {chan}!')
+
+
+        # loop channels and set data
+        save_data = False
+        for chan in channels:
+
+            # 2-poles
+            results = self.get_fit_results(chan, 2, verbose=False)
+            if results:
+                self.set_didv_results(chan, results, 2)
+                save_data = True
+
+                
+            # 3-poles
+            results = self.get_fit_results(chan, 3, verbose=False)
+            if results:
+                self.set_didv_results(chan, results, 3)
+                save_data = True
+            
+            # dpdi
+            fs = None
+            if ('data_config' in self._didv_data[chan]
+                and 'fs' in self._didv_data[chan]['data_config']):
+                fs = self._didv_data[chan]['data_config']['fs']
+            
+            if 'dpdi_2poles' in self._didv_data[chan]:
+                dpdi_freqs, dpdi = self.get_dpdi(chan, 2)
+                self.set_dpdi(chan, dpdi, dpdi_freqs,
+                              sample_rate=fs,
+                              didv_fit_poles=2)
+
+            if 'dpdi_3poles' in self._didv_data[chan]:
+                dpdi_freqs, dpdi = self.get_dpdi(chan, 3)
+                self.set_dpdi(chan, dpdi, dpdi_freqs,
+                              sample_rate=fs,
+                              didv_fit_poles=3)
+
+        if not save_data:
+            print('WARNING: No dIdV data to save!')
+            return
+
+
+        self.save_hdf5(full_file_name, overwrite=True)
+            
+
+            
+        
+
+        
+
+            
                         
             
     def _get_file_list(self, file_path,
@@ -1488,4 +1622,19 @@ class DIDVAnalysis(FilterData):
                                     'data_config': data_config,
                                     'resolution': None}
         
-    
+
+    def _set_file_name(self):
+        """
+        Set file name 
+        """
+
+        
+        now = datetime.now()
+        series_day = now.strftime('%Y') +  now.strftime('%m') + now.strftime('%d') 
+        series_time = now.strftime('%H') + now.strftime('%M')
+        series_name = ('D' + series_day + '_T'
+                       + series_time + now.strftime('%S'))
+
+        file_name = 'didv_analysis_' + series_name + '.hdf5'
+        
+        return file_name

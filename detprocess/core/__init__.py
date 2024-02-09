@@ -6,3 +6,4 @@ from .noise import *
 from .template import *
 from .ivsweep import *
 from .didv  import *
+from .noisemodel  import *

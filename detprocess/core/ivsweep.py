@@ -14,6 +14,7 @@ import stat
 from detprocess.core.filterdata import FilterData
 from detprocess.core.didv import DIDVAnalysis
 from detprocess.core.noise import Noise
+from detprocess.core.noisemodel import NoiseModel
 
 
 __all__ = [
@@ -58,6 +59,13 @@ class IVSweepAnalysis(FilterData):
         # IV sweep nb bias point
         self._nb_sc_normal_points = dict()
 
+        # noise analysis
+        self._tbath = None
+        self._tc = dict()
+        self._gta = dict()
+        self._tload_guess = None
+        
+        
 
         # save results
         self._save_hdf5 = auto_save_hdf5
@@ -1047,6 +1055,7 @@ class IVSweepAnalysis(FilterData):
                 if df_bias.empty:
                     raise ValueError(f'ERROR: Unable to get psd for {chan},'
                                      f' tes bias = {bias}')
+                
                 psd =  df_bias['psd'].iloc[0]
                 fs =   df_bias['fs_noise'].iloc[0]
                 percent_rn = df_bias['percent_rn_noise'].iloc[0]
@@ -1130,9 +1139,327 @@ class IVSweepAnalysis(FilterData):
 
             # save
             self.save_hdf5(file_path_name, overwrite=True)
+
+
+ 
+    def set_tbath(self, tbath):
+        """
+        Set bath temperature
+        """
+        
+        self._tbath = tbath
+        
+    def set_tload_guess(self, tload):
+        """
+        Set bath temperature
+        """
+
+        self._tload_guess = tload
+
+        
+    def set_tc(self, channel, tc):
+        """
+        Set Tc
+        """
+
+        self._tc[channel] = tc
+
+    
+    def set_gta(self, channel, gta):
+        """
+        Set Gta for specified channel
+        """
+
+        self._gta[channel] = gta
+        
+              
+    def analyze_noise(self, channels=None,
+                      fit_range=(100, 1e5),
+                      squiddc0=6e-12, squidpole0=200, squidn0=0.7,
+                      lgc_plot=False,
+                      xlims=None, ylims_current=None, ylims_power=None, 
+                      lgc_save_fig=False, save_path=None,
+                      tag='default'):
+        """
+        Function to analyze and plot noise PSD with all the theoretical noise
+        components (calculated from the didv fits). 
+
+        lgc_plot : bool, optional
+            If True, a plot of the fit is shown.
+        xlims : NoneType, tuple, optional
+            Limits to be passed to ax.set_xlim().
+        ylims_current : NoneType, tuple, optional
+            Limits to be passed to ax.set_ylim() for the current noise
+            plots.
+        ylims_power : NoneType, tuple, optional
+            Limits to be passed to ax.set_ylim() for the power noise
+            plots.
+        lgc_save : bool, optional
+            If True, the figure is saved.
+        save_path : str
+            Directory to save data
+
+        """
+
+        # channels
+        available_channels = list()
+        ivdata_label = 'ivsweep_data_' + tag
+        for chan, chan_dict in self._filter_data.items():
+            if ivdata_label in chan_dict.keys():
+                available_channels.append(chan)
+
+        if not available_channels:
+            raise ValueError('ERROR: No channel available. '
+                             'Set data first!')
+        if channels is None:
+            channels = available_channels
+        else:
+            if isinstance(channels, str):
+                channels = [channels]
+            for chan in channels:
+                if chan not in available_channels:
+                    raise ValueError(f'ERROR: No data for channel {chan}'
+                                     ' available. Set data first!')
         
 
+
+        # check avalaible data
+        
+        # tbath
+        if self._tbath is None:
+            raise ValueError(f'ERROR: Bath temperature is needed! '
+                             f'Set Tbath first using function '
+                             f'"set_tbath(tbath)"!')
+        
+        if self._tload_guess is None:
+            raise ValueError(f'ERROR: Load temperature is needed! '
+                             f'Set Tload first using function '
+                             f'"set_tload_guess(tload)"!')
+
+            
+        for chan in channels:
                 
+            # check  tc
+            if chan not in self._tc.keys():
+                raise ValueError(f'ERROR: Tc not available for channel {chan}!\n'
+                                 f'Set first Tc with function set_tc("{chan}",tc)')
+            
+
+            # check dIdV analysis done
+            df = self.get_ivsweep_data(chan, tag=tag)
+
+            # check if psd available
+            if 'psd' not in df.columns:
+                raise ValueError(f'ERROR: No PSD available for channel {chan}! '
+                                 f'Is it a dIdV only sweep?')
+
+            # check didv analysis
+            if (chan not in self._didv_objects.keys()
+                or ('transition' not in self._didv_objects[chan]
+                    or 'sc' not in self._didv_objects[chan]
+                    or 'normal' not in self._didv_objects[chan])):
+                raise ValueError(
+                    f'ERROR: No DIDV analysis done for channel {chan}.'
+                    f' Use first "analyze_didv" function'
+                )
+
+        # Loop channels and do noise analysis
+        for chan in channels:
+            
+            # get dataframe
+            df = self.get_ivsweep_data(chan, tag=tag)
+
+            # get dIdV QETpy objects
+            didv_normal_objs = self._didv_objects[chan]['normal']
+            didv_sc_objs = self._didv_objects[chan]['sc']
+            didv_transition_objs = self._didv_objects[chan]['transition']
+
+
+            # get IV sweep result
+            ivsweep_result = self.get_ivsweep_results(chan)
+            
+
+            # Instantiate Noise model
+            noise_sim = NoiseModel(verbose=False)
+            
+            # set data
+            noise_sim.set_tc(chan, self._tc[chan])
+            noise_sim.set_tload_guess(self._tload_guess)
+            noise_sim.set_tbath(self._tbath)
+            
+
+            # ----------------------------
+            # Normal Fit
+            # ----------------------------
+
+            if self._verbose:
+              print(f'\nINFO: Performing {chan} Normal Noise Fit')  
+
+
+            
+            # initialize fit par list
+            squiddc_list = []
+            squidpole_list = []
+            squidn_list = []
+
+            
+            lgc_plot_once = lgc_plot
+            for bias, obj in  didv_normal_objs.items():
+
+                # get normal psd 
+                df_bias = df[df.tes_bias_uA==bias]
+                df_index = df_bias.index[0]
+                
+                if df_bias.empty:
+                    raise ValueError(f'ERROR: Unable to get psd for {chan},'
+                                     f' tes bias = {bias}')
+
+
+                # didv fit result
+                fitresult = obj.get_fit_results(chan, poles=1)
+                            
+                # get psd 
+                psd =  df_bias['psd'].iloc[0]
+                psd_freqs = df_bias['psd_freq'].iloc[0]
+                tes_bias = df_bias['tes_bias'].iloc[0]
+                
+                # set data
+                noise_sim.set_psd(chan, psd, psd_freqs, tes_bias, 'normal' )
+
+                # set didv data (normal fit)
+                noise_sim.set_didv_data_from_dict(chan, fitresult,
+                                                  ivsweep_result=ivsweep_result)
+
+                
+                # fit 
+                noise_sim.fit_normal_noise(channels=chan,
+                                           fit_range=fit_range,
+                                           squiddc0=squiddc0,
+                                           squidpole0=squidpole0,
+                                           squidn0=squidn0,
+                                           lgc_plot=lgc_plot_once,
+                                           xlims=xlims, ylims=ylims_current)
+                lgc_plot_once = False
+
+                # store result
+                squiddc_list.append(
+                    noise_sim._noise_data[chan]['normal']['fit']['squiddc']
+                )
+                squidpole_list.append(
+                    noise_sim._noise_data[chan]['normal']['fit']['squidpole']
+                )
+                squidn_list.append(
+                    noise_sim._noise_data[chan]['normal']['fit']['squidn']
+                )
+
+
+            # take median
+            squiddc = np.median(squiddc_list)
+            squidpole = np.median(squidpole_list)
+            squidn = np.median(squidn_list)
+        
+            # replace noise_sim fit result
+            noise_sim._noise_data[chan]['normal']['fit']['squiddc']
+            noise_sim._noise_data[chan]['normal']['fit']['squidpole'] = squidpole
+            noise_sim._noise_data[chan]['normal']['fit']['squidn'] = squidn
+
+            # ----------------------------
+            # SC Fit
+            # ----------------------------
+
+            if self._verbose:
+                print(f'INFO: Performing {chan} SC Noise Fit')  
+            
+            tload_list = []
+            
+            lgc_plot_once = lgc_plot
+            for bias, obj in  didv_sc_objs.items():
+
+                # get normal psd 
+                df_bias = df[df.tes_bias_uA==bias]
+                df_index = df_bias.index[0]
+                
+                if df_bias.empty:
+                    raise ValueError(f'ERROR: Unable to get psd for {chan},'
+                                     f' tes bias = {bias}')
+
+
+                # didv fit result
+                fitresult = obj.get_fit_results(chan, poles=1)
+                            
+                # get psd 
+                psd =  df_bias['psd'].iloc[0]
+                psd_freqs = df_bias['psd_freq'].iloc[0]
+                tes_bias = df_bias['tes_bias'].iloc[0]
+                             
+                # set data
+                noise_sim.set_psd(chan, psd, psd_freqs, tes_bias, 'sc' )
+
+                # set didv data (SC fit)
+                noise_sim.set_didv_data_from_dict(chan, fitresult,
+                                                  ivsweep_result=ivsweep_result)
+
+                
+                # fit 
+                noise_sim.fit_sc_noise(channels=chan,
+                                       fit_range=fit_range,
+                                       lgc_plot=lgc_plot_once,
+                                       xlims=xlims, ylims=ylims_current)
+                lgc_plot_once = False
+                
+                # store result
+                tload_list.append(
+                    noise_sim._noise_data[chan]['sc']['fit']['tload']
+                )
+
+
+            # take median and replace fit value
+            tload = np.median(tload_list)
+            noise_sim._noise_data[chan]['sc']['fit']['tload'] = tload
+
+            if self._verbose:
+                print(f'INFO: Channel {chan} Tload from SC Fit: {tload*1e3} mK')
+              
+                
+            # ----------------------------
+            # Transition data model
+            # ----------------------------
+
+            for bias, obj in  didv_transition_objs.items():
+
+                # get normal psd 
+                df_bias = df[df.tes_bias_uA==bias]
+                df_index = df_bias.index[0]
+                
+                if df_bias.empty:
+                    raise ValueError(f'ERROR: Unable to get psd for {chan},'
+                                     f' tes bias = {bias}')
+
+                # didv fit result
+                fitresult = obj.get_fit_results(chan, poles=2)
+                            
+                # get psd 
+                psd =  df_bias['psd'].iloc[0]
+                psd_freqs = df_bias['psd_freq'].iloc[0]
+                tes_bias = df_bias['tes_bias'].iloc[0]
+                r0 = df_bias['r0_noise'].iloc[0]
+                percent_rn =  df_bias['percent_rn_noise'].iloc[0]
+
+                # set data
+                noise_sim.set_psd(chan, psd, psd_freqs, tes_bias, 'transition' )
+
+                # set didv data (2-poles fit)
+                noise_sim.set_didv_data_from_dict(chan, fitresult,
+                                                  ivsweep_result=ivsweep_result)
+
+
+                # analyze
+                noise_sim.analyze_noise(lgc_plot=lgc_plot,
+                                        xlims=xlims,
+                                        ylims_current=ylims_current,
+                                        ylims_power=ylims_power)
+            
+
                      
     def _fit_didv(self, data_type,
                   channels=None,
@@ -1282,6 +1609,8 @@ class IVSweepAnalysis(FilterData):
                     iv_results['r0_err'] = pd_series['r0_err_' + iv_type]
                     iv_results['i0'] = pd_series['i0_' + iv_type]
                     iv_results['i0_err'] = pd_series['i0_err_' + iv_type]
+                    iv_results['p0'] = pd_series['p0_' + iv_type]
+                    iv_results['p0_err'] = pd_series['p0_err_' + iv_type]
 
                     # display
                     if self._verbose:
