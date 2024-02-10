@@ -455,7 +455,10 @@ class DIDVAnalysis(FilterData):
                 self.plot_fit_result(chan)
 
 
-            
+        # save hdf5
+        if self._save_hdf5:
+            self.save_didv_data()
+          
     
     
     def calc_smallsignal_params(self,
@@ -530,7 +533,13 @@ class DIDVAnalysis(FilterData):
 
             # replace
             self._didv_data[chan]['didvobj'] = didvobj
-      
+
+            
+        # save hdf5
+        if self._save_hdf5:
+            self.save_didv_data()
+            
+            
     def calc_bias_params_infinite_loop_gain(self, channels=None):
                                            
         """
@@ -606,9 +615,14 @@ class DIDVAnalysis(FilterData):
                     rp=rp)
 
                 self._didv_data[chan]['didvobj'] = didvobj
-               
-                                                          
-            
+
+
+
+                
+        # save hdf5
+        if self._save_hdf5:
+            self.save_didv_data()
+                        
    
     def calc_dpdi(self, freqs, channels=None, list_of_poles=None,
                   lgc_plot=False):
@@ -658,7 +672,12 @@ class DIDVAnalysis(FilterData):
                 self._didv_data[chan]['dpdi_err_' +  poles_str] = dpdi_err
                 self._didv_data[chan]['dpdi_freqs_' + poles_str] = freqs
 
+
                 
+        # save hdf5
+        if self._save_hdf5:
+            self.save_didv_data()
+                   
                 
     def calc_energy_resolution(self, channel, psd,
                                poles=3, fs=None, template=None,
@@ -729,7 +748,7 @@ class DIDVAnalysis(FilterData):
         res_dict['collection_efficiency'] = collection_eff
         res_dict['energy_resolution'] = resolution
         self._didv_data[channel]['resolution'] = res_dict
-        
+
         return resolution
             
                 
@@ -1264,14 +1283,7 @@ class DIDVAnalysis(FilterData):
 
 
         self.save_hdf5(full_file_name, overwrite=True)
-            
-
-            
-        
-
-        
-
-            
+     
                         
             
     def _get_file_list(self, file_path,
@@ -1449,7 +1461,7 @@ class DIDVAnalysis(FilterData):
             rshunt = float(detector_settings[channel]['shunt_resistance'])
         elif 'rshunt' in detector_settings[channel].keys():
             rshunt = float(detector_settings[channel]['rshunt'])
-        if np.isnan(rshunt):
+        if rshunt is not None and np.isnan(rshunt):
             rshunt = None
             
         # parasitic resistance 
@@ -1458,9 +1470,9 @@ class DIDVAnalysis(FilterData):
             rp = float(detector_settings[channel]['parasitic_resistance'])
         elif 'rp' in detector_settings[channel].keys():
             rp = float(detector_settings[channel]['rp'])
-        if np.isnan(rp):
+        if rp is not None and np.isnan(rp):
             rp = None
-            
+
                         
         # save relevant detector settings in dictionary
         data_config = dict()
@@ -1476,6 +1488,17 @@ class DIDVAnalysis(FilterData):
         data_config['sgfreq'] = sgfreq
         data_config['sgamp'] = sgamp
 
+
+
+        # add temperature
+        temperature_list = ['cp','mc','still']
+        for temp in temperature_list:
+            temp_par = 'temperature_' + temp
+            temp_val = np.nan
+            if temp_par in  detector_settings[channel].keys():
+                temp_val = float(detector_settings[channel][temp_par])
+            data_config[temp_par] = temp_val
+        
 
         # Apply cuts
         zerocut = np.all(traces!=0, axis=1)

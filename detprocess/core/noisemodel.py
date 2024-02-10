@@ -317,6 +317,58 @@ class NoiseModel(FilterData):
         self._noise_data[channel][state]['psd_fold'] = psd
         self._noise_data[channel][state]['psd_fold_freqs'] = psd_freqs
         self._noise_data[channel][state]['tes_bias'] = tes_bias
+
+
+    def set_normal_fit_results(self, channel,
+                               squiddc=None,
+                               squidpole=None,
+                               squidn=None):
+        """
+        Set normal noise fit results
+        """
+
+        if (squiddc is None
+            or squidpole is None
+            or squidn is None):
+            raise ValueError('ERROR: "squiddc", "squidpole", and '
+                             '"squidn" are required!')
+                
+        if channel not in  self._noise_data.keys():
+            self._noise_data[channel] = {'normal': None,
+                                         'sc': None,
+                                         'transition': None}
+
+        if self._noise_data[channel]['normal'] is None:
+            self._noise_data[channel]['normal'] = dict()
+
+        # add data
+        self._noise_data[channel]['normal']['fit'] = dict()
+        self._noise_data[channel]['normal']['fit']['squiddc'] = squiddc
+        self._noise_data[channel]['normal']['fit']['squidpole'] = squidpole
+        self._noise_data[channel]['normal']['fit']['squidn'] = squidn
+
+
+    def set_sc_fit_results(self, channel, tload=None):
+         
+        """
+        Set SC noise fit results
+        """
+
+        if tload is None:
+            raise ValueError('ERROR: "tload" is required!')
+                
+        if channel not in  self._noise_data.keys():
+            self._noise_data[channel] = {'normal': None,
+                                         'sc': None,
+                                         'transition': None}
+
+        if self._noise_data[channel]['sc'] is None:
+            self._noise_data[channel]['sc'] = dict()
+
+        # add data
+        self._noise_data[channel]['sc']['fit'] = dict()
+        self._noise_data[channel]['sc']['fit']['tload'] = tload
+
         
         
     def fit_normal_noise(self, channels=None,

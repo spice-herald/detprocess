@@ -1578,7 +1578,23 @@ class IVSweepAnalysis(FilterData):
             
             # save ivsweep
             self.set_ivsweep_results(chan, ivsweep_result, 'noise')
-                                 
+
+            
+        # save hdf5
+        if self._save_hdf5:
+            
+            # build full path
+            dir_name = './'
+            if self._save_path is not None:
+                dir_name = self._save_path + '/'
+            file_path_name = dir_name + self._file_name
+                
+            # save
+            self.save_hdf5(file_path_name, overwrite=True)
+        
+
+
+            
     def _fit_didv(self, data_type,
                   channels=None,
                   percent_rn_max=None, percent_rn_min=None,
