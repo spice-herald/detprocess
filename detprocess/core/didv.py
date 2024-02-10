@@ -1449,7 +1449,7 @@ class DIDVAnalysis(FilterData):
             rshunt = float(detector_settings[channel]['shunt_resistance'])
         elif 'rshunt' in detector_settings[channel].keys():
             rshunt = float(detector_settings[channel]['rshunt'])
-        if rshunt == np.nan:
+        if np.isnan(rshunt):
             rshunt = None
             
         # parasitic resistance 
@@ -1458,7 +1458,7 @@ class DIDVAnalysis(FilterData):
             rp = float(detector_settings[channel]['parasitic_resistance'])
         elif 'rp' in detector_settings[channel].keys():
             rp = float(detector_settings[channel]['rp'])
-        if rp == np.nan:
+        if np.isnan(rp):
             rp = None
             
                         

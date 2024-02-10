@@ -45,8 +45,6 @@ class IVSweepAnalysis(FilterData):
         # IV, DIDV, Noise, Template objects    
         self._ibis_objects = dict()
         self._didv_objects = dict()
-        self._noise_objects = dict()
-        self._template_objects = dict()
         self._didv_summary = dict()
 
         # rshunt/rshunt_err if not in raw data
@@ -64,9 +62,7 @@ class IVSweepAnalysis(FilterData):
         self._tc = dict()
         self._gta = dict()
         self._tload_guess = None
-        
-        
-
+    
         # save results
         self._save_hdf5 = auto_save_hdf5
         self._save_path = None
@@ -101,8 +97,6 @@ class IVSweepAnalysis(FilterData):
         # objects
         self._ibis_objects = dict()
         self._didv_objects = dict()
-        self._noise_objects = dict()
-        self._template_objects = dict()
         self._didv_summary = dict()
         self._resolution_data = dict()
 
@@ -110,6 +104,49 @@ class IVSweepAnalysis(FilterData):
         self.clear_data()
 
 
+    def get_didv_objects(self, channel):
+        """
+        Get the dIdV detprocess objects in a dictionary
+        key: tes_bias_uA, value: DIDVAnalysis object
+        """
+
+        output_dict = None
+        if channel in self._didv_objects:
+            output_dict = self._didv_objects[channel]
+            
+        return output_dict
+            
+    def get_ibis_qetpy_object(self, channel):
+        """
+        Get QETpy 
+        """
+
+        output_dict = None
+        if channel in self._ibis_objects:
+            output_dict = self._ibis_objects[channel]
+        return output_dict 
+            
+    def get_didv_summary(self, channel):
+        """
+        Get QETpy 
+        """
+
+        output_dict = None
+        if channel in self._didv_summary:
+            output_dict = self._didv_summary[channel]
+        return output_dict 
+            
+    def get_resolution_data(self, channel):
+        """
+        Get QETpy 
+        """
+
+        output_dict = None
+        if channel in self._resolution_data:
+            output_dict = self._resolution_data[channel]
+        return output_dict 
+            
+        
     def set_data_from_file(self, file_name):
         """
         Load IV processed data from file
@@ -442,21 +479,21 @@ class IVSweepAnalysis(FilterData):
             # If None, use dataframe
             if rp is None:
                 if ('rp' in df.columns
-                    and df['rp'].values[0] != np.nan):
+                    and not np.isnan(df['rp'].values[0])):
                     rp = df['rp'].values[0]
             if rp_err is None:
                 if ('rp_err' in df.columns
-                    and df['rp_err'].values[0] != np.nan):
+                    and not np.isnan(df['rp_err'].values[0])):
                     rp_err = df['rp_err'].values[0]
                 elif rp is not None:
                     rp_err = rp*0.02
             if rshunt is None:
                 if ('rshunt' in df.columns
-                    and df['rshunt'].values[0] != np.nan):
+                    and not np.isnan(df['rshunt'].values[0])):
                     rshunt = df['rshunt'].values[0]
             if rshunt_err is None:
                 if ('rshunt_err' in df.columns
-                    and df['rshunt_err'].values[0] != np.nan):
+                    and not np.isnan(df['rshunt_err'].values[0])):
                     rshunt_err = df['rshunt_err'].values[0]
                 elif rshunt is not None:
                     rshunt_err = rshunt*0.02
@@ -659,7 +696,6 @@ class IVSweepAnalysis(FilterData):
                     df['group_name_' + data_type].values[0]
                 )
 
-
                 # add i0 variable offset (usead for true current calculations)
                 norm = results['close_loop_norm'] 
                 voltage_offset = results['output_variable_offset']
@@ -668,6 +704,16 @@ class IVSweepAnalysis(FilterData):
                     voltage_offset * gain/norm
                 )
 
+
+                # avg temperature
+                temperature_list = ['mc','cp','still']
+                for temp in temperature_list:
+                    temp_par = 'temperature_' + temp
+                    temp_vals = np.ones_like(df['tes_bias'].values)*np.nan
+                    if temp_par in list(df.columns):
+                        temp_vals = df[temp_par].values
+                    results[temp_par + '_sweep_avg'] = np.median(temp_vals)
+                                                
                 # save rp/rn
                 self._readout_params[chan]['rp'] = rp
                 self._readout_params[chan]['rp_err'] =  rp_err
@@ -1221,22 +1267,7 @@ class IVSweepAnalysis(FilterData):
                     raise ValueError(f'ERROR: No data for channel {chan}'
                                      ' available. Set data first!')
         
-
-
         # check avalaible data
-        
-        # tbath
-        if self._tbath is None:
-            raise ValueError(f'ERROR: Bath temperature is needed! '
-                             f'Set Tbath first using function '
-                             f'"set_tbath(tbath)"!')
-        
-        if self._tload_guess is None:
-            raise ValueError(f'ERROR: Load temperature is needed! '
-                             f'Set Tload first using function '
-                             f'"set_tload_guess(tload)"!')
-
-            
         for chan in channels:
                 
             # check  tc
@@ -1263,6 +1294,27 @@ class IVSweepAnalysis(FilterData):
                     f' Use first "analyze_didv" function'
                 )
 
+
+            # check if temperature available
+            if self._tbath is None:
+                temperature_mc = np.nan
+                if 'temperature_mc' in df.columns:
+                    temperature_mc = df['temperature_mc'].iloc[0]
+                if np.isnan(temperature_mc): 
+                    raise ValueError(f'ERROR: Bath temperature is needed! '
+                                     f'Set Tbath first using function '
+                                     f'"set_tbath(tbath)"!')
+                                
+            if self._tload_guess is None:
+                temperature_cp = np.nan
+                if 'temperature_cp' in df.columns:
+                    temperature_cp = df['temperature_cp'].iloc[0]
+                if np.isnan(temperature_cp):
+                    raise ValueError(f'ERROR: Load temperature is needed! '
+                                     f'Set Tload first using function '
+                                     f'"set_tload_guess(tload)"!')
+
+                
         # Loop channels and do noise analysis
         for chan in channels:
             
@@ -1282,12 +1334,9 @@ class IVSweepAnalysis(FilterData):
             # Instantiate Noise model
             noise_sim = NoiseModel(verbose=False)
             
-            # set data
+            # set Tc
             noise_sim.set_tc(chan, self._tc[chan])
-            noise_sim.set_tload_guess(self._tload_guess)
-            noise_sim.set_tbath(self._tbath)
-            
-
+           
             # ----------------------------
             # Normal Fit
             # ----------------------------
@@ -1295,13 +1344,11 @@ class IVSweepAnalysis(FilterData):
             if self._verbose:
               print(f'\nINFO: Performing {chan} Normal Noise Fit')  
 
-
-            
             # initialize fit par list
             squiddc_list = []
             squidpole_list = []
             squidn_list = []
-
+            tload_guess_list = []
             
             lgc_plot_once = lgc_plot
             for bias, obj in  didv_normal_objs.items():
@@ -1314,7 +1361,6 @@ class IVSweepAnalysis(FilterData):
                     raise ValueError(f'ERROR: Unable to get psd for {chan},'
                                      f' tes bias = {bias}')
 
-
                 # didv fit result
                 fitresult = obj.get_fit_results(chan, poles=1)
                             
@@ -1322,7 +1368,20 @@ class IVSweepAnalysis(FilterData):
                 psd =  df_bias['psd'].iloc[0]
                 psd_freqs = df_bias['psd_freq'].iloc[0]
                 tes_bias = df_bias['tes_bias'].iloc[0]
-                
+
+                # set Tload and Tbath
+                tload_guess = self._tload_guess
+                tbath = self._tbath
+                if tload_guess is None:
+                    tload_guess =  df_bias['temperature_cp'].iloc[0]
+                if tbath is None:
+                    tbath = df_bias['temperature_mc'].iloc[0]
+
+                    
+                noise_sim.set_tload_guess(tload_guess)
+                tload_guess_list.append(tload_guess)
+                noise_sim.set_tbath(tbath)
+                                
                 # set data
                 noise_sim.set_psd(chan, psd, psd_freqs, tes_bias, 'normal' )
 
@@ -1357,12 +1416,21 @@ class IVSweepAnalysis(FilterData):
             squiddc = np.median(squiddc_list)
             squidpole = np.median(squidpole_list)
             squidn = np.median(squidn_list)
+            tload_guess = np.median(tload_guess_list)
         
             # replace noise_sim fit result
-            noise_sim._noise_data[chan]['normal']['fit']['squiddc']
+            noise_sim._noise_data[chan]['normal']['fit']['squiddc'] = squiddc
             noise_sim._noise_data[chan]['normal']['fit']['squidpole'] = squidpole
             noise_sim._noise_data[chan]['normal']['fit']['squidn'] = squidn
 
+
+            # add to IV Sweep result
+            ivsweep_result['noise_model_fit_squiddc'] = squiddc
+            ivsweep_result['noise_model_fit_squidpole'] = squidpole
+            ivsweep_result['noise_model_fit_squidn'] = squidn
+            ivsweep_result['noise_model_tload_guess'] = tload_guess
+
+            
             # ----------------------------
             # SC Fit
             # ----------------------------
@@ -1383,7 +1451,6 @@ class IVSweepAnalysis(FilterData):
                     raise ValueError(f'ERROR: Unable to get psd for {chan},'
                                      f' tes bias = {bias}')
 
-
                 # didv fit result
                 fitresult = obj.get_fit_results(chan, poles=1)
                             
@@ -1391,6 +1458,17 @@ class IVSweepAnalysis(FilterData):
                 psd =  df_bias['psd'].iloc[0]
                 psd_freqs = df_bias['psd_freq'].iloc[0]
                 tes_bias = df_bias['tes_bias'].iloc[0]
+
+                # set Tload and Tbath
+                tload_guess = self._tload_guess
+                tbath = self._tbath
+                if tload_guess is None:
+                    tload_guess =  df_bias['temperature_cp'].iloc[0]
+                if tbath is None:
+                    tbath = df_bias['temperature_mc'].iloc[0]
+                    
+                noise_sim.set_tload_guess(tload_guess)
+                noise_sim.set_tbath(tbath)
                              
                 # set data
                 noise_sim.set_psd(chan, psd, psd_freqs, tes_bias, 'sc' )
@@ -1416,15 +1494,25 @@ class IVSweepAnalysis(FilterData):
             # take median and replace fit value
             tload = np.median(tload_list)
             noise_sim._noise_data[chan]['sc']['fit']['tload'] = tload
-
+          
             if self._verbose:
                 print(f'INFO: Channel {chan} Tload from SC Fit: {tload*1e3} mK')
-              
+
+
+            # save in sweep result
+            ivsweep_result['noise_model_tload'] = tload
                 
             # ----------------------------
             # Transition data model
             # ----------------------------
 
+            if self._verbose:
+                print(f'\nINFO: Analyzing {chan} Noise in Transition')  
+
+            # initialize tbath list
+            tbath_list = []
+            gta_list = []
+            
             for bias, obj in  didv_transition_objs.items():
 
                 # get normal psd 
@@ -1443,8 +1531,31 @@ class IVSweepAnalysis(FilterData):
                 psd_freqs = df_bias['psd_freq'].iloc[0]
                 tes_bias = df_bias['tes_bias'].iloc[0]
                 r0 = df_bias['r0_noise'].iloc[0]
+                p0 = df_bias['p0_noise'].iloc[0]
                 percent_rn =  df_bias['percent_rn_noise'].iloc[0]
 
+                # set Tload and Tbath
+                tload_guess = self._tload_guess
+                tbath = self._tbath
+                if tload_guess is None:
+                    tload_guess =  df_bias['temperature_cp'].iloc[0]
+                if tbath is None:
+                    tbath = df_bias['temperature_mc'].iloc[0]
+
+                noise_sim.set_tload_guess(tload_guess)
+                noise_sim.set_tbath(tbath)
+                tbath_list.append(tbath)
+                
+                # Gta
+                gta = None
+                if chan in self._gta:
+                    gta = self._gta[chan]
+                else:
+                    gta = 5*p0/self._tc[chan]
+                    
+                noise_sim.set_gta(chan, gta)
+                gta_list.append(gta)
+                
                 # set data
                 noise_sim.set_psd(chan, psd, psd_freqs, tes_bias, 'transition' )
 
@@ -1458,9 +1569,16 @@ class IVSweepAnalysis(FilterData):
                                         xlims=xlims,
                                         ylims_current=ylims_current,
                                         ylims_power=ylims_power)
-            
 
-                     
+            tbath = np.median(tbath_list)
+            gta = np.median(gta_list)
+            ivsweep_result['noise_model_tbath'] = tbath
+            ivsweep_result['noise_model_gta'] = gta
+            ivsweep_result['noise_model_tc']  = self._tc[chan]
+            
+            # save ivsweep
+            self.set_ivsweep_results(chan, ivsweep_result, 'noise')
+                                 
     def _fit_didv(self, data_type,
                   channels=None,
                   percent_rn_max=None, percent_rn_min=None,
@@ -1529,19 +1647,28 @@ class IVSweepAnalysis(FilterData):
             # get dataframe
             df = self.get_ivsweep_data(chan, tag=tag)
             
-            # get IV analysis result, rp, rn, rshunt + errors
-            iv_type = 'noise'
-            if ('rp_noise' not in df.columns):
-                iv_type = 'didv'
-            iv_results = self.get_ivsweep_results(chan,
-                                                  iv_type=iv_type,
-                                                  tag=tag)
+            # get IV analysis result + errors
+            iv_results_didv = self.get_ivsweep_results(
+                chan, iv_type='didv', tag=tag
+            )
+            iv_results_noise = None
+            iv_type = 'didv'
+            if 'rp_noise' in df.columns:
+                iv_type = 'noise'
+                iv_results_noise = self.get_ivsweep_results(
+                    chan, iv_type='noise', tag=tag
+                )
+
+            # choose results (default = noise data)
+            iv_results = iv_results_didv.copy()
+            if iv_results_noise is not None:
+                iv_results = iv_results_noise.copy()
+                
             rp_iv = iv_results['rp']
             rp_iv_err = iv_results['rp_err']
             rn_iv =  iv_results['rn']
             rn_iv_err =  iv_results['rn_err']
 
-                                  
             # filter dataframe
             var_name = None
             if 'percent_rn_noise' in df.columns:
@@ -1565,8 +1692,7 @@ class IVSweepAnalysis(FilterData):
                     f'ERROR: Unable to find fit  points for channel {chan}. '
                     f'You may need to change "percent_rn_max" and/or '
                     f'"percent_rn_min"')
-            
-        
+                
             df_filter = df[cut]
             if (data_type == 'normal' or data_type == 'transition'):
                 df_filter = df_filter.sort_values(by='tes_bias_uA',
@@ -1578,7 +1704,8 @@ class IVSweepAnalysis(FilterData):
             # loop and fit
             rpn_list = []
             dt_list = []
-            
+            inductance_list = []
+              
             nb_points = len(df_filter)
             if nb_points_max is not None:
                 nb_points = min(len(df_filter), nb_points_max)
@@ -1586,7 +1713,8 @@ class IVSweepAnalysis(FilterData):
             # list of index
             df_indices = df_filter.index.to_list()
 
-            # loop
+            # loop and fit
+            
             for ind in range(nb_points):
 
                 pd_series = df_filter.iloc[ind]
@@ -1601,7 +1729,7 @@ class IVSweepAnalysis(FilterData):
                     continue
 
                 
-                # display case transiton
+                # case transiton, add r0,i0,p0 to iv results
                 if data_type == 'transition':
                     iv_results['ibias'] = pd_series['tes_bias_' + iv_type]
                     iv_results['ibias_err'] = 0
@@ -1657,7 +1785,7 @@ class IVSweepAnalysis(FilterData):
                     rpn -= rp_iv
                 rpn_list.append(rpn)
                 dt_list.append(results['smallsignalparams']['dt'])
-
+                inductance_list.append(results['smallsignalparams']['L'])
 
                 # transitiobn
                 if data_type == 'transition':
@@ -1832,15 +1960,27 @@ class IVSweepAnalysis(FilterData):
             rpn_err_didv_fit = np.std(rpn_list)
             dt_didv_fit = np.mean(dt_list)
             dt_err_didv_fit = np.std(dt_list)
+            inductance_fit = np.median(inductance_list)
 
+            
             # store summay
+         
             if data_type == 'normal':
                 self._didv_summary[chan]['normal'] = {
                     'rn':rpn_didv_fit,
                     'rn_err': rpn_err_didv_fit,
                     'rn_iv': rn_iv,
                     'rn_iv_err': rn_iv_err}
-                
+
+                # add inductance to IV result
+                iv_results_didv['normal_didv_fit_L'] = inductance_fit
+                iv_results_didv['normal_didv_fit_rn'] =  rpn_didv_fit
+                iv_results_didv['normal_didv_fit_dt'] =  dt_didv_fit
+                if iv_results_noise is not None:
+                    iv_results_noise['normal_didv_fit_L'] = inductance_fit
+                    iv_results_noise['normal_didv_fit_rn'] =  rpn_didv_fit
+                    iv_results_noise['normal_didv_fit_dt'] =  dt_didv_fit
+                    
             elif data_type == 'sc':
                 self._didv_summary[chan]['sc'] = {
                     'rp':rpn_didv_fit,
@@ -1848,6 +1988,15 @@ class IVSweepAnalysis(FilterData):
                     'rp_iv': rn_iv,
                     'rp_iv_err': rn_iv_err}
 
+                # add inductance to IV result
+                iv_results_didv['sc_didv_fit_L'] = inductance_fit
+                iv_results_didv['sc_didv_fit_rp'] =  rpn_didv_fit
+                iv_results_didv['sc_didv_fit_dt'] =  dt_didv_fit
+                if iv_results_noise is not None:
+                    iv_results_noise['sc_didv_fit_L'] = inductance_fit
+                    iv_results_noise['sc_didv_fit_rp'] =  rpn_didv_fit
+                    iv_results_noise['sc_didv_fit_dt'] =  dt_didv_fit
+                           
             if self._verbose:
                 
                 if data_type == 'normal':
@@ -1863,8 +2012,15 @@ class IVSweepAnalysis(FilterData):
 
             # store df
             self.set_ivsweep_data(chan, df, tag=tag)
-            
 
+            # store updated iv results
+            if (data_type == 'sc' or data_type == 'normal'):
+                self.set_ivsweep_results(chan, iv_results_didv,
+                                         'didv', tag=tag)
+                if iv_results_noise is not None:
+                    self.set_ivsweep_results(chan, iv_results_noise,
+                                             'noise', tag=tag)
+                
     def _set_file_name(self):
         """
         Set file name 

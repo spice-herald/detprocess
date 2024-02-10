@@ -811,7 +811,7 @@ class FilterData:
     
     def set_ivsweep_results(self, 
                            channel,
-                           pd_series,
+                           results,
                            iv_type,
                            metadata=None,
                            tag='default'):
@@ -821,7 +821,9 @@ class FilterData:
         """
 
         # check input
-        if not isinstance(pd_series, pd.Series):
+        if isinstance(results, dict):
+            results = pd.Series(results)  
+        elif not isinstance(results, pd.Series):
             raise ValueError(
                 'ERROR: Input is not a pandas Series!')
         
@@ -831,7 +833,7 @@ class FilterData:
         
         # data 
         data_tag = 'ivsweep_results_' + iv_type  + '_' + tag
-        self._filter_data[channel][data_tag] = pd_series
+        self._filter_data[channel][data_tag] = results
 
         # metadata
         if metadata is not None:
@@ -839,22 +841,6 @@ class FilterData:
         else:
             metadata = {'channel': channel}
         self._filter_data[channel][data_tag + '_metadata'] = metadata
-
-        
-    def set_ivsweep_results_from_dict(self, data_dict,
-                                     iv_type,
-                                     tag='default'):
-        """
-        Set IV-dIdV sweep result from dictionary
-        (key=channel name, value=series)
-        """
-
-        for chan, df in data_dict.items():
-            self.set_ivsweep_results(chan,
-                                    df,
-                                    iv_type,
-                                    tag=tag)
-
 
 
     def get_ivsweep_results(self, 
@@ -924,6 +910,14 @@ class FilterData:
             results['p0'] = params['p0_' + iv_type]
             results['p0_err'] = params['p0_err_' + iv_type]
 
+            # add temperature
+            temperature_list = ['mc','cp','still']
+            for temp in temperature_list:
+                temp_par = 'temperature_' + temp
+                temp_val = np.nan
+                if temp_par in params:
+                    results[temp_par] = params[temp_par]
+             
             # infinite loop gain
             if 'didv_3poles_r0_infinite_lgain' in params:
 
@@ -947,8 +941,7 @@ class FilterData:
                 results['p0_err_infinite_lgain'] = (
                     params['didv_3poles_p0_err_infinite_lgain']
                 )
-                
-                
+                    
             # ssp
             if 'didv_3poles_chi2' in params:
                 results['didv_fit_chi2'] = params['didv_3poles_chi2']
@@ -1003,7 +996,6 @@ class FilterData:
         # create channel dictionary
         if channel not in self._filter_data.keys():
             self._filter_data[channel] = dict()
-
 
         # base name, poles
         base_name = 'didv_results_' + str(poles) + 'poles'

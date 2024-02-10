@@ -430,8 +430,11 @@ class IVSweepProcessing:
         output_data = {'channel':list(),
                        'tes_bias_uA' : list(),
                        'tes_bias' : list(),
-                       'rshunt' : list()}
-
+                       'rshunt' : list(),
+                       'temperature_mc': list(),
+                       'temperature_cp': list(),
+                       'temperature_still': list()}
+        
         # data types
         data_types = list()
         if (processing_type=='IV'
@@ -547,6 +550,20 @@ class IVSweepProcessing:
                 if 'dutycycle' in detector_settings[channel]:
                     dutycycle = float(detector_settings[channel]['dutycycle'])
 
+
+                # store readout data
+                    
+                # temperature
+                if itype == 0:
+                    temperature_list = ['cp','mc','still']
+                    for temp in temperature_list:
+                        temp_par = 'temperature_' + temp
+                        temp_val = np.nan
+                        if temp_par in  detector_settings[channel]:
+                            temp_val = float(detector_settings[channel][temp_par])
+                        output_data[temp_par].append(temp_val)
+                      
+                                  
                 # store readout data
                 if itype == 0:
                     output_data['tes_bias'].append(tes_bias)
