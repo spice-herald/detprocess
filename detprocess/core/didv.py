@@ -1494,11 +1494,11 @@ class DIDVAnalysis(FilterData):
         temperature_list = ['cp','mc','still']
         for temp in temperature_list:
             temp_par = 'temperature_' + temp
-            temp_val = np.nan
             if temp_par in  detector_settings[channel].keys():
-                temp_val = float(detector_settings[channel][temp_par])
-            data_config[temp_par] = temp_val
-        
+                data_config[temp_par] = (
+                    float(detector_settings[channel][temp_par])
+                )
+                      
 
         # Apply cuts
         zerocut = np.all(traces!=0, axis=1)

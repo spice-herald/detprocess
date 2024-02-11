@@ -709,11 +709,13 @@ class IVSweepAnalysis(FilterData):
                 temperature_list = ['mc','cp','still']
                 for temp in temperature_list:
                     temp_par = 'temperature_' + temp
-                    temp_vals = np.ones_like(df['tes_bias'].values)*np.nan
-                    if temp_par in list(df.columns):
+                    if (temp_par in list(df.columns)
+                        and not np.isnan(df[temp_par].iloc[0])):
                         temp_vals = df[temp_par].values
-                    results[temp_par + '_sweep_avg'] = np.median(temp_vals)
-                                                
+                        results[temp_par + '_sweep_avg'] = (
+                            np.median(temp_vals)
+                        )
+                
                 # save rp/rn
                 self._readout_params[chan]['rp'] = rp
                 self._readout_params[chan]['rp_err'] =  rp_err
@@ -1266,7 +1268,7 @@ class IVSweepAnalysis(FilterData):
                 if chan not in available_channels:
                     raise ValueError(f'ERROR: No data for channel {chan}'
                                      ' available. Set data first!')
-        
+
         # check avalaible data
         for chan in channels:
                 
@@ -1297,23 +1299,21 @@ class IVSweepAnalysis(FilterData):
 
             # check if temperature available
             if self._tbath is None:
-                temperature_mc = np.nan
-                if 'temperature_mc' in df.columns:
-                    temperature_mc = df['temperature_mc'].iloc[0]
-                if np.isnan(temperature_mc): 
-                    raise ValueError(f'ERROR: Bath temperature is needed! '
-                                     f'Set Tbath first using function '
-                                     f'"set_tbath(tbath)"!')
+                if ('temperature_mc' not in df.columns
+                    or np.isnan(df['temperature_mc'].iloc[0])):
+                    raise ValueError(
+                        f'ERROR: Bath temperature not available in '
+                        f'raw data. Set Tbath first using function '
+                        f'"set_tbath(tbath)"!')
                                 
             if self._tload_guess is None:
-                temperature_cp = np.nan
-                if 'temperature_cp' in df.columns:
-                    temperature_cp = df['temperature_cp'].iloc[0]
-                if np.isnan(temperature_cp):
-                    raise ValueError(f'ERROR: Load temperature is needed! '
-                                     f'Set Tload first using function '
-                                     f'"set_tload_guess(tload)"!')
-
+                if ('temperature_cp' not in df.columns
+                    or np.isnan(df['temperature_cp'].iloc[0])):
+                    raise ValueError(
+                        f'ERROR: CP temperature not available in raw data! '
+                        f'Set Tload first using function '
+                        f'"set_tload_guess(tload)"!')
+                
                 
         # Loop channels and do noise analysis
         for chan in channels:
@@ -1500,7 +1500,7 @@ class IVSweepAnalysis(FilterData):
 
 
             # save in sweep result
-            ivsweep_result['noise_model_tload'] = tload
+            ivsweep_result['noise_model_fit_tload'] = tload
                 
             # ----------------------------
             # Transition data model
