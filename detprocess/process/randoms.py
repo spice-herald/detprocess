@@ -22,8 +22,6 @@ __all__ = [
     'Randoms'
 ]
 
-
-
 class Randoms:
     """
     Class to manage acquisitions of randoms from 
@@ -89,9 +87,7 @@ class Randoms:
 
         # initialize output path
         self._output_group_path = None
-        
     
-
     @property
     def verbose(self):
         return self._verbose
@@ -117,10 +113,10 @@ class Randoms:
         return self._output_group_path
 
     
-
     def process(self, random_rate=None,
                 nrandoms=None,
                 min_separation_msec=100,
+                edge_exclusion_msec=50,
                 ncores=1,
                 lgc_save=False,
                 lgc_output=False,
@@ -132,9 +128,6 @@ class Randoms:
         Acquire random trigger using specified rate (and minimum
         separation)
         """
-
-
-        
         # data are split based on series so
         # check number cores requested is possible
         nseries = len(self._series_dict.keys())
@@ -144,10 +137,9 @@ class Randoms:
                 print('INFO: Changing number cores to '
                       + str(ncores) + ' (maximum possible)')
 
-
-        # minimum separation (convert to seconds)
+        # convert to seconds
         min_separation_sec = min_separation_msec/1000
-
+        edge_exclusion_sec = edge_exclusion_msec/1000
 
         # random rate
         if (random_rate is not None
@@ -155,7 +147,6 @@ class Randoms:
             print('ERROR: Use either "random_rate" or "nrandoms", '
                   + 'not both!')
             return
-
 
         # if input is number of randoms, let's calculate
         # approximately random_rate (slightly increased so
@@ -170,36 +161,33 @@ class Randoms:
             for series,file_dict in self._series_dict.items():
                 nb_samples = file_dict['nb_samples']
                 sample_rate = file_dict['sample_rate']
-                nb_events_series = file_dict['nb_events_first_file']
+                nb_events_per_file = file_dict['nb_events_first_file']
                 nb_files = len(file_dict['files'])
-                if nb_files>1:
-                    nb_files -= 1
-                nb_events  += (nb_events_series*nb_files)
+                nb_events  = nb_events + (nb_events_per_file * nb_files)
 
-            # increasing nrandoms by 20%
-            nrandoms_increased = float(nrandoms)*1.2
+            # increasing nrandoms by 2%
+            nrandoms_increased = float(nrandoms)*1.02
             random_rate = nrandoms_increased/(nb_events*nb_samples/sample_rate)
           
-
         
         # average time between randoms
         random_length_sec = 1/random_rate
-        if random_length_sec<min_separation_sec:
-            print('ERROR: Unable to have a minimum separation '
-                  + 'of ' + str(min_separation_msec) + 'ms '
-                  + 'between randoms for the requested rate. '
-                  + 'Please, change "min_separation_msec" value!')
-            
-            return
+        if random_length_sec < min_separation_sec:
+            min_separation_sec = random_length_sec * 0.75
+            print('INFO: Changed min separation to '
+                  + str(1e3*min_separation_sec)
+                  + ' milliseconds to allow requested (high) '
+                  + 'random rate!')
 
+
+        if min_separation_sec > edge_exclusion_sec:
+            edge_exclusion_sec = min_separation_sec
+                        
         # If rate is low, we can increase minimum seperation
         # (up to 50% time between randoms) 
         #if (random_length_sec/2>min_separation_sec):
         #    min_separation_sec = random_length_sec/2
-
-
-
-
+        
         # create output directory
         output_group_path = None
         output_series_num = None
@@ -227,11 +215,9 @@ class Randoms:
             if self._verbose:
                 print(f'INFO: Processing output group path: {output_group_path}')
 
-
         # keep
         self._output_group_path = output_group_path
         self._output_series_num = output_series_num
-
 
         # initialize output
         output_df = None
@@ -240,7 +226,6 @@ class Randoms:
         if isinstance(memory_limit, str):
             memory_limit = parse_size(memory_limit)
 
-
         # case only 1 node used for processing
         if ncores == 1:
             series_list = list(self._series_dict.keys())
@@ -248,6 +233,7 @@ class Randoms:
                                       series_list,
                                       random_length_sec,
                                       min_separation_sec,
+                                      edge_exclusion_sec,
                                       output_series_num,
                                       output_group_path,
                                       lgc_save,
@@ -260,14 +246,12 @@ class Randoms:
             
             # max memory so it fits in RAM
             memory_limit /= ncores
-            
-            
+                  
             # lauch pool processing
             if self._verbose:
                 print(f'INFO: Processing with be split between {ncores} cores!')
 
             node_nums = list(range(ncores+1))[1:]
-
              
             with  Pool(processes=ncores) as pool:
                 output_df_list = pool.starmap(self._process,
@@ -275,6 +259,7 @@ class Randoms:
                                                   series_list_split,
                                                   repeat(random_length_sec),
                                                   repeat(min_separation_sec),
+                                                  repeat(edge_exclusion_sec),
                                                   repeat(output_series_num),
                                                   repeat(output_group_path),
                                                   repeat(lgc_save),
@@ -287,26 +272,23 @@ class Randoms:
             # concatenate
             if lgc_output:
                 output_df = vx.concat(output_df_list)
-       
-
-            
+                 
         # processing done
         if self._verbose:
             print('INFO: Randoms acquisition done!') 
 
-
-        if lgc_output and self._nrandoms is not None:
-            if len(output_df)>self._nrandoms:
-                output_df = output_df[0:1000]
+        #if lgc_output and self._nrandoms is not None:
+        #    if len(output_df)>self._nrandoms:
+        #        output_df = output_df[0:self._nrandoms]
             
         return output_df
-                
-       
+
     
     def _process(self, node_num,
                  series_list,
                  random_length_sec,
                  min_separation_sec,
+                 edge_exclusion_sec,
                  output_series_num,
                  output_group_path,
                  lgc_save,
@@ -319,7 +301,6 @@ class Randoms:
 
         # node string (for display)
         node_num_str = ' node #' + str(node_num)
-
 
         # trigger prod group name
         trigger_prod_group_name = np.nan
@@ -371,12 +352,9 @@ class Randoms:
                 memory_usage = process_df.shape[0]*process_df.shape[1]*8
                 memory_limit_reached =  memory_usage  >= memory_limit
                 
-
-                
             # series num
             series_num = self._series_dict[series]['series_num']
-      
-                
+                      
             # trace length in second:
             sample_rate = self._series_dict[series]['sample_rate']
             nb_samples = self._series_dict[series]['nb_samples']
@@ -401,17 +379,20 @@ class Randoms:
             min_separation_samples = int(
                 ceil(sample_rate*min_separation_sec)
             )
-                
+
+            edge_exclusion_samples = int(
+                ceil(sample_rate*edge_exclusion_sec)
+            )
+            
             nb_samples_reduced = (
-                nb_samples - (
-                    (nb_rand_trig_per_event+1)*min_separation_samples
+                nb_samples - 2*edge_exclusion_samples -(
+                    (nb_rand_trig_per_event-1)*min_separation_samples
                 )
             )
 
             # build list with samples  
             samples_list =  list(range(nb_samples_reduced))
-                        
-                        
+                                     
             # Fraction of events that will be needed
             #  1: find randoms every events
             # <1: finds randoms every 1/"event_fraction" events
@@ -443,14 +424,12 @@ class Randoms:
                                 'processing_id':list(),
                                 'trigger_prod_id': list(),
                                 'trigger_prod_group_name':list()}
-
                 
                 # get file metadata 
                 h5reader = h5io.H5Reader()
                 metadata = h5reader.get_metadata(file_name,
                                                  include_dataset_metadata=True)
 
-                              
                 # find ADC id 
                 if 'adc_list' not in metadata.keys():
                     raise ValueError(
@@ -514,15 +493,15 @@ class Randoms:
                     )
                     
                     trigger_indices = np.sort(trigger_indices)
-                    
 
                     # add min space between randoms
-                    trigger_indices += (
-                        min_separation_samples + (
+                    trigger_indices = trigger_indices + (
+                        edge_exclusion_samples + (
                             np.arange(nb_rand_trig_per_event)
-                            *min_separation_samples)
+                            * min_separation_samples
                         )
-
+                    )
+                    
                     # loop triggers and fill dataframe
                     for trigger_index in trigger_indices:
 
@@ -603,12 +582,9 @@ class Randoms:
                     + 'Change memory limit or only save hdf5 files '
                     +'(lgc_save=True AND lgc_output=False) '
                 )
-                                          
-                                   
+                                       
         return process_df
             
-
-
     
     def _split_series(self, ncores):
         """
