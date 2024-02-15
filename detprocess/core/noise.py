@@ -39,7 +39,9 @@ class Noise(FilterData):
         self._group_name = None
         self._raw_base_path = None
         self._series_list = None
-    
+        self._detector_config = None
+
+        
         # intialize randoms dataframe
         self._dataframe = None
 
@@ -52,10 +54,31 @@ class Noise(FilterData):
         self._fs = None
 
         # noise objects (QETpy.Noise) dictionary
-        self._noise_objects = dict()
-
+        # self._noise_objects = dict()
 
         
+
+    def get_detector_config(self, channel):
+        """
+        get detector config
+        """
+        if self._detector_config is None:
+            print('WARNING: No data has been set yet! '
+                  'Returning None ')
+            return None
+        elif channel not in self._detector_config.keys():
+            print(f'WARNING: No channel {channe}  found! '
+                  f'Returning None ')
+            return None
+        return self._detector_config[channel]
+                
+    def get_sample_rate(self):
+        """
+        Get sample rate in Hz ("calc_psd" needs to be 
+        called before)
+        """
+
+        return self._fs
 
     def clear_randoms(self):
         """
@@ -68,6 +91,7 @@ class Noise(FilterData):
         self._group_name = None
         self._raw_base_path = None
         self._series_list = None
+        self._detector_config = None
         
         self._array_channels = None
         self._array = None
@@ -105,11 +129,11 @@ class Noise(FilterData):
                              + 'Check configuration...')
         
         # store as internal data
+        self._raw_base_path = output_base_path
         self._raw_data = raw_data
         self._group_name = group_name
-        self._raw_base_path = output_base_path
         self._series_list = list(raw_data.keys())
-
+        self._detector_config = dict()
 
         # check dataframe
         if dataframe is not None:
@@ -170,8 +194,9 @@ class Noise(FilterData):
         self._group_name = group_name
         self._raw_base_path = output_base_path
         self._series_list = list(raw_data.keys())
+        self._detector_config = dict()
 
-
+        
         # generate randoms
         rand_inst = Randoms(raw_path, series=series)
         self._dataframe = rand_inst.process(
@@ -182,9 +207,8 @@ class Noise(FilterData):
             lgc_output=True,
             ncores=ncores
         )
-         
+
         
-    
     def calc_psd(self, channels, 
                  series=None,
                  trace_length_msec=None,
@@ -197,8 +221,7 @@ class Noise(FilterData):
         Calculate PSD
         
         """
-             
-        
+
         # --------------------------------
         # Check arguments
         # --------------------------------
@@ -221,10 +244,6 @@ class Noise(FilterData):
         #                     + 'Use first "set_randoms()"'
         #                     + ' or "generate_randoms()"')
 
-
-
-        
-            
 
         # --------------------------------
         # Loop channels and calculate PSD
@@ -316,24 +335,15 @@ class Noise(FilterData):
             self._filter_data[chan][psd_fold_name + '_metadata'] = traces_metadata
 
 
-    def get_sample_rate(self):
-        """
-        Get sample rate in Hz ("calc_psd" needs to be 
-        called before)
-        """
-
-        return self._fs
-
-    
-
-    def _get_traces(self, channels, 
+    def _get_traces(self, channels,
+                    series=None,
                     trace_length_msec=None,
                     trace_length_samples=None,
                     pretrigger_length_msec=None,
                     pretrigger_length_samples=None,
-                    nevents=5000,
-                    series=None):
+                    nevents=5000):
         """
+        Get raw data traces
         """
         
         # channels
@@ -352,11 +362,16 @@ class Noise(FilterData):
                 series_num = int(series)
                 series = str(h5io.extract_series_name(series_num))
             else:
-                series_num = h5io.extract_series_num(series)
+                series_num = int(h5io.extract_series_num(series))
 
             first_series = series
-                
-                        
+
+            # check if series in list
+            if series not in self._raw_data.keys():
+                raise ValueError(
+                    f'ERROR: series {series} not found! '
+                    f'Check raw data path input.')
+
         # instantiate data reader
         h5reader = h5io.H5Reader()
 
@@ -368,7 +383,9 @@ class Noise(FilterData):
         fs = adc_info['sample_rate']
         nb_samples_raw = adc_info['nb_samples']
 
-
+        self._detector_config = h5reader.get_detector_config(
+            file_name=first_file)
+        
         # trace length
         nb_samples = None
         if trace_length_samples is not None:
@@ -389,14 +406,34 @@ class Noise(FilterData):
             nb_pretrigger_samples = int(
                 fs*pretrigger_length_msec/1000
             )
+
             
-             
-        # Get event list (list of dictionaries)
         event_list = None
+        series_num_list = None
         if self._event_list is not None:
-            event_list = self._event_list.copy()
+
+            # case input event list 
             
+            # loop list
+            event_list = list()
+            for ievent in range(len(self._event_list)):
+                event_dict = self._event_list[ievent].copy()
+                if series_num is not None:
+                    if event_dict['series_number'] == series_num:
+                        event_list.append(event_dict)
+                else:
+                    series_name = str(h5io.extract_series_name(series_num))
+                    if  series_name not in self._raw_data.keys():
+                        raise ValueError(
+                            f'ERROR: series {series_name} from input '
+                            f'event_list not found in raw data path!'
+                            f'Check input.')
+                    else:
+                        event_list.append(event_dict)
+
         elif self._dataframe is not None:
+            
+            # case dataframe input
             
             event_list = list()
             dataframe = self._dataframe.copy()
@@ -436,6 +473,20 @@ class Noise(FilterData):
                 # append to list
                 event_list.append(event_dict)
 
+        else:
+
+            # case raw data directly
+          
+            # list of series
+            series_num_list = list()
+            if series_num is not None:
+                series_num_list.append(series_num)
+            else:
+                for series_name in self._raw_data.keys():
+                    series_num_list.append(
+                        int(h5io.extract_series_num(series_name))
+                    )
+                          
         # check number of events
         if event_list is not None:
 
@@ -447,9 +498,7 @@ class Noise(FilterData):
                 event_list = event_list[:nevents]
 
             nevents = len(event_list)
-
-        # get data
-    
+      
         raw_path = self._raw_base_path + '/' + self._group_name
         trace_array = h5reader.read_many_events(
             filepath=raw_path,
@@ -457,12 +506,12 @@ class Noise(FilterData):
             output_format=2,
             detector_chans=channels,
             event_list=event_list,
+            series_nums = series_num_list,
             trace_length_samples=nb_samples,
             pretrigger_length_samples=nb_pretrigger_samples,
             include_metadata=False,
             adctoamp=True,
             baselinesub=False)
-
         
         if self._verbose:
             chan_string = str(channels)
@@ -489,13 +538,9 @@ class Noise(FilterData):
         if 'comment' in metadata.keys():
             trace_metadata['comment'] =  metadata['comment']
 
-                    
         return trace_array, trace_metadata
         
-        
-              
-
-
+    
     def _load_dataframe(self, dataframe_path):
         """
         Load vaex dataframe

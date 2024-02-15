@@ -154,7 +154,7 @@ class IVSweepAnalysis(FilterData):
 
         self.load_hdf5(file_name)
 
-        # update number of SC/Norma; points
+        # update number of SC/Normal; points
         for chan, chan_dict in self._filter_data.items():
 
             # loop keys
@@ -173,13 +173,12 @@ class IVSweepAnalysis(FilterData):
         # update path
         if self._save_path is None:
             dir_name = os.path.dirname(file_name)
-            dir_name = str(Path(dir_name).parent)
-                    
+                               
             if '/processed' in dir_name:
                 dir_name = dir_name.replace('/processed',
                                             '/filterdata')
             self._save_path = dir_name
-
+     
             if not os.path.isdir(dir_name):
                 try:
                     os.makedirs(dir_name)
@@ -1385,10 +1384,15 @@ class IVSweepAnalysis(FilterData):
                 # set data
                 noise_sim.set_psd(chan, psd, psd_freqs, tes_bias, 'normal' )
 
-                # set didv data (normal fit)
-                noise_sim.set_didv_data_from_dict(chan, fitresult,
-                                                  ivsweep_result=ivsweep_result)
+                # set IV sweep results
+                noise_sim.set_iv_didv_results_from_dict(
+                    chan,
+                    ivsweep_results=ivsweep_result
+                )
 
+                # set inductance
+                L = float(fitresult['smallsignalparams']['L'])
+                noise_sim.set_inductance(chan, L, 'normal')
                 
                 # fit 
                 noise_sim.fit_normal_noise(channels=chan,
@@ -1473,11 +1477,16 @@ class IVSweepAnalysis(FilterData):
                 # set data
                 noise_sim.set_psd(chan, psd, psd_freqs, tes_bias, 'sc' )
 
-                # set didv data (SC fit)
-                noise_sim.set_didv_data_from_dict(chan, fitresult,
-                                                  ivsweep_result=ivsweep_result)
+                # set IV sweep results
+                noise_sim.set_iv_didv_results_from_dict(
+                    chan,
+                    ivsweep_results=ivsweep_result
+                )
 
-                
+                # set inductance
+                L = float(fitresult['smallsignalparams']['L'])
+                noise_sim.set_inductance(chan, L, 'sc')
+                            
                 # fit 
                 noise_sim.fit_sc_noise(channels=chan,
                                        fit_range=fit_range,
@@ -1530,9 +1539,9 @@ class IVSweepAnalysis(FilterData):
                 psd =  df_bias['psd'].iloc[0]
                 psd_freqs = df_bias['psd_freq'].iloc[0]
                 tes_bias = df_bias['tes_bias'].iloc[0]
-                r0 = df_bias['r0_noise'].iloc[0]
-                p0 = df_bias['p0_noise'].iloc[0]
-                percent_rn =  df_bias['percent_rn_noise'].iloc[0]
+                r0 = float(df_bias['r0_noise'].iloc[0])
+                p0 = float(df_bias['p0_noise'].iloc[0])
+                percent_rn =  float(df_bias['percent_rn_noise'].iloc[0])
 
                 # set Tload and Tbath
                 tload_guess = self._tload_guess
@@ -1557,11 +1566,14 @@ class IVSweepAnalysis(FilterData):
                 gta_list.append(gta)
                 
                 # set data
-                noise_sim.set_psd(chan, psd, psd_freqs, tes_bias, 'transition' )
+                noise_sim.set_psd(chan, psd, psd_freqs, float(tes_bias), 'transition' )
 
                 # set didv data (2-poles fit)
-                noise_sim.set_didv_data_from_dict(chan, fitresult,
-                                                  ivsweep_result=ivsweep_result)
+                noise_sim.set_iv_didv_results_from_dict(
+                    chan,
+                    didv_results=fitresult,
+                    ivsweep_results=ivsweep_result
+                )
 
 
                 # analyze

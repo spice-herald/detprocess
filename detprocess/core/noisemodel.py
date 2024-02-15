@@ -135,11 +135,13 @@ class NoiseModel(FilterData):
         self._tload_guess = None
         self._tc = dict()
         self._gta = dict()
+        self._inductance = dict()
 
         
-    def set_didv_data_from_file(self, file_name, channels=None):
+    def set_iv_didv_results_from_file(self, file_name,
+                                      channels=None):
         """
-        set didv
+        set dIdV and/or IV sweep results from an HDF5 file
         """
 
         self.load_hdf5(file_name)
@@ -158,101 +160,142 @@ class NoiseModel(FilterData):
             if chan not in self._filter_data.keys():
                 raise ValueError(f'ERROR: No data loaded for channel {chan}. '
                                  f'Check file {file_name} !')
+            # dIdV results
+            didv_results = None
+            try:
+                didv_results = self.get_didv_results(chan, poles=2)
+            except:
+                print(f'WARNING: No 2-poles dIdV results found for '
+                      f'channel {chan}!')
+
+            # IV results
+            ivsweep_results = None
+            try:
+                ivsweep_results = self.get_ivsweep_results(chan)
+            except:
+                pass
+
+
+            self.set_iv_didv_results_from_dict(
+                chan,
+                didv_results=didv_results,
+                ivsweep_results=ivsweep_results
+            )
             
-            # check if channel exist
-            if chan not in self._noise_data.keys():
-                self._noise_data[chan] = dict()
-                
-            # get didv results for poles=2
-            data = self.get_didv_results(chan, poles=2)
-            if 'smallsignalparams' in data.keys():
-                self._noise_data[chan]['smallsignalparams'] = (
-                    data['smallsignalparams']
-                )
-            else:
-                raise ValueError(f'ERROR: dIdV 2-poles fit results '
-                                 f'does not contain "smallsignalparams" '
-                                 f'for channel {chan}')
-
-            if ('biasparams' in data.keys()
-                and data['biasparams'] is not None):
-                self._noise_data[chan]['biasparams'] = (
-                    data['biasparams']
-                )
-            else:
-                raise ValueError(f'ERROR: dIdV 2-poles fit results '
-                                 f'does not contain "biasparams" '
-                                 f'for channel {chan}')
-
-
-            # case 'rn' not in "biasparams", get IV sweep results
-            if 'rn' not in  data['biasparams']:
-                ivdata = None
-                try:
-                    ivdata = self.get_ivsweep_results(chan)
-                except:
-                    raise ValueError(f'ERROR: No Rn found for channel '
-                                     f'{chan}. IV sweep results need to be '
-                                     f'added in hdf5 file!')
-                else:
-                    self._noise_data[chan]['biasparams']['rn'] = ivdata['rn']
             
 
-    def set_didv_data_from_dict(self, channel, didv_data, ivsweep_result=None):
+    def set_iv_didv_results_from_dict(self, channel,
+                                      didv_results=None,
+                                      ivsweep_results=None):
         """
         Set didv from dictionary for specified channel
         """
-
 
         # check if channel exist
         if channel not in self._noise_data.keys():
             self._noise_data[channel] = dict()
 
-        if 'smallsignalparams' in didv_data.keys():
-            self._noise_data[channel]['smallsignalparams'] = (
-                didv_data['smallsignalparams']
+
+        # dIdV results
+        if didv_results is not None:
+
+            # add to filter data
+            metadata = None
+            if 'metadata' in didv_results:
+                metadata = didv_results['metadata']
+            self.set_didv_results(
+                channel,
+                didv_results,
+                poles=2,
+                metadata=metadata
             )
-        else:
-            raise ValueError(f'ERROR: dIdV fit results '
-                             f'does not contain "smallsignalparams" '
-                             f'for channel {channel}')
 
-        if ('biasparams' in didv_data.keys()
-            and didv_data['biasparams'] is not None):
-            self._noise_data[channel]['biasparams'] = didv_data['biasparams']
-        elif ivsweep_result is not None:
-            self._noise_data[channel]['biasparams'] = ivsweep_result
-            # back compatibility
-            self._noise_data[channel]['biasparams']['rsh'] = ivsweep_result['rshunt']
-        else:
-            raise ValueError(f'ERROR: dIdV fit results '
-                             f'does not contain "biasparams" '
-                             f'for channel {channel}!')
-
-        # case 'rn' not in "biasparams", get IV sweep results
-        if 'rn' not in self._noise_data[channel]['biasparams']:  
-            if (ivsweep_result is not None and 'rn' in ivsweep_result):
-                self._noise_data[channel]['biasparams']['rn'] = (
-                    ivsweep_result['rn']
+            # Add small signal parameters
+            if 'smallsignalparams' in didv_results.keys():
+                self._noise_data[channel]['smallsignalparams'] = (
+                    didv_results['smallsignalparams'].copy()
                 )
             else:
-                raise ValueError(f'ERROR: No Rn found for channel '
-                                 f'{channel}. Add "rn" in "ivsweep_result" argument!')
+                raise ValueError(f'ERROR: dIdV fit results '
+                                 f'does not contain "smallsignalparams" '
+                                 f'for channel {channel}!')
             
+            # add "biasparams"
+            if ('biasparams' in didv_results.keys()
+                and didv_results['biasparams'] is not None):
+                self._noise_data[channel]['biasparams'] = didv_results['biasparams']
 
+
+        # IV results
+        if ivsweep_results is not None:
+
+            # add to filter data
+            self.set_ivsweep_results(
+                channel,
+                ivsweep_results,
+                'noise')
+
+            # add to noise data
+            if 'biasparams' not in self._noise_data[channel]:
+                self._noise_data[channel]['biasparams'] = ivsweep_results
+
+
+            # add more quantities
+            if 'rn' not in  self._noise_data[channel]['biasparams']:
+                self._noise_data[chan]['biasparams']['rn'] = (
+                    ivsweep_results['rn']
+                )
+
+            if 'rshunt' not in self._noise_data[channel]['biasparams']:
+                self._noise_data[channel]['biasparams']['rshunt'] = (
+                    ivsweep_results['rshunt']
+                )
+                
+            # inductance
+            if 'normal_didv_fit_L' in ivsweep_results.keys():
+                self.set_inductance(channel,
+                                    ivsweep_results['normal_didv_fit_L'],
+                                    'normal')
+
+            if 'sc_didv_fit_L' in ivsweep_results.keys():
+                self.set_inductance(channel,
+                                    ivsweep_results['sc_didv_fit_L'],
+                                    'sc')
+                
+        # check Rn
+        if 'rn' not in  self._noise_data[channel]['biasparams']:
+            raise ValueError(f'ERROR: No Rn found for channel {channel}! '
+                             f'Add "rn" key/value in "ivsweep_results" '
+                             f'argument.')
+        
+                
+    def set_inductance(self, channel, L, state):
+        """
+        Set inductance when normal/SC state
+        """
+        if (state != 'normal' and state != 'sc'):
+            raise ValueError('ERROR: "state" argument should be '
+                             '"normal" or "sc"!')
+
+        if channel not in  self._inductance.keys():
+            self._inductance[channel] = dict()
+
+        self._inductance[channel][state] = float(L)
+
+        
     def set_tbath(self, tbath):
         """
         Set bath temperature
         """
 
-        self._tbath = tbath
+        self._tbath = float(tbath)
 
     def set_tload_guess(self, tload):
         """
         Set bath temperature
         """
 
-        self._tload_guess = tload
+        self._tload_guess = float(tload)
 
         
     def set_tc(self, channel, tc):
@@ -260,7 +303,7 @@ class NoiseModel(FilterData):
         Set Tc
         """
 
-        self._tc[channel] = tc
+        self._tc[channel] = float(tc)
 
     
     def set_gta(self, channel, gta):
@@ -268,7 +311,7 @@ class NoiseModel(FilterData):
         Set Gta for specified channel
         """
 
-        self._gta[channel] = gta
+        self._gta[channel] = float(gta)
         
 
     def set_psd_from_file(self, file_name):
@@ -276,6 +319,8 @@ class NoiseModel(FilterData):
         Set TES data from file
         """
         
+        raise ValueError('ERROR: Not implemented yet!')
+
         
         # load hdf5 file
         self.load_hdf5(file_name)
@@ -296,16 +341,12 @@ class NoiseModel(FilterData):
                 '"normal", "sc", or "transition"'
             )
 
-        
+        # initialized 
         if channel not in  self._noise_data.keys():
-            self._noise_data[channel] = {'normal': None,
-                                         'sc': None,
-                                         'transition': None}
-
-        # add data
-        if self._noise_data[channel][state] is None:
+            self._noise_data[channel] = dict()
+            
+        if state not in self._noise_data[channel]:
             self._noise_data[channel][state] = dict()
-
 
         # fold psd if needed
         is_folded = not np.any(psd_freqs<0)
@@ -316,7 +357,7 @@ class NoiseModel(FilterData):
             
         self._noise_data[channel][state]['psd_fold'] = psd
         self._noise_data[channel][state]['psd_fold_freqs'] = psd_freqs
-        self._noise_data[channel][state]['tes_bias'] = tes_bias
+        self._noise_data[channel][state]['tes_bias'] = float(tes_bias)
 
 
     def set_normal_fit_results(self, channel,
@@ -334,18 +375,17 @@ class NoiseModel(FilterData):
                              '"squidn" are required!')
                 
         if channel not in  self._noise_data.keys():
-            self._noise_data[channel] = {'normal': None,
-                                         'sc': None,
-                                         'transition': None}
+            self._noise_data[channel] = dict()
 
-        if self._noise_data[channel]['normal'] is None:
+        if 'normal' not in self._noise_data[channel]:
             self._noise_data[channel]['normal'] = dict()
 
         # add data
-        self._noise_data[channel]['normal']['fit'] = dict()
-        self._noise_data[channel]['normal']['fit']['squiddc'] = squiddc
-        self._noise_data[channel]['normal']['fit']['squidpole'] = squidpole
-        self._noise_data[channel]['normal']['fit']['squidn'] = squidn
+        self._noise_data[channel]['normal']['fit'] = {
+            'squiddc': float(squiddc),
+            'squidpole': float(squidpole),
+            'squidn': float(squidn)
+        }
 
 
     def set_sc_fit_results(self, channel, tload=None):
@@ -356,18 +396,15 @@ class NoiseModel(FilterData):
 
         if tload is None:
             raise ValueError('ERROR: "tload" is required!')
-                
+                       
         if channel not in  self._noise_data.keys():
-            self._noise_data[channel] = {'normal': None,
-                                         'sc': None,
-                                         'transition': None}
+            self._noise_data[channel] = dict()
 
-        if self._noise_data[channel]['sc'] is None:
+        if 'sc' not in self._noise_data[channel]:
             self._noise_data[channel]['sc'] = dict()
-
+        
         # add data
-        self._noise_data[channel]['sc']['fit'] = dict()
-        self._noise_data[channel]['sc']['fit']['tload'] = tload
+        self._noise_data[channel]['sc']['fit'] = {'tload': float(tload)}
 
         
         
@@ -424,7 +461,8 @@ class NoiseModel(FilterData):
         
 
             # check normal parameters exists
-            if self._noise_data[chan]['normal'] is None:
+            if ('normal' not in self._noise_data[chan]
+                or 'psd_fold' not  in self._noise_data[chan]['normal']):
                 raise ValueError(f'ERROR: No normal psd for channel {chan} '
                                  'available. Set psd first!')
                 
@@ -433,7 +471,7 @@ class NoiseModel(FilterData):
             if chan not in self._tc.keys():
                 raise ValueError(f'ERROR: No Tc for channel {chan} '
                                  f'available. Set Tc first using function '
-                                 f'"set_tc({chan}, tc)"!')
+                                 f'set_tc("{chan}", tc)"!')
             
 
             # check tload
@@ -453,11 +491,16 @@ class NoiseModel(FilterData):
             if 'biasparams' not in self._noise_data[chan]:
                 raise ValueError(f'ERROR: No iv/didv data for channel {chan} '
                                  'available. Set didv data first!')
-    
+            # inductance
+            if (chan not in self._inductance
+                or 'normal' not in  self._inductance[chan]):
+                raise ValueError(f'ERROR: No inductance value for channel {chan} '
+                                 f'available. Set inductance first using function '
+                                 f'set_inductance("{chan}", L, "normal")')
             
         # Loop channels and fit data
         for chan in channels:
-
+            
             # psd array
             psd = self._noise_data[chan]['normal']['psd_fold']
             psd_freqs =  self._noise_data[chan]['normal']['psd_fold_freqs']
@@ -467,8 +510,8 @@ class NoiseModel(FilterData):
             tc = self._tc[chan]
 
             # rn/rload
-            rn = self._noise_data[chan]['biasparams']['rn']
-            rp = self._noise_data[chan]['biasparams']['rp']
+            rn = float(self._noise_data[chan]['biasparams']['rn'])
+            rp = float(self._noise_data[chan]['biasparams']['rp'])
             rshunt = None
             if 'rsh' in self._noise_data[chan]['biasparams']:
                 rshunt = self._noise_data[chan]['biasparams']['rsh']
@@ -477,7 +520,7 @@ class NoiseModel(FilterData):
             rload = rp+rshunt
 
             # inductance
-            L = self._noise_data[chan]['smallsignalparams']['L']
+            L = float(self._inductance[chan]['normal'])
         
             # fit range
             ind_lower = (np.abs(psd_freqs - fit_range[0])).argmin()
@@ -508,13 +551,13 @@ class NoiseModel(FilterData):
 
             # fit result
             fitvals = result.values
-
+           
             # store values
             self._noise_data[chan]['normal']['fit'] = fitvals
        
             # Instantiate Noise sim
             noise_sim = qp.sim.TESnoise(
-                rload=rload,
+                rload=float(rload),
                 r0=rn,
                 rshunt=rshunt,
                 inductance=L,
@@ -551,8 +594,7 @@ class NoiseModel(FilterData):
                      lgc_save_fig=False, save_path=None):
         """
         Function to fit the components of the SC Noise. Fits all SC
-        noise PSDs and stores the average value for tload as an
-        attribute of the class.
+        noise PSDs and stores tload 
 
         Parameters
         ----------
@@ -592,17 +634,18 @@ class NoiseModel(FilterData):
                 raise ValueError(f'ERROR: No data for channel {chan} '
                                  'available. Set data first!')
                 
-
-            if self._noise_data[chan]['sc'] is None:
-                raise ValueError(f'ERROR: No sc psd for channel {chan} '
+            
+            # check normal parameters exists
+            if ('sc' not in self._noise_data[chan]
+                or 'psd_fold' not  in self._noise_data[chan]['sc']):
+                raise ValueError(f'ERROR: No SC  psd for channel {chan} '
                                  'available. Set psd first!')
 
-            if (self._noise_data[chan]['normal'] is None
-                  or 'fit' not in  self._noise_data[chan]['normal']):
+            if ('normal' not in self._noise_data[chan]
+                or 'fit' not  in self._noise_data[chan]['normal']):
                 raise ValueError(f'ERROR: Fit of normal noise should be done first '
                                  f'for channel {chan}')
             
-
             if chan not in self._tc.keys():
                 raise ValueError(f'ERROR: No Tc for channel {chan} '
                                  f'available. Set Tc first using function '
@@ -613,7 +656,12 @@ class NoiseModel(FilterData):
                 raise ValueError(f'ERROR: No iv/didv data for channel {chan} '
                                  'available. Set didv data first!')
         
-            
+            # inductance
+            if (chan not in self._inductance
+                or 'sc' not in  self._inductance[chan]):
+                raise ValueError(f'ERROR: No inductance value for channel {chan} '
+                                 f'available. Set inductance first using function '
+                                 f'set_inductance("{chan}", L, "sc")')
         # Loop channels and fit data
         for chan in channels:
 
@@ -629,8 +677,8 @@ class NoiseModel(FilterData):
             tc = self._tc[chan]
         
             # rn/rload
-            rn = self._noise_data[chan]['biasparams']['rn']
-            rp = self._noise_data[chan]['biasparams']['rp']
+            rn = float(self._noise_data[chan]['biasparams']['rn'])
+            rp = float(self._noise_data[chan]['biasparams']['rp'])
             rshunt = None
             if 'rsh' in self._noise_data[chan]['biasparams']:
                 rshunt = self._noise_data[chan]['biasparams']['rsh']
@@ -639,8 +687,8 @@ class NoiseModel(FilterData):
             rload = rp+rshunt
             
             # inductance
-            L = self._noise_data[chan]['smallsignalparams']['L']
-            
+            L = self._inductance[chan]['sc']
+                     
             # fit range
             ind_lower = (np.abs(psd_freqs - fit_range[0])).argmin()
             ind_upper = (np.abs(psd_freqs - fit_range[1])).argmin()
@@ -745,17 +793,26 @@ class NoiseModel(FilterData):
 
             
         for chan in channels:
+            
             if chan not in self._noise_data.keys():
                 raise ValueError(f'ERROR: No data for channel {chan} '
                                  'available. Set data first!')
-                
-            else:
-                states = ['transition', 'normal', 'sc']
-                for state in states:
-                    if self._noise_data[chan][state] is None:
-                        raise ValueError(f'ERROR: No {state} psd for '
-                                         f'channel {chan} available. '
-                                         f'Set psd first!')
+            
+            # check if normal/sc psd or fit available
+            states = ['normal', 'sc']
+            for state in states:
+                if (state not in self._noise_data[chan]
+                    or ('psd_fold' not in self._noise_data[chan][state]
+                        and 'fit' not  in self._noise_data[chan][state])):
+                    raise ValueError(f'ERROR: No {state} psd or fit results for '
+                                     f'channel {chan} available!')
+
+            # check transition psd
+            if ('transition' not in self._noise_data[chan]
+                or 'psd_fold' not in self._noise_data[chan]['transition']):
+                raise ValueError(f'ERROR: No transition psd for '
+                                 f'channel {chan} available!'
+                                 f'Set PSD first!')
                                     
             # check tc
             if chan not in self._tc.keys():

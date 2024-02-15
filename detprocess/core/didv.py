@@ -1246,17 +1246,27 @@ class DIDVAnalysis(FilterData):
         save_data = False
         for chan in channels:
 
+            # metadata
+            metadata = dict()
+            metadata['channel'] = chan
+            
+            data_config = self.get_didv_data(chan)['data_config']
+            if data_config is not None:
+                metadata.update(data_config.copy())
+                
             # 2-poles
             results = self.get_fit_results(chan, 2, verbose=False)
             if results:
-                self.set_didv_results(chan, results, 2)
+                self.set_didv_results(chan, results, 2,
+                                      metadata=metadata)
                 save_data = True
 
                 
             # 3-poles
             results = self.get_fit_results(chan, 3, verbose=False)
             if results:
-                self.set_didv_results(chan, results, 3)
+                self.set_didv_results(chan, results, 3,
+                                      metadata=metadata)
                 save_data = True
             
             # dpdi
@@ -1269,13 +1279,15 @@ class DIDVAnalysis(FilterData):
                 dpdi_freqs, dpdi = self.get_dpdi(chan, 2)
                 self.set_dpdi(chan, dpdi, dpdi_freqs,
                               sample_rate=fs,
-                              didv_fit_poles=2)
-
+                              didv_fit_poles=2,
+                              metadata=metadata)
+                
             if 'dpdi_3poles' in self._didv_data[chan]:
                 dpdi_freqs, dpdi = self.get_dpdi(chan, 3)
                 self.set_dpdi(chan, dpdi, dpdi_freqs,
                               sample_rate=fs,
-                              didv_fit_poles=3)
+                              didv_fit_poles=3,
+                              metadata=metadata)
 
         if not save_data:
             print('WARNING: No dIdV data to save!')

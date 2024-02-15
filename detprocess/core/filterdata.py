@@ -27,7 +27,6 @@ class FilterData:
       
         # filter file data dictionary
         self._filter_data = dict()
-      
 
     @property
     def verbose(self):
@@ -246,12 +245,14 @@ class FilterData:
         """
 
         if self._verbose:
-            print('INFO: Saving filter/TES data to file '
-                  + file_name)
+
+            msg = ('INFO: Saving filter/TES data to file '
+                   + file_name + '!')
             if overwrite:
-                print('INFO: channel data with same tag may be overwritten')
-        
-        filter_io = h5io.FilterH5IO(file_name)
+                msg += ' (overwrite=True)'
+            print(msg)
+                    
+        filter_io = h5io.FilterH5IO(file_name, verbose=False)
         filter_io.save_fromdict(self._filter_data,
                                 overwrite=overwrite)
 
@@ -999,6 +1000,12 @@ class FilterData:
 
         # base name, poles
         base_name = 'didv_results_' + str(poles) + 'poles'
+
+        # metadata
+        if metadata is not None:
+            metadata.update({'channel': channel})
+        else:
+            metadata = {'channel': channel}
         
         # sub-dictionaries
         subdict_list = ['biasparams', 'biasparams_infinite_lgain',
@@ -1006,7 +1013,6 @@ class FilterData:
                         'ssp_light']
         
         # fit results
-        par_name_fit =  base_name + '_fit_' + tag
         fit_data = dict()
         for par_name, par_val  in results.items():
             if not isinstance(par_val, dict):
@@ -1016,7 +1022,10 @@ class FilterData:
             pd_series  = pd.Series(fit_data)
             data_name =  base_name + '_fit_' + tag
             self._filter_data[channel][data_name] = pd_series
-
+            self._filter_data[channel][data_name + '_metadata'] = (
+                metadata
+            )
+            
         for keyname in subdict_list:
 
             if (keyname not in results.keys() or
@@ -1034,16 +1043,10 @@ class FilterData:
             pd_series  = pd.Series(data_dict)
             data_name =  base_name + '_' + keyname + '_' + tag
             self._filter_data[channel][data_name] = pd_series
+            self._filter_data[channel][data_name + '_metadata'] = (
+                metadata
+            )
             
-        # metadata
-        if metadata is not None:
-            metadata.update({'channel': channel})
-        else:
-            metadata = {'channel': channel}
-            
-        self._filter_data[channel][base_name + '_metadata'] = metadata
-
-
         
     def get_didv_results(self, 
                          channel,
@@ -1071,7 +1074,10 @@ class FilterData:
                              f'for channel {channel}!')
 
         output_data.update(self._filter_data[channel][par_name].to_dict())
-
+        output_data['metadata'] = (
+            self._filter_data[channel][par_name + '_metadata']
+        )
+                
         # other par list
         par_list = ['biasparams', 'biasparams_infinite_lgain',
                     'errors','params', 'smallsignalparams',
@@ -1081,11 +1087,6 @@ class FilterData:
             par_name =   base_name + '_' + par + '_' + tag
             if par_name in self._filter_data[channel].keys():
                 output_data[par] = self._filter_data[channel][par_name].to_dict()
-                
-        # metadata
-        par_name = base_name + '_metadata'
-        if par_name in self._filter_data[channel].keys():
-            output_data['metadata'] = self._filter_data[channel][par_name].to_dict()
             
         return  output_data
 
