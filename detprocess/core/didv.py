@@ -166,7 +166,7 @@ class DIDVAnalysis(FilterData):
 
         
     def process_raw_data(self, channels,
-                         raw_path, series=None,
+                         files_or_path, series=None,
                          overwrite=False):
         
         """
@@ -181,16 +181,19 @@ class DIDVAnalysis(FilterData):
             channels = [channels]
 
         for chan in channels:
-            self._process_raw_data(chan, raw_path,
+            self._process_raw_data(chan, files_or_path,
                                    series=series,
                                    overwrite=overwrite)
 
-
-
-        # save path
+        # update save path if not set already
         if self._save_path is None:
-            
-            dir_name = raw_path
+
+            dir_name = files_or_path
+            if isinstance(files_or_path, list):
+                dir_name = files_or_path[0]
+            if os.path.isfile(dir_name):
+                dir_name = os.path.dirname(dir_name)
+                
             if '/processed' in dir_name:
                 dir_name = dir_name.replace('/processed',
                                             '/filterdata')
@@ -1298,7 +1301,7 @@ class DIDVAnalysis(FilterData):
      
                         
             
-    def _get_file_list(self, file_path,
+    def _get_file_list(self, files_or_path,
                        series=None):
         """
         Get file list from path. Return as a dictionary
@@ -1307,7 +1310,7 @@ class DIDVAnalysis(FilterData):
         Parameters
         ----------
 
-        file_path : str or list of str 
+        files_or_path : str or list of str 
            raw data group directory OR full path to HDF5  file 
            (or list of files). Only a single raw data group 
            allowed 
@@ -1329,9 +1332,9 @@ class DIDVAnalysis(FilterData):
 
         """
 
-        # convert file_path to list 
-        if isinstance(file_path, str):
-            file_path = [file_path]
+        # convert files_or_path to list 
+        if isinstance(files_or_path, str):
+            files_or_path = [files_or_path]
             
             
         # initialize
@@ -1341,7 +1344,7 @@ class DIDVAnalysis(FilterData):
 
 
         # loop files 
-        for a_path in file_path:
+        for a_path in files_or_path:
                    
             # case path is a directory
             if os.path.isdir(a_path):
@@ -1366,7 +1369,7 @@ class DIDVAnalysis(FilterData):
                     file_list = glob(a_path + '/*.hdf5')
                
                 # check a single directory
-                if len(file_path) != 1:
+                if len(files_or_path) != 1:
                     raise ValueError('Only single directory allowed! ' +
                                      'No combination files and directories')
                 

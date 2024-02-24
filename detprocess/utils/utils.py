@@ -2,11 +2,13 @@ import os
 import sys
 import numpy as np
 from scipy.optimize import curve_fit
-
+import yaml
+import copy
+from yaml.loader import SafeLoader
 
 
 __all__ = ['split_channel_name', 'extract_window_indices',
-           'find_linear_segment']
+           'find_linear_segment', 'read_config']
 
 
 
@@ -48,19 +50,24 @@ def split_channel_name(channel_name,
             if chan in channel_name:
                 channel_list.append(chan)
                 channel_name = channel_name.replace(chan, '')
-
+                
         # find remaining separator
         separator_list = list()
         channel_name = channel_name.strip()
         for sep in channel_name:
             if sep not in separator_list:
                 separator_list.append(sep)
+
+        separator_list = list(set(separator_list))
+               
         if len(separator_list) == 1:
             separator = separator_list[0]
         else:
-            raise ValueError('ERROR: Multiple separators found in "'
-                             + channel_name_orig + '"!"')
-        
+            raise ValueError(
+                f'ERROR: Unable to split {channel_name_orig}, '
+                f'possibly because some channels are not in the '
+                f'raw data and cannot be used in the yaml file. '
+                f'Available channels: {available_channels}')
 
         # check if channel available in raw data
         for chan in channel_list:
@@ -242,3 +249,305 @@ def find_linear_segment(x, y, tolerance=0.05):
             index_list.append(idx)
         
     return index_list
+
+
+
+def read_config(yaml_file, available_channels):
+    """
+    Read configuration (yaml) file 
+    
+    Parameters
+    ----------
+
+    yaml_file : str
+        yaml configuraton file name (full path)
+
+    Return
+    ------
+        
+    processing_config : dict 
+        dictionary with  processing configuration
+        
+    """
+
+    # configuration types
+    configuration_types = ['global', 'feature',
+                           'didv', 'noise',
+                           'template', 'trigger']
+    
+    
+    # available global config
+    global_parameters = ['filter_file']
+
+    # global trigger parameters
+    global_trigger_parameters = ['coincident_window_msec',
+                                 'coincident_window_samples']
+    
+    # available channel separator
+    separators = [',', '+', '-', '|']
+
+    # available channels
+    if isinstance(available_channels, str):
+        available_channels =  [available_channels]
+                    
+    # intialize output
+    processing_config = dict()
+
+    # load yaml file
+    yaml_dict = yaml.load(open(yaml_file, 'r'),
+                          Loader=_UniqueKeyLoader)
+
+    if not yaml_dict:
+        raise ValueError('ERROR: No configuration loaded'
+                         'Something went wrong...')
+        
+    # let's split configuration based on type of processing
+    config_dicts = dict()
+    for config_name  in configuration_types:
+        
+        # set to None
+        config_dicts[config_name] = dict()
+      
+        # add if available
+        if config_name in yaml_dict.keys():
+
+            # add copy
+            config_dicts[config_name] = copy.deepcopy(
+                yaml_dict[config_name]
+            )
+            
+            # remove from yaml file
+            yaml_dict.pop(config_name)
+
+    # global config
+    for param in global_parameters:
+        config_dicts['global'][param] = None
+        if param in yaml_dict.keys():
+            config_dicts['global'][param] = copy.deepcopy(
+                yaml_dict[param]
+            )
+            yaml_dict.pop(param)
+                
+
+    # the rest should be for feature processing
+    for param in  yaml_dict.keys():
+        config_dicts['feature'][param] = copy.deepcopy(
+            yaml_dict[param]
+        )
+
+
+    # Loop configuration and check/cleanup parameters
+    for config_name  in configuration_types:
+
+        # check if there is anything available
+        if not config_dicts[config_name]:
+            continue
+        
+        # initialize  output
+        processing_config[config_name] = dict()
+
+        # dictionary
+        config_dict = config_dicts[config_name]
+
+        # global parameters
+        if config_name == 'global':
+            processing_config[config_name] = config_dict.copy()
+            continue
+
+        # configuration for 'all' (individual) channels
+        # -> enable all
+        if 'all' in config_dict.keys():
+            
+            # loop available channels and copy parameters
+            for chan in available_channels:
+                
+                processing_config[config_name][chan] = copy.deepcopy(
+                    config_dict['all']
+                )
+                
+            # remove from dict    
+            config_dict.pop('all')
+
+        # let's split channels that are separated
+        # by a comma and check duplicate
+        parameter_list = list()
+        iter_list = list(config_dict.keys())
+        for chan in iter_list:
+            
+            if ',' in chan:
+                
+                # split channels
+                split_channels ,_ = split_channel_name(
+                    chan, available_channels, separator=','
+                )
+
+                # loop and add config for split channels
+                for split_chan in split_channels:
+
+                    # error if multiple times defined
+                    if split_chan in parameter_list:
+                        raise ValueError(f'ERROR: channel {split_chan} '
+                                         f'defined multiple times in the '
+                                         f'{config_name} configuration. '
+                                         f'This is not allowed to avoid mistake.'
+                                         f'Check yaml file!')
+
+                    # copy dict 
+                    config_dict[split_chan] = copy.deepcopy(
+                        config_dict[chan]
+                    )
+                    
+                    parameter_list.append(split_chan)
+
+                # remove from config
+                config_dict.pop(chan)
+            
+            else:
+
+                if chan in parameter_list:
+                    raise ValueError(f'ERROR: parameter or channel {chan} '
+                                     f'defined multiple times in the '
+                                     f'{config_name} configuration. '
+                                     f'This is not allowed to avoid mistake!'
+                                     f'Check yaml file!')
+
+                parameter_list.append(chan)
+                
+        # check duplication of "length" parameters
+        if ('coincident_window_msec' in parameter_list
+            and 'coincident_window_samples' in  parameter_list):
+            raise ValueError(f'ERROR: Found both "coincident_window_msec" '
+                             f'and "coincident_window_samples" in '
+                             f'{config_name} configuration. Choose between '
+                             f'msec or samples!')
+        
+            
+        # loop channels/keys and add to output configuratiob
+        for chan, config in config_dict.items():
+
+            # check if empty 
+            if not config:
+                raise ValueError(
+                    f'ERROR: empty channel/parameter '
+                    f'{chan} for {config_name} configuration!')
+
+            # case individual channels
+            if chan in  available_channels:
+               
+                if not isinstance(config, dict):
+                    raise ValueError(f'ERROR: Empty channel {chan} in the '
+                                     f'{config_name} configuration. Check '
+                                     f'yaml file!')
+                # check if disabled
+                if ('disable' in config and config['disable']
+                    or 'run' in config and not config['run']):
+
+                    # remove if needed
+                    if chan in processing_config[config_name]:
+                        processing_config[config_name].pop(chan)
+                        
+                else:
+                    # add
+                    if chan in processing_config[config_name]:
+                        processing_config[config_name][chan].update(
+                            copy.deepcopy(config)
+                        )
+                    else:
+                        processing_config[config_name][chan] = (
+                            copy.deepcopy(config)
+                        )
+
+                    if 'disable' in processing_config[config_name][chan]:
+                        processing_config[config_name][chan].pop('disable')
+
+                continue
+
+            # check if non-channel parameter
+            if (config_name == 'trigger'
+                and chan in global_trigger_parameters):
+                processing_config[config_name][chan] = config
+                continue
+            
+            # check if channel contains with +,-,| separator
+            split_channels, separator = split_channel_name(
+                chan, available_channels, separator=None
+            )
+
+            if separator in separators:
+                
+                # check if disabled
+                if ('disable' in config and config['disable']
+                    or 'run' in config and not config['run']):
+                    if chan in processing_config[config_name]:
+                        processing_config[config_name].pop(chan)
+                else:
+                    processing_config[config_name][chan] = (
+                        copy.deepcopy(config)
+                    )
+                    
+                    if 'disable' in processing_config[config_name][chan]:
+                        processing_config[config_name][chan].pop('disable')
+
+                continue
+
+            # at this point, parameter is unrecognized
+            raise ValueError(f'ERROR: Unrecognized parameter '
+                             f'{chan} in the {config_name} '
+                             f'configuration. Perhaps a channel '
+                             f'not in raw data?')
+
+        
+    # check feature processing
+    if  processing_config['feature']:
+        
+        # 1: loop channels and remove disabled algorithm
+        chan_list = list(processing_config['feature'].keys())
+        for chan in chan_list:
+
+            chan_config = copy.deepcopy(
+                processing_config['feature'][chan]
+            )
+            algorithm_list = list()
+            for param, val in chan_config.items():
+
+                if not isinstance(val, dict):
+                    continue
+
+                if 'run' not in val.keys():
+                    raise ValueError(
+                        f'ERROR: Missing "run" parameter for channel '
+                        f'{chan}, algorithm {param}. Please fix the '
+                        f'configuration yaml file')
+
+                if not val['run']:
+                    processing_config['feature'][chan].pop(param)
+                else:
+                    algorithm_list.append(param)
+
+            # remove channel if no algorithm
+            if not algorithm_list:
+                processing_config['feature'].pop(chan)
+                
+    # return
+    return processing_config
+
+
+
+class _UniqueKeyLoader(SafeLoader):
+    def construct_mapping(self, node, deep=False):
+        if not isinstance(node, yaml.MappingNode):
+            raise yaml.constructor.ConstructorError(
+                None, None,
+                'expected a mapping node, but found %s' % node.id,
+                node.start_mark)
+        mapping = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in mapping:
+                raise ValueError(f'ERROR: Duplicate key "{key}" '
+                                 'foundr in the yaml file. '
+                                 'This is not allowed to avoid '
+                                 'unwanted configuration!')
+            value = self.construct_object(value_node, deep=deep)
+            mapping[key] = value
+        return mapping

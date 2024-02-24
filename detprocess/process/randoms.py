@@ -805,14 +805,6 @@ class Randoms:
             if 'filter' in file_name:
                 continue
 
-            # skip didv
-            if 'didv_' in file_name:
-                continue
-
-            # skip if trigger data already
-            if 'treshtrig_' in file_name:
-                continue
-
             # restricted
             if (restricted
                 and 'restricted' not in file_name):
@@ -823,6 +815,29 @@ class Randoms:
                 and 'restricted' in file_name):
                 continue
             
+            # skip didv
+            if 'didv_' in file_name:
+                continue
+
+            # skip if trigger data already
+            if 'treshtrig_' in file_name:
+                continue
+
+            if ('cont_' not in  file_name
+                or 'rand_' not in  file_name):
+                
+                # unknown file -> check data type
+                file_info = h5.get_file_info(file_name)
+                keep_file = False
+                if 'data_type' in file_info:
+                    data_type = int(file_info['data_type'])
+                    if (data_type == 1 or data_type == 3):
+                        keep_file = True
+
+                if not keep_file:
+                    print(f'WARNING: file {file_name} not recognized! '
+                          f'Skipping...')
+                    continue
 
             # append file if series already in dictionary
             if (series_name is not None

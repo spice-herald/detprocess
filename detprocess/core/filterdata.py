@@ -53,7 +53,9 @@ class FilterData:
         """
 
         if not self._filter_data:
-            print('No filter data available!')
+            print('No filter data available! '
+                  'Perhaps you need to load data first '
+                  '(function load_hdf5(file_name)')
             return
 
         # Let's first loop channel and get tags/display msg
@@ -76,7 +78,8 @@ class FilterData:
             'didv_results_3poles_biasparams',
             'didv_results_2poles_biasparams_infinite_lgain',
             'didv_results_3poles_smallsignalparams',
-            'didv_results_3poles_ssp_light'
+            'didv_results_3poles_ssp_light',
+            'didv_processing',
         ]
             
         for chan, chan_dict in self._filter_data.items():
@@ -132,6 +135,8 @@ class FilterData:
                         break
                 
         # loop and display
+        channels = list(filter_display.keys())
+        print(f'List of channels: {channels}')
         for chan, chan_vals in filter_display.items():
             print('\nChannel ' + chan + ':')
             for tag, tag_info in chan_vals.items():
@@ -1090,8 +1095,59 @@ class FilterData:
             
         return  output_data
 
+    def set_didv_dataframe(self, 
+                           channel,
+                           dataframe,
+                           metadata=None,
+                           tag='default'):
+        """
+        Set dIdV processing 
+        """
 
+
+        # check dataframe
+        if not isinstance(dataframe, pd.DataFrame):
+            raise ValueError(
+                'ERROR: Input is not a pandas Datafame!')
+                
+        # create channel dictionary
+        if channel not in self._filter_data.keys():
+            self._filter_data[channel] = dict()
         
+        # data 
+        data_tag = 'didv_processing_' + tag
+        self._filter_data[channel][data_tag] = dataframe
+
+        # metadata
+        if metadata is not None:
+            metadata.update({'channel': channel})
+        else:
+            metadata = {'channel': channel}
+            
+        self._filter_data[channel][data_tag + '_metadata'] = metadata
+
+    def get_didv_dataframe(self, 
+                           channel,
+                           tag='default'):
+        """
+        Get dIdV processed dataframe
+        """
+
+        # check channels
+        if channel not in self._filter_data.keys():
+            raise ValueError(
+                f'ERROR: no channel {channel} available! '
+                'Did you load from file first?')
+        
+        data_tag = 'didv_processing_' + tag
+        if data_tag not in self._filter_data[channel].keys():
+            raise ValueError(
+                f'ERROR: no dIdV data for channel {channel} available! '
+                'Did you load from file first?')
+
+        return self._filter_data[channel][data_tag]
+        
+            
     
     def plot_template(self, channels,
                       xmin=None, xmax=None,
