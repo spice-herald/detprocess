@@ -56,6 +56,8 @@ class Noise(FilterData):
         # noise objects (QETpy.Noise) dictionary
         # self._noise_objects = dict()
 
+        # offset
+        self._offset = dict()
         
 
     def get_detector_config(self, channel):
@@ -79,6 +81,24 @@ class Noise(FilterData):
         """
 
         return self._fs
+
+
+    def get_offset(self, channel):
+        """
+        Get offset, return None if no offset
+        available
+        """
+        offset = None
+        if channel in self._offset:
+            offset = self._offset[channel]
+        else:
+            print(f'WARNING: No offset available for channel '
+                  f'{channel}. You need to calculate psd first! '
+                  f'Returning None. ')
+            
+        return offset
+
+    
 
     def clear_randoms(self):
         """
@@ -198,7 +218,7 @@ class Noise(FilterData):
 
         
         # generate randoms
-        rand_inst = Randoms(raw_path, series=series)
+        rand_inst = Randoms(raw_path, series=series, verbose=self._verbose)
         self._dataframe = rand_inst.process(
             random_rate=random_rate,
             nrandoms=nevents,
@@ -236,6 +256,20 @@ class Noise(FilterData):
             raise ValueError('ERROR: No raw data available. Use '
                              + '"set_randoms()" function first!')
 
+        # check trace length
+        if (trace_length_msec is not None
+            and trace_length_samples is not None):
+            raise ValueError('ERROR: Trace length need to be '
+                             'in msec OR samples, nto both')
+
+        if (pretrigger_length_msec is not None
+            and pretrigger_length_samples is not None):
+            raise ValueError('ERROR: Pretrigger length need to be '
+                             'in msec OR samples, nto both')
+        
+
+
+        
         # Check if randoms available
         #if (self._array is None
         #     and self._dataframe is None
@@ -312,7 +346,11 @@ class Noise(FilterData):
             
             freqs_fold, psd_fold = qp.foldpsd(psd, fs=self._fs)
 
-          
+
+            # calc offsets
+            self._offset[chan] = np.average(np.median(traces[cut], axis=-1))
+            
+            
             # parameter name
             psd_name = 'psd' + '_' + tag
             psd_fold_name = 'psd_fold' + '_' + tag
@@ -330,7 +368,7 @@ class Noise(FilterData):
             # metadata
             traces_metadata['channel'] = chan
             traces_metadata['cut_efficiency'] = cut_eff
-            
+                    
             self._filter_data[chan][psd_name + '_metadata'] = traces_metadata
             self._filter_data[chan][psd_fold_name + '_metadata'] = traces_metadata
 
@@ -391,9 +429,8 @@ class Noise(FilterData):
         if trace_length_samples is not None:
             nb_samples = trace_length_samples
         elif trace_length_msec is not None:
-            nb_samples = int(
-                fs*trace_length_msec/1000
-            )
+            nb_samples = h5io.convert_length_msec_to_samples(
+                trace_length_msec, fs)
         else:
             if self._dataframe is not None:
                 raise ValueError('ERROR: number of samples required!')
@@ -403,11 +440,9 @@ class Noise(FilterData):
         if pretrigger_length_samples is not None:
             nb_pretrigger_samples = pretrigger_length_samples
         elif pretrigger_length_msec is not None:
-            nb_pretrigger_samples = int(
-                fs*pretrigger_length_msec/1000
-            )
-
-            
+            nb_pretrigger_samples = h5io.convert_length_msec_to_samples(
+                pretrigger_length_msec, fs)
+                        
         event_list = None
         series_num_list = None
         if self._event_list is not None:

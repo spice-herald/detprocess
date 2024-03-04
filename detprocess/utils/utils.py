@@ -498,7 +498,7 @@ def read_config(yaml_file, available_channels):
 
         
     # check feature processing
-    if  processing_config['feature']:
+    if 'feature' in processing_config:
         
         # 1: loop channels and remove disabled algorithm
         chan_list = list(processing_config['feature'].keys())

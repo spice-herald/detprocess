@@ -174,7 +174,7 @@ class Randoms:
         random_length_sec = 1/random_rate
         if random_length_sec < min_separation_sec:
             min_separation_sec = random_length_sec * 0.75
-            print('INFO: Changed min separation to '
+            print('WARNING: Changed min separation to '
                   + str(1e3*min_separation_sec)
                   + ' milliseconds to allow requested (high) '
                   + 'random rate!')
@@ -300,7 +300,7 @@ class Randoms:
         """
 
         # node string (for display)
-        node_num_str = ' node #' + str(node_num)
+        node_num_str = ' Node #' + str(node_num)
 
         # trigger prod group name
         trigger_prod_group_name = np.nan
@@ -815,26 +815,32 @@ class Randoms:
                 and 'restricted' in file_name):
                 continue
             
-            # skip didv
-            if 'didv_' in file_name:
+            # skip didv / external trigger
+            if ('didv_' in file_name
+                or 'exttrig_' in file_name):
                 continue
-
+            
             # skip if trigger data already
-            if 'treshtrig_' in file_name:
+            if ('thresh_' in file_name
+                or 'threshtrig_'  in file_name):
                 continue
 
+            # case unrecognized
             if ('cont_' not in  file_name
-                or 'rand_' not in  file_name):
-                
-                # unknown file -> check data type
-                file_info = h5.get_file_info(file_name)
-                keep_file = False
-                if 'data_type' in file_info:
-                    data_type = int(file_info['data_type'])
-                    if (data_type == 1 or data_type == 3):
-                        keep_file = True
+                and 'rand_' not in  file_name):
 
-                if not keep_file:
+                # unknown file -> check trigger type
+                 # check trigger type of first event
+                metadata = h5reader.get_metadata(afile)
+                data_mode = None
+                if 'adc_list' in metadata:
+                    adc_name = metadata['adc_list'][0]
+                    data_mode = metadata['groups'][adc_name]['data_mode']
+
+                if data_mode is not None:
+                    if data_mode != 'cont':
+                        continue
+                else:
                     print(f'WARNING: file {file_name} not recognized! '
                           f'Skipping...')
                     continue

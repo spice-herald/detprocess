@@ -18,6 +18,7 @@ import astropy
 from humanfriendly import parse_size
 from itertools import groupby
 from detprocess.core import Noise, DIDVAnalysis, FilterData, Template, NoiseModel
+from detprocess import utils
 import pytesdaq.io as h5io
 
 
@@ -85,7 +86,7 @@ class FilterDataProcessing:
         self._series_config_notrig = data_notrig[0]
         self._det_config_notrig = data_notrig[1]
         self._channels_notrig  = data_notrig[2]
-        
+                
         data_exttrig = self._get_data_config(raw_exttrig)
         self._series_config_exttrig = data_exttrig[0]
         self._det_config_exttrig = data_exttrig[1]
@@ -96,6 +97,17 @@ class FilterDataProcessing:
         self._det_config_threshtrig = data_threshtrig[1]
         self._channels_threshtrig  = data_threshtrig[2]
 
+
+        # read config file
+        available_channels =  (self._channels_notrig
+                               + self._channels_exttrig
+                               + self._channels_threshtrig)
+        available_channels = list(set(available_channels))
+        self._processing_config = None
+        if config_file is not None:
+            self._processing_config = self._read_config(config_file,
+                                                        available_channels)
+                    
         # iv sweep results (hdf5 file name or data dictionary)
         self._ivsweep_results = dict()
 
@@ -231,15 +243,79 @@ class FilterDataProcessing:
         for chan in channels:
             self._calc_true_current[chan] = do_calc
 
+    def proces_didv(self,
+                    channels=None,
+                    processing_id=None,
+                    lgc_output=False,
+                    lgc_save=False,
+                    save_file_path=None,
+                    filterdata_tag='default',
+                    ncores=1):
+        """
+        Processing dIdV
+        """
+
+        self.process(channels=channels,
+                     enable_didv=True,
+                     processing_id=processing_id,
+                     lgc_output=lgc_output,
+                     lgc_save=lgc_save,
+                     save_file_path=save_file_path,
+                     filterdata_tag=filterdata_tag,
+                     ncores=ncores)
+
+
+    def proces_noise(self,
+                     channels=None,
+                     calc_psd_byseries=None,
+                     calc_psd_global=None,
+                     trace_length_msec=None,
+                     pretrigger_length_msec=None,
+                     trace_length_samples=None,
+                     pretrigger_length_samples=None,
+                     processing_id=None,
+                     lgc_output=False,
+                     lgc_save=False,
+                     save_file_path=None,
+                     filterdata_tag='default',
+                     ncores=1):
+        """
+        Processing Noise
+        """
+
+        self.process(channels=channels,
+                     enable_noise=True,
+                     calc_psd_byseries=calc_psd_byseries,
+                     calc_psd_global=calc_psd_global,
+                     trace_length_msec=trace_length_msec,
+                     pretrigger_length_msec=pretrigger_length_msec,
+                     trace_length_samples=trace_length_samples,
+                     pretrigger_length_samples=pretrigger_length_samples,
+                     processing_id=processing_id,
+                     lgc_output=lgc_output,
+                     lgc_save=lgc_save,
+                     save_file_path=save_file_path,
+                     filterdata_tag=filterdata_tag,
+                     ncores=ncores)
+
+            
     def process(self,
                 channels=None,
-                enable_psd=False,
+                enable_noise=False,
                 enable_didv=False,
+                enable_template=False,
+                calc_psd_byseries=True,
+                calc_psd_global=False,
+                trace_length_msec=None,
+                pretrigger_length_msec=None,
+                trace_length_samples=None,
+                pretrigger_length_samples=None,
+                psd_amp_freq_ranges=None,
                 nevents=None,
                 processing_id=None,
                 lgc_output=False,
                 lgc_save=False,
-                save_path=None,
+                save_file_path=None,
                 filterdata_tag='default',
                 ncores=1):
         
@@ -262,7 +338,7 @@ class FilterDataProcessing:
            if True, return dataframe 
            Default: False
 
-        save_path : str, optional
+        save_file_path : str, optional
            base directory where output group will be saved
            default: same base path as input data
     
@@ -272,40 +348,120 @@ class FilterDataProcessing:
         """
         
         # check enable IV, dIdV
-        if not enable_didv and not enable_psd:
-            raise ValueError('ERROR: You need to enable dIdV or PSD calculation!')
+        if not enable_didv and not enable_noise and not enable_template:
+            raise ValueError('ERROR: You need to enable dIdV, psd, '
+                             'and or template calculation!')
 
-        if enable_didv and enable_psd:
-            raise ValueError('ERROR: Enable dIdV or PSD, not both!')
+        # check processing
+        if enable_didv:
+
+            if not self._raw_data_exttrig:
+                raise ValueError('ERROR: Unable to process dIdV. No '
+                                 'dIdV data found!')
+
+            if (self._processing_config is not None
+                and 'didv' not self._processing_config):
+                raise ValueError(f'ERROR: Input yaml file does '
+                                 f'not contain didv processing'
+                                 f'configurations!')
+
+            
+        if enable_noise:
+
+            if not self._raw_data_notrig:
+                raise ValueError('ERROR: Unable to process psd. No '
+                                 'randoms or continuous  data found!')
+
+            if (self._processing_config is not None
+                and 'noise' not self._processing_config):
+                raise ValueError(f'ERROR: Input yaml file does '
+                                 f'not contain noise processing '
+                                 f'configurations!')
+
+        if enable_template:
+            
+            if (self._processing_config is not None
+                and 'template' not self._processing_config):
+                raise ValueError(f'ERROR: Input yaml file does '
+                                 f'not contain noise processing '
+                                 f'configurations!')
+            
+
+        # when configuration yaml file, certain arguments
+        # are disabled
         
-        # check channels
+        if self._processing_config is not None:
+
+            if channels is not None:
+                raise ValueError(f'ERROR: Channels are enabled/disabled '
+                                 f'through the yaml file configuration '
+                                 f'when provided!')
+
+            
+            
+        # check if file or path
+        if (save_file_path is not None
+            and not (os.path.isfile(save_file_path)
+                     or os.path.isdir(save_file_path))):
+            raise ValueError('ERROR: "save_file_path" argument '
+                             'should be a file or a path!')
+
+
+        # check trace length
+        if (trace_length_msec is not None
+            and trace_length_samples is not None):
+            raise ValueError('ERROR: Trace length need to be '
+                             'in msec OR samples, nto both')
+
+        if (pretrigger_length_msec is not None
+            and pretrigger_length_samples is not None):
+            raise ValueError('ERROR: Pretrigger length need to be '
+                             'in msec OR samples, nto both')
+
+        #  channels to be processed
+        channel_didv = list()
+        channel_noise = list()
+        channel_template = list()
+        
         if channels is not None:
             
             if isinstance(channels, str):
                 channels = [channels]
-                
+
+
+            # check
             for chan in channels:
+                
                 if (enable_didv and chan not in self._channels_exttrig):
                     raise ValueError(
                         f'ERROR: no {chan} available in dIdV raw data!'
                     )
                 
-                if (enable_psd and chan not in self._channels_notrig):
+                if (enable_noise and chan not in self._channels_notrig):
                     raise ValueError(
                         f'ERROR: no {chan} available in raw data!'
                     )
+
+            channel_didv = channels
+            channel_noise = channels
+            channel_template = channels
                 
-        else:        
-            if  enable_didv:
-                channels = self._channels_exttrig
-            elif enable_psd:
-                channels = self._channels_notrig
+        else:
+
+            # check enable channels 
+            if self._processing_config is not None:
                 
-        if enable_psd:
-            nseries = len(self._det_config_notrig.keys())
-            if ncores > nseries:
-                ncores = nseries
-                
+                if  enable_didv:
+                    
+
+
+            else:
+
+                if  enable_didv:
+                    channels = self._channels_exttrig
+                elif enable_noise:
+                    channels = self._channels_notrig
+
         # intialize output
         output_dict = {'didv':dict(),
                        'noise': dict(),
@@ -410,27 +566,167 @@ class FilterDataProcessing:
                                                      tag=filterdata_tag)
 
                 # store in dictionary
-                output_dict['didv'][chan] = output_df
+                output_dict['didv'][chan] = {'df': output_df}
+
+
+        # ================================
+        # Noise processing
+        # ================================
+        
+        if enable_noise:
+            
+            # number of cores
+            nseries = len(self._det_config_notrig.keys())
+            if ncores > nseries:
+                ncores = nseries
+
+            # series list 
+            series_list = list(self._raw_data_notrig.keys())
+
+
+            # loop channels
+            for chan in channels:
                 
-        # save
+                # calc noise psd by series
+                if  calc_psd_byseries:
+            
+                    # intitialize output
+                    output_df = None
+                    
+                    if ncores == 1:
+                        output_df = self._process_noise_byseries(
+                            1,
+                            series_list,
+                            chan,
+                            nevents,
+                            trace_length_msec,
+                            pretrigger_length_msec,
+                            trace_length_samples,
+                            pretrigger_length_samples,
+                            psd_amp_freq_ranges)
+                    else:
+                        
+                        # split data
+                        series_list_split = self._split_series(
+                            series_list, ncores)
+                    
+                        # lauch pool processing
+                        if self._verbose:
+                            print(f'INFO: Noise processing with be split '
+                                  f'between {ncores} cores!')
+            
+                        node_nums = list(range(ncores+1))[1:]
+                        pool = Pool(processes=ncores)
+                        output_df_list = pool.starmap(
+                            self._process_noise_byseries,
+                            zip(node_nums,
+                                series_list_split,
+                                repeat(chan),
+                                repeat(nevents),
+                                repeat(trace_length_msec),
+                                repeat(pretrigger_length_msec),
+                                repeat(trace_length_samples),
+                                repeat(pretrigger_length_samples),
+                                repeat(psd_amp_freq_ranges)))
+                        
+                        pool.close()
+                        pool.join()
+
+                        # concatenate output
+                        df_list = list()
+                        for df in output_df_list:
+                            if df is not None:
+                                df_list.append(df)
+                        if df_list:
+                            output_df = pd.concat(df_list)
+
+                    # add in filter_data
+                    metadata = {'processing_id': self._processing_id,
+                                'group_name': self._group_name,
+                                'trace_length_samples': trace_length_samples,
+                                'pretrigger_length_samples': pretrigger_length_samples}
+                    
+                    self._filter_data.set_noise_dataframe(chan, output_df,
+                                                          metadata=metadata,
+                                                          tag=filterdata_tag)
+                    
+                    # store in dictionary
+                    output_dict['noise'][chan] = {'df': output_df}
+                    
+                # calc noise psd 
+                if  calc_psd_global:
+                    
+                    data = self._process_noise_global(
+                        series_list,
+                        chan,
+                        nevents,
+                        trace_length_msec,
+                        pretrigger_length_msec,
+                        trace_length_samples,
+                        pretrigger_length_samples
+                    )
+
+                    if chan not in output_dict['noise']:
+                        output_dict['noise'][chan] = dict()
+                        
+                    output_dict['noise'][chan]['psd'] = data['psd']
+                    output_dict['noise'][chan]['psd_freqs'] = data['psd_freqs']
+                    output_dict['noise'][chan]['psd_fold'] = data['psd_fold']
+                    output_dict['noise'][chan]['psd_freqs_fold'] = data['psd_freqs_fold']
+                    output_dict['noise'][chan]['sample_rate'] = data['sample_rate']
+                    output_dict['noise'][chan]['trace_length_samples'] = (
+                        data['trace_length_samples'])
+                    output_dict['noise'][chan]['pretrigger_length_samples'] = (
+                        data['pretrigger_length_samples'])
+                    
+                    # add in filter_data
+                    metadata = {
+                        'processing_id': self._processing_id,
+                        'group_name': self._group_name,
+                        'nb_samples': data['trace_length_samples'],
+                        'nb_pretrigger_samples': data['pretrigger_length_samples'],
+                        'sample_rate': data['sample_rate']}
+                    
+                    # two-sided 
+                    self._filter_data.set_psd(chan,
+                                              data['psd'],
+                                              psd_freqs=data['psd_freqs'],
+                                              metadata=metadata,
+                                              tag=filterdata_tag)
+                    # folded over
+                    self._filter_data.set_psd(chan,
+                                            data['psd_fold'],
+                                            psd_freqs=data['psd_freqs_fold'],
+                                            metadata=metadata,
+                                            tag=filterdata_tag)
+                                    
+        # save hdf5
         if lgc_save:
+            
+            # build file name
+            file_name = save_file_path
+            if (save_file_path is None
+                or not os.path.isfile(save_file_path)):
+                
+                # save path
+                if save_file_path is None:
 
-            # save path
-            if save_path is None:
-                save_path = self._base_path
-                save_path += '/filterdata'
-                if '/raw/filterdata' in save_path:
-                    save_path = save_path.replace('/raw/filterdata',
-                                                  '/filterdata')
-            # add group name
-            if self._group_name not in save_path:
-                save_path = save_path + '/' + self._group_name
+                    save_file_path = self._base_path
+                    save_file_path += '/filterdata'
+                    if '/raw/filterdata' in save_file_path:
+                        save_file_path = save_file_path.replace('/raw/filterdata',
+                                                                '/filterdata')
 
-            # create file name
-            file_name = self._create_file_name(
-                save_path, self._facility, self._processing_id
-            )
+                # add group name
+                if self._group_name not in save_file_path:
+                    save_file_path = save_file_path + '/' + self._group_name
 
+                # create file name
+                file_name = self._create_file_name(
+                    save_file_path, self._facility, self._processing_id
+                )
+                
+            # save 
             self._filter_data.save_hdf5(file_name, overwrite=True)
             
             
@@ -671,6 +967,258 @@ class FilterDataProcessing:
         return df
 
 
+    def _process_noise_byseries(self, node_num,
+                                series_list,
+                                channel,
+                                nevents,
+                                trace_length_msec,
+                                pretrigger_length_msec,
+                                trace_length_samples,
+                                pretrigger_length_samples,
+                                psd_amp_freq_ranges):
+        """
+        Process noise by series
+        
+        Parameters
+        ---------
+
+        node_num :  int
+          node id number, used for display
+        
+        series_list : str
+          list of series name to be processed
+        
+        channel : str
+          channel name
+        
+        nevents : int (or None)
+          maximum number of events
+
+        """
+
+        # node string (for display)
+        node_num_str = str()
+        if node_num>-1:
+            node_num_str = 'Node #' + str(node_num)
+            
+            
+        # initialie data dict
+        output_dict = {
+            'group_name':list(),
+            'series_name': list(),
+            'psd':list(),
+            'psd_freqs':list(),
+            'psd_fold':list(),
+            'psd_freqs_fold':list(),
+            'offset': list(),
+            'time_since_group_start': list(),
+            'time_since_fridge_run_start':list(),
+            'series_time': list()
+        }
+
+        config_params = ['tes_bias',
+                         'temperature_mc',
+                         'temperature_cp',
+                         'temperature_still']  
+
+        for param in config_params:
+            output_dict[param] = list()
+       
+        
+        # instantiate noise
+        noise = Noise(verbose=False)
+
+        # loop series
+        for series in series_list:
+
+            if self._verbose:
+                print(f'INFO {node_num_str}: Processing noise psd for '
+                      f'series {series}!') 
+            
+            # get files and config
+            file_list = self._raw_data_notrig[series]
+            if channel not in self._det_config_notrig[series].keys():
+                continue
+            
+            detconfig =  self._det_config_notrig[series][channel]
+            seriesconfig = self._series_config_notrig[series]
+            
+            # for continuous data -> generate randoms
+            # for radoms data -> set raw data
+            if (trace_length_samples is not None or
+                trace_length_msec is not None):
+                noise.generate_randoms(file_list, nevents=nevents,
+                                       min_separation_msec=100, ncores=1)
+            else:
+                noise.set_randoms(file_list)
+
+
+            # calculate noise psd
+            noise.calc_psd(
+                channel,
+                trace_length_msec=trace_length_msec, 
+                pretrigger_length_msec=pretrigger_length_msec,
+                trace_length_samples=trace_length_samples, 
+                pretrigger_length_samples=pretrigger_length_samples,
+                nevents=nevents)
+
+            # get psd
+            psd, psd_freqs = noise.get_psd(channel)
+            psd_fold, psd_freqs_fold = noise.get_psd(channel, fold=True)
+        
+            # get offset
+            offset = noise.get_offset(channel)
+            
+            # psd ranges
+            if psd_amp_freq_ranges is not None:
+
+                # intialize list of parameters
+                psd_amp_name_list = list()
+                for it, freq_range in enumerate(psd_amp_freq_ranges):
+
+                    # ignore if not a range
+                    if len(freq_range) != 2:
+                        continue
+                    
+                    # low/high freqeucy
+                    f_low = abs(freq_range[0])
+                    f_high = abs(freq_range[1])
+                    if f_low > f_high:
+                        f_high = f_low + (f_low - f_high)
+                        
+                    # indices
+                    ind_low = np.argmin(np.abs(psd_freqs_fold - f_low))
+                    ind_high = np.argmin(np.abs(psd_freqs_fold - f_high))
+                    if (ind_low == ind_high):
+                        if ind_low < len(psd_freqs_fold)-2:
+                            ind_high = ind_low + 1
+                        else:
+                            continue
+                            
+                    # take median
+                    psd_avg = np.average(psd_fold[ind_low:ind_high])
+                    psd_avg = np.sqrt(psd_avg)
+                    
+                    # parameter name
+                    psd_amp_name = ('psd_amp_'
+                                    + str(round(f_low))
+                                    + '_'
+                                    + str(round(f_high)))
+            
+                    if psd_amp_name in psd_amp_name_list:
+                        continue
+                    elif psd_amp_name not in output_dict.keys():
+                        output_dict[psd_amp_name] = list()
+
+                    # add
+                    output_dict[psd_amp_name].append(psd_avg)
+
+            # fill dictionary
+            output_dict['series_name'].append(series)
+            output_dict['group_name'].append(self._group_name)
+            output_dict['psd'].append(psd)
+            output_dict['psd_freqs'].append(psd_freqs)
+            output_dict['psd_fold'].append(psd_fold)
+            output_dict['psd_freqs_fold'].append(psd_freqs_fold)
+            output_dict['offset'].append(offset)
+            # config
+            for param in config_params:
+                param_val = np.nan
+                if param in detconfig:
+                    param_val = detconfig[param]
+                output_dict[param].append(param_val)
+           
+            # timing
+            series_time = int(seriesconfig['timestamp'])
+            output_dict['series_time'].append(series_time)
+            
+            series_start = np.nan
+            if 'group_start' in seriesconfig:
+                series_start = series_time - int(seriesconfig['group_start'])
+            output_dict['time_since_group_start'].append(series_start)
+            
+            run_start = np.nan
+            if 'fridge_run_start' in seriesconfig:
+                run_start = series_time - int(
+                    seriesconfig['fridge_run_start']
+                )
+            output_dict['time_since_fridge_run_start'].append(run_start)
+
+        # convert to dataframe
+        df = pd.DataFrame.from_dict(output_dict)
+        return df
+
+
+    
+    def _process_noise_global(self, series_list,
+                              channel,
+                              nevents,
+                              trace_length_msec,
+                              pretrigger_length_msec,
+                              trace_length_samples,
+                              pretrigger_length_samples):
+        
+        """
+        Process global noise psd
+        
+        Parameters
+        ---------
+        
+        series_list : str
+          list of series name to be processed
+        
+        channel : str
+          channel name
+        
+        nevents : int (or None)
+          maximum number of events
+
+        """
+
+        if self._verbose:
+            print(f'INFO: Processing global noise psd')
+
+
+        # instantiate noise
+        noise = Noise(verbose=True)
+
+        # generate randoms
+        data_path = self._base_path + '/' + self._group_name
+        if (trace_length_samples is not None or
+            trace_length_msec is not None):
+            noise.generate_randoms(data_path,
+                                   series=series_list,
+                                   nevents=nevents,
+                                   min_separation_msec=100,
+                                   ncores=1)
+        else:
+            noise.set_randoms(self._base_path,
+                              series=series_list)
+            
+        # calculate noise psd
+        noise.calc_psd(
+            channel,
+            trace_length_msec=trace_length_msec, 
+            pretrigger_length_msec=pretrigger_length_msec,
+            trace_length_samples=trace_length_samples, 
+            pretrigger_length_samples=pretrigger_length_samples,
+            nevents=nevents)
+        
+        # get psd
+        psd, psd_freqs = noise.get_psd(channel)
+        psd_fold, psd_freqs_fold = noise.get_psd(channel, fold=True)
+        sample_rate = noise.get_sample_rate()
+
+
+        # output dict
+        output_dict = {'group_name': self._group_name,
+                       'psd':psd,
+                       'psd_freqs':psd_freqs,
+                       'psd_fold':psd_fold,
+                       'psd_freqs_fold':psd_freqs_fold,
+                       'sample_rate': sample_rate}
+                
+        return output_dict
 
     
     def _get_file_list(self, files_or_path, series=None,
@@ -796,8 +1344,8 @@ class FilterDataProcessing:
 
         # initialize reader
         h5reader = h5io.H5Reader()
-        data_types = ['rand', 'cont', 'exttrig',
-                      'threshtrig']
+        trigger_types = ['rand', 'cont', 'exttrig',
+                         'threshtrig']
 
         # Separate into 3  types of files
         # and store in series dictionary
@@ -841,20 +1389,26 @@ class FilterDataProcessing:
             elif ('didv_' in file_name
                   or 'exttrig_' in file_name):
                 file_type = 'exttrig'
-            elif 'threshtrig' in file_name:
-                file_type = 'threshtrig' 
+            elif 'thresh' in file_name:
+                file_type = 'threshtrig'
+                
 
             if file_type is None:
-                file_info = h5reader.get_file_info(afile)
-                if 'data_type' in file_info:
-                    data_type = int(file_info['data_type'])
-                    if (data_type == 1 or data_type == 3):
+                # check trigger type of first event
+                metadata = h5reader.get_metadata(afile)
+                data_mode = None
+                if 'adc_list' in metadata:
+                    adc_name = metadata['adc_list'][0]
+                    data_mode = metadata['groups'][adc_name]['data_mode']
+             
+                if data_mode is not None:
+                    if data_mode == 'cont':
                         file_type = 'notrig'
-                    elif data_type == 2:
+                    elif data_mode == 'trig-ext':
                         file_type = 'exttrig'
-                    elif data_type == 4:
+                    elif data_mode == 'threshold':
                         file_type = 'threshtrig'
-
+                    
             if file_type is None:
                 print(f'WARNING: file {file_name} not recognized! '
                       f'Skipping...')
@@ -1070,7 +1624,7 @@ class FilterDataProcessing:
         return (didv_config, filter_file, didv_channels)
      
 
-    def _create_file_name(self, save_path, facility, processing_id):
+    def _create_file_name(self, save_file_path, facility, processing_id):
         
         """
         Create output directory 
@@ -1078,7 +1632,7 @@ class FilterDataProcessing:
         Parameters
         ----------
         
-        save_path :  str
+        save_file_path :  str
            full path to base directory 
         
         facility : int
@@ -1108,18 +1662,18 @@ class FilterDataProcessing:
             prefix = processing_id + '_filter'
 
         # create directory if needed
-        if not os.path.isdir(save_path):
+        if not os.path.isdir(save_file_path):
             try:
-                os.makedirs(save_path)
+                os.makedirs(save_file_path)
                 os.chmod(output_dir,
                          stat.S_IRWXG | stat.S_IRWXU
                          | stat.S_IROTH | stat.S_IXOTH)
             except OSError:
                 raise ValueError('\nERROR: Unable to create directory "'
-                                 + save_path  + '"!\n')
+                                 + save_file_path  + '"!\n')
 
         # build file name
-        file_name = save_path + '/' + prefix + '_' + series_name + '.hdf5'
+        file_name = save_file_path + '/' + prefix + '_' + series_name + '.hdf5'
                 
         return file_name
         
@@ -1161,3 +1715,18 @@ class FilterDataProcessing:
         return output_list
 
 
+    def _read_config(self, yaml_file, available_channels):
+        """
+        Read config file
+        """
+
+        
+        config = utils.read_config(yaml_file, available_channels)
+
+        if ('didv' not in config
+            and 'noise' not in config
+            and 'template' not in config):
+            raise ValueError(f'ERROR: No processing configuration found '
+                             f'in {yaml_file}!')
+
+        return config

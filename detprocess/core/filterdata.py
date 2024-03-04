@@ -4,7 +4,7 @@ import numpy as np
 from pprint import pprint
 import pytesdaq.io as h5io
 import matplotlib.pyplot as plt
-from numpy.fft import fftfreq, rfftfreq
+from qetpy.utils import fftfreq, rfftfreq
 
 class FilterData:
     """
@@ -80,6 +80,7 @@ class FilterData:
             'didv_results_3poles_smallsignalparams',
             'didv_results_3poles_ssp_light',
             'didv_processing',
+            'noise_processing',
         ]
             
         for chan, chan_dict in self._filter_data.items():
@@ -570,7 +571,9 @@ class FilterData:
             
 
 
-    def set_psd(self, channels, array, fold=False,
+    def set_psd(self, channels, array,
+                psd_freqs=None,
+                fold=None,
                 sample_rate=None,
                 pretrigger_length_msec=None,
                 pretrigger_length_samples=None,
@@ -587,6 +590,42 @@ class FilterData:
             raise ValueError('ERROR: Expecting numpy array!')
         if array.ndim == 1:
             array = array[np.newaxis, :]
+
+        # check fold and get psd freqs
+        if (psd_freqs is None and fold is None):
+            raise ValueError(
+                'ERROR: Unable to check is psd is two-sided or '
+                'folded over. You need to provide either frequency'
+                'array "psd_freqs" or set "fold" arguement!')
+
+        is_folded = None
+        if  psd_freqs is not None:
+
+            if isinstance(psd_freqs, list):
+                psd_freqs = np.array(psd_freqs)
+            elif not isinstance(psd_freqs, np.ndarray):
+                raise ValueError('ERROR: Expecting numpy array '
+                                 'for "psd_freqs" argument')
+
+            is_folded = not np.any(psd_freqs<0)
+            if (fold is not None
+                and is_folded != fold):
+                raise ValueError(f'ERROR: "psd_freqs" is inconsistent '
+                                 f'with fold={fold}! Check arguments.')
+            fold = is_folded
+            
+            if psd_freqs.ndim == 1:
+                psd_freqs = psd_freqs[np.newaxis, :]
+        
+        else:
+            psd_freqs = []
+            if fold:
+                psd_freqs = rfftfreq(array.shape[1], sample_rate)
+            else:
+                psd_freqs = fftfreq(array.shape[1], sample_rate)
+
+            psd_freqs = psd_freqs[np.newaxis, :] 
+
             
         # number of channels
         if isinstance(channels, str):
@@ -594,30 +633,37 @@ class FilterData:
         nb_channels = len(channels)
 
         # check array shape
-        if (array.shape[0] != nb_channels):
+        if (array.shape[0] != nb_channels
+            or psd_freqs.shape[0] !=  nb_channels):
             raise ValueError(
-                'ERROR: Array shape is not consistent with '
-                'number of channels')
+                'ERROR: Array (or psd freqs) shape is not '
+                ' consistent with number of channels')
 
-        # sample rate 
-        if sample_rate is None:
-            raise ValueError('ERROR: "sample_rate" argument required!')
 
-        # pretrigger length (not required)
-        if pretrigger_length_msec is not None:
-            pretrigger_length_samples = int(
-                round(pretrigger_length_msec*sample_rate*1e-3)
-            )
-
-       
         # parameter name
         psd_name = 'psd' + '_' + tag
         if fold:
             psd_name = 'psd_fold' + '_' + tag
-            
+        
         # metadata
         if metadata is None:
             metadata = dict()
+                 
+            
+        # add sample rate
+        if sample_rate is None:
+
+            if 'sample_rate' in metadata:
+                sample_rate = metadata['sample_rate']
+            else:
+                raise ValueError('ERROR: "sample_rate" argument required!')
+                     
+        # add pretrigger length (not required)
+        if pretrigger_length_msec is not None:
+            pretrigger_length_samples = int(
+                round(pretrigger_length_msec*sample_rate*1e-3)
+            )
+        
         metadata['sample_rate'] =  sample_rate
         metadata['nb_samples'] = array.shape[1]
         if pretrigger_length_samples is not None:
@@ -632,17 +678,13 @@ class FilterData:
 
             # psd
             psd =  np.squeeze(array[ichan,:])
-            freqs = None
-            if fold:
-                freqs = rfftfreq(len(psd), d=1.0/sample_rate)
-            else:
-                freqs = fftfreq(len(psd), d=1.0/sample_rate)
-                
-
+            freqs  = np.squeeze(psd_freqs[ichan,:])
+         
             # add channel
             if chan not in self._filter_data.keys():
                 self._filter_data[chan] = dict()
             else:
+                
                 # check template/psd have  same length
                 template_name = 'template' + '_' + tag
                 if template_name in self._filter_data[chan]:
@@ -1146,8 +1188,61 @@ class FilterData:
                 'Did you load from file first?')
 
         return self._filter_data[channel][data_tag]
+
+    
+    def set_noise_dataframe(self, 
+                           channel,
+                           dataframe,
+                           metadata=None,
+                           tag='default'):
+        """
+        Set noise processing 
+        """
+
+
+        # check dataframe
+        if not isinstance(dataframe, pd.DataFrame):
+            raise ValueError(
+                'ERROR: Input is not a pandas Datafame!')
+                
+        # create channel dictionary
+        if channel not in self._filter_data.keys():
+            self._filter_data[channel] = dict()
         
+        # data 
+        data_tag = 'noise_processing_' + tag
+        self._filter_data[channel][data_tag] = dataframe
+
+        # metadata
+        if metadata is not None:
+            metadata.update({'channel': channel})
+        else:
+            metadata = {'channel': channel}
             
+        self._filter_data[channel][data_tag + '_metadata'] = metadata
+
+        
+    def get_noise_dataframe(self, 
+                           channel,
+                           tag='default'):
+        """
+        Get noise processed dataframe
+        """
+
+        # check channels
+        if channel not in self._filter_data.keys():
+            raise ValueError(
+                f'ERROR: no channel {channel} available! '
+                'Did you load from file first?')
+        
+        data_tag = 'noise_processing_' + tag
+        if data_tag not in self._filter_data[channel].keys():
+            raise ValueError(
+                f'ERROR: no noise data for channel {channel} available! '
+                'Did you load from file first?')
+
+        return self._filter_data[channel][data_tag]
+              
     
     def plot_template(self, channels,
                       xmin=None, xmax=None,
