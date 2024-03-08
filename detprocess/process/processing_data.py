@@ -1053,7 +1053,7 @@ class ProcessingData:
 
 
     
-    def _filter_dataframe(self, batch_size=200):
+    def _filter_dataframe(self, batch_size=25):
         """
         Filter trigger dataframe to process selected events
         only. It needs to be done in batches to avoid too complex
