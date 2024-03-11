@@ -60,9 +60,13 @@ class FilterData:
 
         # Let's first loop channel and get tags/display msg
         filter_display = dict()
+
+        # list of possible parameters
         parameter_list = [
             'psd_fold', 'psd', 'template',
-            'dpdi', 'dpdi_fold',
+            'csd_fold', 'csd',
+            'corrcoeff_fold',
+            'dpdi_fold', 'dpdi',
             'ivsweep_data',
             'ivsweep_results_noise',
             'ivsweep_results_didv',
@@ -93,47 +97,48 @@ class FilterData:
                 # check if metadata
                 if 'metadata' in par_name:
                     continue
-                              
-                for base_par in parameter_list:
-                    
-                    if base_par in par_name:
-                        
-                        # tag
-                        tag = par_name.replace(base_par, '')
-                        if 'infinite_lgain' in tag:
-                            continue
-                        if tag:
-                            if tag[0] == '_':
-                                tag = tag[1:]
-                        else:
-                            tag = 'default'
-                        
-                        if tag not in filter_display[chan]:
-                            filter_display[chan][tag] = list()
-                            
-                        msg = base_par
-                        if isinstance(val, pd.Series):
-                            msg += ': pandas.Series '
-                        elif  isinstance(val, pd.DataFrame):
-                            msg += ': pandas.DataFrame '
-                        else: 
-                            msg += str(type(val)) + ' '
-                        msg += str(val.shape)
 
-                        if (base_par == 'ivsweep_data'
-                            and  isinstance(val, pd.DataFrame)
-                            and 'state' in val.columns):
-                            nb_norm = len(np.where(val['state']=='normal')[0])
-                            if nb_norm == 0:
-                                nb_norm = 'Unknown'
-                            nb_sc = len(np.where(val['state']=='sc')[0])
-                            if nb_sc == 0:
-                                nb_sc = 'Unknown'
-                            msg += '\n       Nb SC points: ' + str(nb_sc)
-                            msg += '\n       Nb Normal points: ' + str(nb_norm)
+                # find tag
+                par_split = par_name.split('_')
+                tag = par_split[-1]
+                base_par = par_name[:-len(tag)-1]
+                if (base_par not in parameter_list
+                    and len(par_split)>=2):
+                    tag = '_'.join(par_split[-2:])
+                    base_par = par_name[:-len(tag)-1]
+                    if base_par not in parameter_list:
+                        tag = 'default'
+                        base_par = par_name
+                if tag not in filter_display[chan]:
+                    filter_display[chan][tag] = list()
+                            
+                msg = base_par
+                if isinstance(val, pd.Series):
+                    msg += ': pandas.Series '
+                elif  isinstance(val, pd.DataFrame):
+                    msg += ': pandas.DataFrame  '
+                elif isinstance(val, np.ndarray):
+                    ndim = val.ndim
+                    msg += f': {ndim}D numpy.array  ' 
+                else:
+                    msg += (str(type(val)) + ' ')
+                            
+                msg += str(val.shape)
+                
+                if (base_par == 'ivsweep_data'
+                    and  isinstance(val, pd.DataFrame)
+                    and 'state' in val.columns):
+                    nb_norm = len(np.where(val['state']=='normal')[0])
+                    if nb_norm == 0:
+                        nb_norm = 'Unknown'
+                    nb_sc = len(np.where(val['state']=='sc')[0])
+                    if nb_sc == 0:
+                        nb_sc = 'Unknown'
+                    msg += '\n       Nb SC points: ' + str(nb_sc)
+                    msg += '\n       Nb Normal points: ' + str(nb_norm)
                                                     
-                        filter_display[chan][tag].append(msg)
-                        break
+                filter_display[chan][tag].append(msg)
+                
                 
         # loop and display
         channels = list(filter_display.keys())
@@ -335,7 +340,77 @@ class FilterData:
         val = psd_series.values
 
         return val, freq
+
+    
+    def get_csd(self, channels, tag='default', fold=False):
+        """
+        Get CSD for a specified channel list or string with channels
+        separated with "|" in unit of  Amps^2/Hz. Channel order is 
+        important!
+
+        Parameters:
+        ----------
+
+        channels :  str or list 
+           channel list or channel string with "|" separation
+        
+        tag : str, optional
+            psd tag, default: No tag
+
+        fold : boolean, option
+            if True, return folded psd
+
+        Return
+        ------
+
+        psd : ndarray, 
+            psd [Amps^2/Hz]
+        f  : ndarray
+            psd frequencies
+
+        """
+        
+        # check channel
+        if ((isinstance(channels, str) and  '|' not in  channels)
+            or (isinstance(channels, list)  and len(channels)<2)):
+            raise ValueError(
+                'ERROR: At least 2 channels required to calculate csd'
+            )
+        
+        if not isinstance(channels, str):
+            channels = '|'.join(channels)
+
+        
+        if (channels not in self._filter_data.keys()):
+            msg = f'ERROR: Channel "{channels}" not available!'
             
+            if self._filter_data.keys():
+                msg += ' List of channels in filter file: '
+                msg += str(list(self._filter_data.keys()))
+                
+            raise ValueError(msg)
+
+        
+        # parameter name
+        csd_name = 'csd' + '_' + tag
+        if fold:
+            csd_name = 'csd_fold' + '_' + tag
+
+        # check available tag
+        if csd_name not in self._filter_data[channels].keys():
+            msg = 'ERROR: Parameter not found!'            
+            if  self._filter_data[channels].keys():
+                msg += ('List of parameters for channel '
+                        + channels + ':')
+                msg += str(list(self._filter_data[channels].keys()))
+                
+            raise ValueError(msg)
+            
+    
+        csd  = self._filter_data[channels][csd_name]
+        return csd
+            
+                  
           
     
     def get_template(self, channel, tag='default'):
@@ -591,6 +666,10 @@ class FilterData:
         if array.ndim == 1:
             array = array[np.newaxis, :]
 
+        # metadata
+        if metadata is None:
+            metadata = dict()
+                    
         # check fold and get psd freqs
         if (psd_freqs is None and fold is None):
             raise ValueError(
@@ -598,6 +677,11 @@ class FilterData:
                 'folded over. You need to provide either frequency'
                 'array "psd_freqs" or set "fold" arguement!')
 
+        if (sample_rate is None or 'sample_rate' not in metadata):
+            raise ValueError('ERROR: Sample rate required!')
+        elif 'sample_rate' in metadata:
+            sample_rate = float(metadata['sample_rate'])
+        
         is_folded = None
         if  psd_freqs is not None:
 
@@ -705,6 +789,115 @@ class FilterData:
             # add channel nanme metadata
             metadata['channel'] = chan
             self._filter_data[chan][psd_name + '_metadata'] = metadata
+
+            
+    def set_csd(self, channels, array,
+                csd_freqs=None,
+                fold=None,
+                sample_rate=None,
+                pretrigger_length_msec=None,
+                pretrigger_length_samples=None,
+                metadata=None,
+                tag='default'):
+        """
+        set csd array
+        """
+
+        # channels
+        if isinstance(channels, str):
+            
+            if '|' in channels:
+                channels = channels.replace(' ','')
+                channels = channels.split('|')
+            else:
+                raise ValueError(
+                    'ERROR: Wrong channels argument format. It should be '
+                    'either a list of string with "|" separation!'
+                )
+
+        # build name 
+        channel_name = '|'.join(channels)
+
+        # metadata
+        if metadata is None:
+            metadata = dict()
+        
+        #  check array type/dim
+        if (not isinstance(array, np.ndarray)
+            or array.ndim !=3):
+            raise ValueError('ERROR: Expecting a 3D numpy array!')
+
+        if (len(channels) != array.shape[0]
+            or array.shape[0] != array.shape[1]):
+            raise ValueError('ERROR: Array shape not consistent with '
+                             'number of channels!')
+        
+        if (sample_rate is None or 'sample_rate' not in metadata):
+            raise ValueError('ERROR: Sample rate required!')
+        elif 'sample_rate' in metadata:
+            sample_rate = float(metadata['sample_rate'])
+        
+        # check fold and get psd freqs
+        if (csd_freqs is None and fold is None):
+            raise ValueError(
+                'ERROR: Unable to check is csd is two-sided or '
+                'folded over. You need to provide either frequency'
+                'array "csd_freqs" or set "fold" argument!')
+        is_folded = None
+        if  csd_freqs is not None:
+
+            if isinstance(csd_freqs, list):
+                csd_freqs = np.array(csd_freqs)
+            elif not isinstance(csd_freqs, np.ndarray):
+                raise ValueError('ERROR: Expecting numpy array '
+                                 'for "csd_freqs" argument')
+
+            is_folded = not np.any(csd_freqs<0)
+            if (fold is not None
+                and is_folded != fold):
+                raise ValueError(f'ERROR: "csd_freqs" is inconsistent '
+                                 f'with fold={fold}! Check arguments.')
+            fold = is_folded
+                   
+        else:
+            csd_freqs = []
+            if fold:
+                csd_freqs = rfftfreq(array.shape[-1], sample_rate)
+            else:
+                csd_freqs = fftfreq(array.shape[-1], sample_rate)
+                
+        
+        # parameter name
+        csd_name = 'csd' + '_' + tag
+        if fold:
+            csd_name = 'csd_fold' + '_' + tag
+                    
+        # add sample rate
+        if sample_rate is None:
+
+            if 'sample_rate' in metadata:
+                sample_rate = metadata['sample_rate']
+            else:
+                raise ValueError('ERROR: "sample_rate" argument required!')
+                     
+        # add pretrigger length (not required)
+        if pretrigger_length_msec is not None:
+            pretrigger_length_samples = int(
+                round(pretrigger_length_msec*sample_rate*1e-3)
+            )
+        metadata['sample_rate'] =  sample_rate
+        metadata['nb_samples'] = array.shape[1]
+        if pretrigger_length_samples is not None:
+            metadata['nb_pretrigger_samples'] = pretrigger_length_samples
+        metadata['channel'] = channel_name           
+
+        # add channel
+        if channel_name not in self._filter_data.keys():
+            self._filter_data[channel_name] = dict()
+                         
+        self._filter_data[channel_name][csd_name] = array
+        self._filter_data[chan][csd_name + '_metadata'] = metadata
+
 
 
 
@@ -1246,7 +1439,8 @@ class FilterData:
     
     def plot_template(self, channels,
                       xmin=None, xmax=None,
-                      tag='default'):
+                      tag='default',
+                      figsize=(8,5)):
         """
         Plot template for specified channel(s)
 
@@ -1272,7 +1466,7 @@ class FilterData:
       
             
         # define fig size
-        fig, ax = plt.subplots(figsize=(8, 5))
+        fig, ax = plt.subplots(figsize=figsize)
         
         
         for chan in channels:
@@ -1286,15 +1480,16 @@ class FilterData:
         ax.tick_params(which='both', direction='in', right=True, top=True)
         ax.grid(which='minor', linestyle='dotted')
         ax.grid(which='major')
-        ax.set_title('Template',fontweight='bold')
-        ax.set_xlabel('Time [msec]',fontweight='bold')
+        ax.set_title('Template', fontweight='bold')
+        ax.set_xlabel('Time [msec]', fontweight='bold')
 
         if (xmin is not None or xmax is not None):
             ax.set_xlim(xmin=xmin, xmax=xmax)
         
 
 
-    def plot_psd(self, channels, tag='default', fold=True, unit='pA'):
+    def plot_psd(self, channels, tag='default', fold=True,
+                 unit='pA', figsize=(8,5)):
         """
         Plot PSD for specified channel(s)
 
@@ -1328,7 +1523,7 @@ class FilterData:
       
             
         # define fig size
-        fig, ax = plt.subplots(figsize=(8, 5))
+        fig, ax = plt.subplots(figsize=figsize)
         
         
         for chan in channels:

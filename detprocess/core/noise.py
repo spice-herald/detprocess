@@ -48,18 +48,53 @@ class Noise(FilterData):
         # intialize event list
         self._event_list = None
 
-        # trace data
-        self._array_channels = None
-        self._array = None
+        # sample rate stored for convenience
         self._fs = None
 
-        # noise objects (QETpy.Noise) dictionary
-        # self._noise_objects = dict()
-
+        # QETpy noise objects (folded quantities)
+        self._qetpy_noise_objects = dict()
+    
         # offset
         self._offset = dict()
         
 
+    def get_qetpy_noise_object(self, channels, tag='default'):
+        """
+        Get QETpy noise objects 
+        (folded quantities only)
+        """
+
+        # channels
+        if ((isinstance(channels, str) and  '|' not in  channels)
+            or (isinstance(channels, list)  and len(channels)<2)):
+                raise ValueError(
+                    'ERROR: At least 2 channels required to calculate csd'
+                )
+
+        if not isinstance(channels, str):
+            channels = '|'.join(channels)
+
+        if (channels not in self._qetpy_noise_objects
+            or tag not in self._qetpy_noise_objects[channels]):
+
+            channel_list = list(self._qetpy_noise_objects.keys())
+            if channel_list:
+                raise ValueError(f'ERROR: No QETpy noise objects found for '
+                                 f'{channels}, tag="{tag}".\n'
+                                 f'List of available QETpy objects: {channel_list} \n'
+                                 f'Calculate csd with {channels} first! '
+                                 f'(order is important!)')
+            else:
+                raise ValueError(f'ERROR: No QETpy noise objects found for '
+                                 f'{channels}, tag="{tag}".\n'
+                                 f'Calculate csd/correleration coeff with '
+                                 f'{channels} first! (order is important!)')
+            
+        
+        return self._qetpy_noise_objects[channels][tag]
+        
+
+        
     def get_detector_config(self, channel):
         """
         get detector config
@@ -98,10 +133,10 @@ class Noise(FilterData):
             
         return offset
 
-    
-
     def clear_randoms(self):
         """
+        Clear internal data, however
+        keep self._filter_data
         """
 
         # clear data
@@ -112,12 +147,9 @@ class Noise(FilterData):
         self._raw_base_path = None
         self._series_list = None
         self._detector_config = None
-        
-        self._array_channels = None
-        self._array = None
         self._fs = None
-                
-
+        self._qetpy_noise_objects = dict()
+        self._offset = dict()
         
     def set_randoms(self, raw_path, series=None,
                     dataframe=None,
@@ -169,22 +201,13 @@ class Noise(FilterData):
         elif event_list is not None:
             self._event_list = event_list
 
-                    
-        
-    """     
-    def set_randoms_array(self, array, channels, fs):
-        # initialize data
-        self.clear_randoms()
-
-        # check dimension
-        # FIXME
-        self._array_channels = channels
-        self._array = array
-        self._fs = fs
-    """          
-
-
-        
+        # check filter data
+        if self._filter_data:
+            print('WARNING: Some noise data have been previously saved. '
+                  'Use "describe()" to check. If needed clear data '
+                  'using "clear_data(channels=None, tag=None)" function!')
+            
+            
     def generate_randoms(self, raw_path, series=None,
                          random_rate=None,
                          nevents=None,
@@ -228,7 +251,15 @@ class Noise(FilterData):
             ncores=ncores
         )
 
-        
+        # check filter data
+        if self._filter_data:
+            print('WARNING: Some noise data have been previously saved. '
+                  'Use "describe()" to check. If needed clear data '
+                  'using "clear_data(channels=None, tag=None)" function!')
+
+
+
+            
     def calc_psd(self, channels, 
                  series=None,
                  trace_length_msec=None,
@@ -238,21 +269,20 @@ class Noise(FilterData):
                  nevents=None,
                  tag='default'):
         """
-        Calculate PSD
+        Calculate two-sided and folded-over PSD in Amps^2/Hz
         
         """
 
         # --------------------------------
         # Check arguments
         # --------------------------------
-
+        
         if nevents is None:
             raise ValueError('ERROR: Maximum number of randoms required!'
                              ' Add "nevents" argument.')
         
         # check raw data has been loaded
-        if (self._array is None
-            and self._raw_data is None):
+        if self._raw_data is None:
             raise ValueError('ERROR: No raw data available. Use '
                              + '"set_randoms()" function first!')
 
@@ -267,18 +297,6 @@ class Noise(FilterData):
             raise ValueError('ERROR: Pretrigger length need to be '
                              'in msec OR samples, nto both')
         
-
-
-        
-        # Check if randoms available
-        #if (self._array is None
-        #     and self._dataframe is None
-        #    and self._event_list is None):
-        #    raise ValueError('ERROR: No randoms selected from raw data. '
-        #                     + 'Use first "set_randoms()"'
-        #                     + ' or "generate_randoms()"')
-
-
         # --------------------------------
         # Loop channels and calculate PSD
         # --------------------------------
@@ -368,11 +386,200 @@ class Noise(FilterData):
             # metadata
             traces_metadata['channel'] = chan
             traces_metadata['cut_efficiency'] = cut_eff
-                    
+          
             self._filter_data[chan][psd_name + '_metadata'] = traces_metadata
             self._filter_data[chan][psd_fold_name + '_metadata'] = traces_metadata
 
+            
+    def calc_csd(self, channels, 
+                 series=None,
+                 trace_length_msec=None,
+                 trace_length_samples=None,
+                 pretrigger_length_msec=None,
+                 pretrigger_length_samples=None,
+                 nevents=None,
+                 tag='default'):
+        """
+        Calculate two-sided and folded CSD. 
+       
+        """
 
+        # --------------------------------
+        # Check arguments
+        # --------------------------------
+
+        if nevents is None:
+            raise ValueError('ERROR: Maximum number of randoms required!'
+                             ' Add "nevents" argument.')
+        
+        # check raw data has been loaded
+        if self._raw_data is None:
+            raise ValueError('ERROR: No raw data available. Use '
+                             + '"set_randoms()" function first!')
+
+        # check trace length
+        if (trace_length_msec is not None
+            and trace_length_samples is not None):
+            raise ValueError('ERROR: Trace length need to be '
+                             'in msec OR samples, nto both')
+
+        if (pretrigger_length_msec is not None
+            and pretrigger_length_samples is not None):
+            raise ValueError('ERROR: Pretrigger length need to be '
+                             'in msec OR samples, nto both')
+
+
+        # channels
+        if isinstance(channels, str):
+            
+            if '|' in channels:
+                channels = channels.replace(' ','')
+                channels = channels.split('|')
+            else:
+                raise ValueError(
+                    'ERROR: At least 2 channels required to calculate csd'
+                )
+
+        # build name 
+        channel_name = '|'.join(channels)
+
+        
+        # -------------
+        # Get data and
+        # apply cuts
+        # -------------
+        
+        traces, traces_metadata = self._get_traces(
+            channels,
+            nevents=nevents,
+            trace_length_msec=trace_length_msec,
+            trace_length_samples=trace_length_samples,
+            pretrigger_length_msec=pretrigger_length_msec,
+            pretrigger_length_samples=pretrigger_length_samples,
+            series=series
+        )
+        
+        # check shape
+        if traces.shape[1] != len(channels):
+            raise ValueError('ERROR: No all channels found in raw data. ')
+        
+        self._fs = traces_metadata['sample_rate']
+        
+        # apply pileup cut
+        cut = np.ones(traces.shape[0], dtype=bool)
+        for ichan in range(len(channels)):
+            
+            traces_chan = traces[:, ichan,:]
+                                
+            # autocut_noise
+            cut_chan = qp.autocuts_noise(traces_chan, fs=self._fs)
+           
+            if np.sum(cut_chan) == 0:
+                raise ValueError(f'ERROR: No events selected after pileup autocut '
+                                 f'for channel {channels[ichan]} ')
+            cut &= cut_chan
+
+            
+        # check efficiency total cut 
+        if np.sum(cut) == 0:
+            raise ValueError(f'ERROR: No events selected after pileup cut!')
+
+        cut_eff = np.sum(cut)/len(cut)*100
+        if self._verbose:
+            print('INFO: Number of events after cuts = '
+                  '{}, efficiency = '
+                  '{:0.2f}%'.format(np.sum(cut), cut_eff))
+            
+        # calc CSD two-sided
+        freqs, csd = qp.calc_csd(channels,
+                                 traces[cut],
+                                 fs=self._fs,
+                                 folded_over=False)
+
+        # calc CSD folded (using qetpy noise object directly)
+        # check if calculaton is needed
+        noise_inst = qp.Noise(traces[cut], self._fs, channels,
+                              name=channel_name)
+        noise_inst.calculate_csd(twosided=False)
+        noise_inst.calculate_uncorr_noise()
+        noise_inst.calculate_corrcoeff()
+
+        if channel_name not in self._qetpy_noise_objects:
+            self._qetpy_noise_objects[channel_name] = dict()
+        self._qetpy_noise_objects[channel_name][tag] = noise_inst
+                    
+        freqs_folded = noise_inst.csd_freqs
+        csd_folded = noise_inst.csd
+        corrcoeff_folded = noise_inst.corrcoeff
+        
+        
+        # parameter name
+        csd_name = 'csd' + '_' + tag
+        csd_fold_name = 'csd_fold' + '_' + tag
+        corrcoeff_fold_name = 'corrcoeff_fold' + '_' + tag
+        
+        # store internal data
+        if channel_name  not in self._filter_data.keys():
+            self._filter_data[channel_name ] = dict()
+            
+        self._filter_data[channel_name ][csd_name] = csd
+        self._filter_data[channel_name ][csd_fold_name] = csd_folded
+        self._filter_data[channel_name ][corrcoeff_fold_name] = corrcoeff_folded
+        # metadata
+        traces_metadata['channel'] = channel_name
+        traces_metadata['cut_efficiency'] = cut_eff
+        
+        self._filter_data[channel_name][csd_name + '_metadata'] = traces_metadata
+        self._filter_data[channel_name][csd_fold_name + '_metadata'] = traces_metadata
+        self._filter_data[channel_name][corrcoeff_fold_name + '_metadata'] = traces_metadata
+
+        
+        
+    def plot_csd(self, channels, whichcsd=['01'], lgcreal=True,
+                 lgcsave=False, savepath=None, figsize=(8,5),
+                 tag='default'):
+        """
+        Plot CSD elements
+        """
+
+        # get QETpy object
+        noise_inst = self.get_qetpy_noise_object(channels, tag=tag)
+        noise_inst.plot_csd(whichcsd, lgcreal,
+                            lgcsave, savepath,
+                            figsize=figsize)
+
+
+    def plot_corrcoeff(self, channels, lgcsmooth=True, nwindow=7,
+                       lgcsave=False, savepath=None, figsize=(8,5),
+                       tag='default'):
+        """
+        Plot correlation coefficient
+        """
+
+        # get QETpy object
+        noise_inst = self.get_qetpy_noise_object(channels, tag=tag)
+        noise_inst.plot_corrcoeff(lgcsmooth, nwindow,
+                                  lgcsave, savepath,
+                                  figsize=figsize)
+        
+    def plot_decorrelatednoise(self, channels,
+                               lgcoverlay=False, lgcdata=True,
+                               lgcuncorrnoise=True, lgccorrelated=False,
+                               lgcsum=False, lgcsave=False, savepath=None,
+                               figsize=(8,5), 
+                               tag='default'):
+        """
+        Plot correlation coefficient
+        """
+
+        # get QETpy object
+        noise_inst = self.get_qetpy_noise_object(channels, tag=tag)
+        noise_inst.plot_decorrelatednoise(lgcoverlay, lgcdata, lgcuncorrnoise,
+                                          lgccorrelated,
+                                          lgcsum,lgcsave, savepath,
+                                          figsize=figsize)
+        
+            
     def _get_traces(self, channels,
                     series=None,
                     trace_length_msec=None,

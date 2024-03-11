@@ -60,7 +60,6 @@ class FilterDataProcessing:
         verbose : bool, optional
             if True, display info
 
-
         Return
         ------
         None
@@ -97,12 +96,12 @@ class FilterDataProcessing:
         self._det_config_threshtrig = data_threshtrig[1]
         self._channels_threshtrig  = data_threshtrig[2]
 
-
         # read config file
         available_channels =  (self._channels_notrig
                                + self._channels_exttrig
                                + self._channels_threshtrig)
         available_channels = list(set(available_channels))
+
         self._processing_config = None
         if config_file is not None:
             self._processing_config = self._read_config(config_file,
@@ -360,7 +359,7 @@ class FilterDataProcessing:
                                  'dIdV data found!')
 
             if (self._processing_config is not None
-                and 'didv' not self._processing_config):
+                and 'didv' not in self._processing_config):
                 raise ValueError(f'ERROR: Input yaml file does '
                                  f'not contain didv processing'
                                  f'configurations!')
@@ -373,7 +372,7 @@ class FilterDataProcessing:
                                  'randoms or continuous  data found!')
 
             if (self._processing_config is not None
-                and 'noise' not self._processing_config):
+                and 'noise' not in self._processing_config):
                 raise ValueError(f'ERROR: Input yaml file does '
                                  f'not contain noise processing '
                                  f'configurations!')
@@ -381,9 +380,9 @@ class FilterDataProcessing:
         if enable_template:
             
             if (self._processing_config is not None
-                and 'template' not self._processing_config):
+                and 'template' not in self._processing_config):
                 raise ValueError(f'ERROR: Input yaml file does '
-                                 f'not contain noise processing '
+                                 f'not contain template processing '
                                  f'configurations!')
             
 
@@ -395,9 +394,8 @@ class FilterDataProcessing:
             if channels is not None:
                 raise ValueError(f'ERROR: Channels are enabled/disabled '
                                  f'through the yaml file configuration '
-                                 f'when provided!')
-
-            
+                                 f'when provided. Set channels argument '
+                                 f'to None!')
             
         # check if file or path
         if (save_file_path is not None
@@ -442,26 +440,25 @@ class FilterDataProcessing:
                         f'ERROR: no {chan} available in raw data!'
                     )
 
-            channel_didv = channels
-            channel_noise = channels
-            channel_template = channels
+            channel_didv = channels.copy()
+            channel_noise = channels.copy()
+            channel_template = channels.copy()
                 
         else:
 
             # check enable channels 
-            if self._processing_config is not None:
+            #if self._processing_config is not None:
+            #   c
+
+            #else:
+
+            if  enable_didv:
+                channels = self._channels_exttrig
+            elif enable_noise:
+                channels = self._channels_notrig
+            
                 
-                if  enable_didv:
-                    
-
-
-            else:
-
-                if  enable_didv:
-                    channels = self._channels_exttrig
-                elif enable_noise:
-                    channels = self._channels_notrig
-
+                
         # intialize output
         output_dict = {'didv':dict(),
                        'noise': dict(),
