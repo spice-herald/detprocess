@@ -231,7 +231,7 @@ class IVSweepAnalysis(FilterData):
             params[param] =  param_val
       
             
-        for ichan, chan in enumarate(channels):
+        for ichan, chan in enumerate(channels):
             if chan not in self._readout_params.keys():
                 self._readout_params[chan] = dict()
             self._readout_params[chan]['rshunt'] = params['rshunt'][ichan]
@@ -271,7 +271,7 @@ class IVSweepAnalysis(FilterData):
             # replace
             params[param] = param_val
             
-        for ichan,chan in enumarate(channels):
+        for ichan,chan in enumerate(channels):
             if chan not in self._readout_params.keys():
                 self._readout_params[chan] = dict()
             self._readout_params[chan]['rp'] =  params['rp'][ichan]
