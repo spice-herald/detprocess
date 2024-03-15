@@ -346,13 +346,14 @@ class IVSweepProcessing:
                 if '/raw/filterdata' in save_path:
                     save_path = save_path.replace('/raw/filterdata',
                                                   '/filterdata')
+
             group_name =  self._group_name_didv
             if (self._group_name_iv and self._group_name_iv is not None):
                  group_name = self._group_name_iv
 
             if group_name not in save_path:
-                save_path = save_path +'/' + group_name 
-                
+                save_path = save_path + '/' + group_name 
+
             if not os.path.isdir(save_path):
                 try:
                     os.makedirs(save_path)
@@ -746,7 +747,7 @@ class IVSweepProcessing:
                     series_dict['dIdV'] = dict()
                 series_dict['dIdV'][series_name] = series_file_list
                 base_path_didv.append(str(Path(a_file).parents[1]))
-                group_name_didv.append(str(Path(a_file).parent.absolute()))
+                group_name_didv.append(str(Path(Path(a_file).parent).name))
             else:
                 raise ValueError(f'ERROR: Unknow data purpose "{data_purpose}"')
 
