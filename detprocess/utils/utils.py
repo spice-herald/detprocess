@@ -270,6 +270,10 @@ def read_config(yaml_file, available_channels):
         
     """
 
+    # obsolete keys
+    obsolete_keys = {'nb_samples': 'trace_length_samples',
+                     'nb_pretrigger_samples': 'pretrigger_length_samples'}
+
     # configuration types
     configuration_types = ['global', 'feature',
                            'didv', 'noise',
@@ -290,9 +294,6 @@ def read_config(yaml_file, available_channels):
     if isinstance(available_channels, str):
         available_channels =  [available_channels]
                     
-    # intialize output
-    processing_config = dict()
-
     # load yaml file
     yaml_dict = yaml.load(open(yaml_file, 'r'),
                           Loader=_UniqueKeyLoader)
@@ -300,6 +301,17 @@ def read_config(yaml_file, available_channels):
     if not yaml_dict:
         raise ValueError('ERROR: No configuration loaded'
                          'Something went wrong...')
+
+    if 'include' in  yaml_dict:
+        include_files = yaml_dict['include']
+        if isinstance(include_files, str):
+            include_files = [include_files]
+        for afile in include_files:
+            yaml_dict.update(yaml.load(open(afile, 'r'),
+                                       Loader=_UniqueKeyLoader))
+        yaml_dict.pop('include')
+            
+
         
     # let's split configuration based on type of processing
     config_dicts = dict()
@@ -319,7 +331,7 @@ def read_config(yaml_file, available_channels):
             # remove from yaml file
             yaml_dict.pop(config_name)
 
-    # global config
+    # global config based on  hard coded list
     for param in global_parameters:
         config_dicts['global'][param] = None
         if param in yaml_dict.keys():
@@ -329,13 +341,20 @@ def read_config(yaml_file, available_channels):
             yaml_dict.pop(param)
                 
 
-    # the rest should be for feature processing
+    # the rest of parameter are for  feature processing
     for param in  yaml_dict.keys():
         config_dicts['feature'][param] = copy.deepcopy(
             yaml_dict[param]
         )
 
+    # rename obsolete keys
+    for old_key, new_key in obsolete_keys.items():
+        config_dicts = _rename_key_recursively(config_dicts, old_key, new_key)
 
+        
+    # intialize output
+    processing_config = dict()
+        
     # Loop configuration and check/cleanup parameters
     for config_name  in configuration_types:
 
@@ -551,3 +570,21 @@ class _UniqueKeyLoader(SafeLoader):
             value = self.construct_object(value_node, deep=deep)
             mapping[key] = value
         return mapping
+
+
+def _rename_key_recursively(d, old_key, new_key):
+    """
+    Recursively renames a key in a dictionary and 
+    all its sub-dictionaries.
+    """
+
+    # check if dictionary
+    if not isinstance(d, dict):
+        return d
+    
+    for key in list(d.keys()):  
+        if isinstance(d[key], dict):
+            _rename_key_recursively(d[key], old_key, new_key)
+        if key == old_key:
+            d[new_key] = d.pop(old_key)
+    return d

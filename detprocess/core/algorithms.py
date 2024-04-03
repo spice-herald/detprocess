@@ -895,7 +895,9 @@ class FeatureExtractors:
             av_psd = np.average(trace_psd[f_low_index:f_high_index])
 
             # store features
-            retdict[feature_base_name + '_' + str(round(f_low)) + '_' + str(round(f_high))] = av_psd
+            retdict[feature_base_name + '_'
+                    + str(round(f_low))
+                    + '_' + str(round(f_high))] = av_psd
             i += 1
 
         return retdict

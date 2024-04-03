@@ -50,50 +50,10 @@ class Noise(FilterData):
 
         # sample rate stored for convenience
         self._fs = None
-
-        # QETpy noise objects (folded quantities)
-        self._qetpy_noise_objects = dict()
     
         # offset
         self._offset = dict()
-        
-
-    def get_qetpy_noise_object(self, channels, tag='default'):
-        """
-        Get QETpy noise objects 
-        (folded quantities only)
-        """
-
-        # channels
-        if ((isinstance(channels, str) and  '|' not in  channels)
-            or (isinstance(channels, list)  and len(channels)<2)):
-                raise ValueError(
-                    'ERROR: At least 2 channels required to calculate csd'
-                )
-
-        if not isinstance(channels, str):
-            channels = '|'.join(channels)
-
-        if (channels not in self._qetpy_noise_objects
-            or tag not in self._qetpy_noise_objects[channels]):
-
-            channel_list = list(self._qetpy_noise_objects.keys())
-            if channel_list:
-                raise ValueError(f'ERROR: No QETpy noise objects found for '
-                                 f'{channels}, tag="{tag}".\n'
-                                 f'List of available QETpy objects: {channel_list} \n'
-                                 f'Calculate csd with {channels} first! '
-                                 f'(order is important!)')
-            else:
-                raise ValueError(f'ERROR: No QETpy noise objects found for '
-                                 f'{channels}, tag="{tag}".\n'
-                                 f'Calculate csd/correleration coeff with '
-                                 f'{channels} first! (order is important!)')
-            
-        
-        return self._qetpy_noise_objects[channels][tag]
-        
-
+ 
         
     def get_detector_config(self, channel):
         """
@@ -148,7 +108,6 @@ class Noise(FilterData):
         self._series_list = None
         self._detector_config = None
         self._fs = None
-        self._qetpy_noise_objects = dict()
         self._offset = dict()
         
     def set_randoms(self, raw_path, series=None,
@@ -257,8 +216,6 @@ class Noise(FilterData):
                   'Use "describe()" to check. If needed clear data '
                   'using "clear_data(channels=None, tag=None)" function!')
 
-
-
             
     def calc_psd(self, channels, 
                  series=None,
@@ -361,35 +318,26 @@ class Noise(FilterData):
             freqs, psd = qp.calc_psd(traces[cut],
                                      fs=self._fs,
                                      folded_over=False)
-            
-            freqs_fold, psd_fold = qp.foldpsd(psd, fs=self._fs)
-
-
+        
             # calc offsets
             self._offset[chan] = np.average(np.median(traces[cut], axis=-1))
-            
-            
+                       
             # parameter name
             psd_name = 'psd' + '_' + tag
-            psd_fold_name = 'psd_fold' + '_' + tag
-            
+                     
             # save in filter dict as pandas series
             if chan not in self._filter_data.keys():
                 self._filter_data[chan] = dict()
                 
             self._filter_data[chan][psd_name] = (
                 pd.Series(psd, freqs))
-            self._filter_data[chan][psd_fold_name] = (
-                pd.Series(psd_fold, freqs_fold)
-            )
-        
+               
             # metadata
             traces_metadata['channel'] = chan
             traces_metadata['cut_efficiency'] = cut_eff
           
             self._filter_data[chan][psd_name + '_metadata'] = traces_metadata
-            self._filter_data[chan][psd_fold_name + '_metadata'] = traces_metadata
-
+         
             
     def calc_csd(self, channels, 
                  series=None,
@@ -473,13 +421,12 @@ class Noise(FilterData):
                                 
             # autocut_noise
             cut_chan = qp.autocuts_noise(traces_chan, fs=self._fs)
-           
+                      
             if np.sum(cut_chan) == 0:
                 raise ValueError(f'ERROR: No events selected after pileup autocut '
                                  f'for channel {channels[ichan]} ')
             cut &= cut_chan
-
-            
+                      
         # check efficiency total cut 
         if np.sum(cut) == 0:
             raise ValueError(f'ERROR: No events selected after pileup cut!')
@@ -491,94 +438,31 @@ class Noise(FilterData):
                   '{:0.2f}%'.format(np.sum(cut), cut_eff))
             
         # calc CSD two-sided
-        freqs, csd = qp.calc_csd(channels,
-                                 traces[cut],
+        freqs, csd = qp.calc_csd(traces[cut],
                                  fs=self._fs,
                                  folded_over=False)
-
-        # calc CSD folded (using qetpy noise object directly)
-        # check if calculaton is needed
-        noise_inst = qp.Noise(traces[cut], self._fs, channels,
-                              name=channel_name)
-        noise_inst.calculate_csd(twosided=False)
-        noise_inst.calculate_uncorr_noise()
-        noise_inst.calculate_corrcoeff()
-
-        if channel_name not in self._qetpy_noise_objects:
-            self._qetpy_noise_objects[channel_name] = dict()
-        self._qetpy_noise_objects[channel_name][tag] = noise_inst
-                    
-        freqs_folded = noise_inst.csd_freqs
-        csd_folded = noise_inst.csd
-        corrcoeff_folded = noise_inst.corrcoeff
-        
-        
         # parameter name
-        csd_name = 'csd' + '_' + tag
-        csd_fold_name = 'csd_fold' + '_' + tag
-        corrcoeff_fold_name = 'corrcoeff_fold' + '_' + tag
-        
+        csd_name = 'csd_' + tag
+        csd_freqs_name = 'csd_freqs_' + tag
+                
         # store internal data
         if channel_name  not in self._filter_data.keys():
             self._filter_data[channel_name ] = dict()
             
         self._filter_data[channel_name ][csd_name] = csd
-        self._filter_data[channel_name ][csd_fold_name] = csd_folded
-        self._filter_data[channel_name ][corrcoeff_fold_name] = corrcoeff_folded
+        self._filter_data[channel_name ][csd_freqs_name] = freqs
+
         # metadata
         traces_metadata['channel'] = channel_name
         traces_metadata['cut_efficiency'] = cut_eff
+
+        names_metadata = [csd_name + '_metadata',
+                          csd_freqs_name + '_metadata']
         
-        self._filter_data[channel_name][csd_name + '_metadata'] = traces_metadata
-        self._filter_data[channel_name][csd_fold_name + '_metadata'] = traces_metadata
-        self._filter_data[channel_name][corrcoeff_fold_name + '_metadata'] = traces_metadata
-
-        
-        
-    def plot_csd(self, channels, whichcsd=['01'], lgcreal=True,
-                 lgcsave=False, savepath=None, figsize=(8,5),
-                 tag='default'):
-        """
-        Plot CSD elements
-        """
-
-        # get QETpy object
-        noise_inst = self.get_qetpy_noise_object(channels, tag=tag)
-        noise_inst.plot_csd(whichcsd, lgcreal,
-                            lgcsave, savepath,
-                            figsize=figsize)
-
-
-    def plot_corrcoeff(self, channels, lgcsmooth=True, nwindow=7,
-                       lgcsave=False, savepath=None, figsize=(8,5),
-                       tag='default'):
-        """
-        Plot correlation coefficient
-        """
-
-        # get QETpy object
-        noise_inst = self.get_qetpy_noise_object(channels, tag=tag)
-        noise_inst.plot_corrcoeff(lgcsmooth, nwindow,
-                                  lgcsave, savepath,
-                                  figsize=figsize)
-        
-    def plot_decorrelatednoise(self, channels,
-                               lgcoverlay=False, lgcdata=True,
-                               lgcuncorrnoise=True, lgccorrelated=False,
-                               lgcsum=False, lgcsave=False, savepath=None,
-                               figsize=(8,5), 
-                               tag='default'):
-        """
-        Plot correlation coefficient
-        """
-
-        # get QETpy object
-        noise_inst = self.get_qetpy_noise_object(channels, tag=tag)
-        noise_inst.plot_decorrelatednoise(lgcoverlay, lgcdata, lgcuncorrnoise,
-                                          lgccorrelated,
-                                          lgcsum,lgcsave, savepath,
-                                          figsize=figsize)
-        
+        for name in names_metadata:
+            self._filter_data[channel_name][name] = traces_metadata
+   
+      
             
     def _get_traces(self, channels,
                     series=None,

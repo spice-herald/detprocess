@@ -1279,14 +1279,14 @@ class DIDVAnalysis(FilterData):
                 fs = self._didv_data[chan]['data_config']['fs']
             
             if 'dpdi_2poles' in self._didv_data[chan]:
-                dpdi_freqs, dpdi = self.get_dpdi(chan, 2)
+                dpdi,dpdi_freqs = self.get_dpdi(chan, 2)
                 self.set_dpdi(chan, dpdi, dpdi_freqs,
                               sample_rate=fs,
                               didv_fit_poles=2,
                               metadata=metadata)
                 
             if 'dpdi_3poles' in self._didv_data[chan]:
-                dpdi_freqs, dpdi = self.get_dpdi(chan, 3)
+                dpdi,dpdi_freqs = self.get_dpdi(chan, 3)
                 self.set_dpdi(chan, dpdi, dpdi_freqs,
                               sample_rate=fs,
                               didv_fit_poles=3,
