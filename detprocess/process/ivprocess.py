@@ -17,6 +17,7 @@ import time
 import astropy
 from humanfriendly import parse_size
 from itertools import groupby
+import copy
 import matplotlib.pyplot as plt
 from detprocess.utils import find_linear_segment
 from detprocess.core import FilterData
@@ -93,19 +94,15 @@ class IVSweepProcessing:
         self._group_name_didv = name_didv
         self._base_path_iv = path_iv
         self._base_path_didv = path_didv
-
-
+        
         # bias tolerance
         self._bias_tolerance_percent = bias_tolerance_percent
         self.describe()
 
-
         # filter data to store results
         self._filter_data = FilterData()
         
-        
-
-        
+             
     def describe(self):
         """
         Describe data
@@ -221,11 +218,13 @@ class IVSweepProcessing:
             
             # data
             channel_series = self._raw_data_dict[chan]
-
+            
             # check if both IV/dIdV:
-            if 'IV' not in  channel_series.keys():
+            if ('IV' not in  channel_series.keys()
+                or channel_series['IV'] is None):
                 enable_iv = False
-            if 'dIdV' not in  channel_series.keys():
+            if ('dIdV' not in  channel_series.keys()
+                or channel_series['dIdV'] is None):
                 enable_didv = False
                 
             # processing type
@@ -341,19 +340,20 @@ class IVSweepProcessing:
 
             if save_path is None:
                 save_path = self._base_path_didv
-                if self._base_path_iv is not None:
+                if (self._base_path_iv and self._base_path_iv is not None):
                     save_path = self._base_path_iv
-                save_path  +=  '/processed'
-                if '/raw/processed' in save_path:
-                    save_path = save_path.replace('/raw/processed',
-                                                  '/processed')
+                save_path  = save_path + '/filterdata'
+                if '/raw/filterdata' in save_path:
+                    save_path = save_path.replace('/raw/filterdata',
+                                                  '/filterdata')
+
             group_name =  self._group_name_didv
-            if self._group_name_iv is not None:
+            if (self._group_name_iv and self._group_name_iv is not None):
                  group_name = self._group_name_iv
 
             if group_name not in save_path:
-                save_path += '/' + group_name 
-                
+                save_path = save_path + '/' + group_name 
+
             if not os.path.isdir(save_path):
                 try:
                     os.makedirs(save_path)
@@ -764,7 +764,7 @@ class IVSweepProcessing:
                     series_dict['dIdV'] = dict()
                 series_dict['dIdV'][series_name] = series_file_list
                 base_path_didv.append(str(Path(a_file).parents[1]))
-                group_name_didv.append(str(Path(a_file).parent.absolute()))
+                group_name_didv.append(str(Path(Path(a_file).parent).name))
             else:
                 raise ValueError(f'ERROR: Unknow data purpose "{data_purpose}"')
 
@@ -829,18 +829,19 @@ class IVSweepProcessing:
         
         # For IV data, all sweep channels are from same series
         for chan in channel_dict['IV']:
-            data_dict[chan]['IV'] = series_dict['IV']
+            data_dict[chan]['IV'] = copy.deepcopy(series_dict['IV'])
 
         # For dIdV, if more than 1 channel
         # we need to check if signal generator on/off
         # FIXME: add file attributes
-        
-                
         if len(channel_dict['dIdV']) == 1:
-            data_dict[chan]['dIdV'] = series_dict['dIdV']
+            data_dict[chan]['dIdV'] = copy.deepcopy(series_dict['dIdV'])
+            
         elif len(channel_dict['dIdV'])>1:
+            
             # loop series
-            for series_name in series_dict['dIdV']:
+            for series_name in list(series_dict['dIdV'].keys()):
+                
                 file_name = glob(f'{raw_path}/*_{series_name}_F0001.hdf5')[0]
                 
                 # get detector config
@@ -848,11 +849,20 @@ class IVSweepProcessing:
 
                 # check signal generator
                 for chan in channel_dict['dIdV']:
-                    is_didv = (config[chan]['signal_gen_onoff']=='on' and
-                               config[chan]['signal_gen_source']=='tes')
+                    
+                    # FIXME: Temporary fix for LBL (assume using "starcryo")
+                    is_didv = ((config[chan]['signal_gen_onoff']=='on' 
+                                and config[chan]['signal_gen_source']=='tes') or
+                               (config[chan]['signal_gen_onoff']=='on'
+                                and 'starcryo' in config[chan]['controller_chans']))
+                    
                     if is_didv:
+                        
+                        if data_dict[chan]['dIdV'] is None:
+                            data_dict[chan]['dIdV'] = dict()
+                            
                         data_dict[chan]['dIdV'][series_name] = (
-                            series_dict['dIdV'][series_name]
+                            copy.deepcopy(series_dict['dIdV'][series_name])
                         )
 
 

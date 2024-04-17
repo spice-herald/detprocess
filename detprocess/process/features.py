@@ -30,8 +30,6 @@ __all__ = [
     'FeatureProcessing'
 ]
 
-
-
 class FeatureProcessing:
     """
     Class to manage data processing and 
@@ -108,37 +106,48 @@ class FeatureProcessing:
         # restricted data
         self._restricted = restricted
         
-        
         # display
         self._verbose = verbose
 
+        # series argument (FIXME: filter solely based raw data series?)
+        #  -> raw data series if no dataframe
+        #  -> dataframe series if trigger_dataframe_path
+        raw_series = None
+        dataframe_series = None
+        if trigger_dataframe_path is not None:
+            dataframe_series = series
+        else:
+            raw_series = series 
+             
         # Raw file list
         raw_files, raw_path, group_name = (
             self._get_file_list(raw_path,
-                                series=series,
+                                series=raw_series,
                                 restricted=restricted)
         )
+
         if not raw_files:
             raise ValueError('No raw data files were found! '
                              + 'Check configuration...')
         self._series_list = list(raw_files.keys())
         self._input_group_name = str(group_name)
-        
+      
         # Dataframe file list
         trigger_files = None
         trigger_path = None
         trigger_group_name = None
         
         if trigger_dataframe_path is not None:
-            
+                   
             trigger_files, trigger_path, trigger_group_name = (
                 self._get_file_list(trigger_dataframe_path,
+                                    series=dataframe_series,
                                     is_raw=False,
                                     restricted=restricted)
             )
             if not trigger_files:
-                raise ValueError('No dataframe files were found! '
-                                 + 'Check configuration...')
+                raise ValueError(f'No dataframe files were found! '
+                                 f'Check configuration...')
             
             self._series_list = list(trigger_files.keys())
 
@@ -308,7 +317,7 @@ class FeatureProcessing:
             
             # split data
             series_list_split = self._split_series(ncores)
-            
+        
             # for multi-core processing, we need to decrease the
             # max memory so it fits in RAM
             memory_limit /= ncores
@@ -396,15 +405,12 @@ class FeatureProcessing:
         node_num_str = str()
         if node_num>-1:
             node_num_str = ' Node #' + str(node_num)
-        
-
+    
         # feature extractors
         FE = FeatureExtractors
         FE_ext = None
         if self._external_file is not None:
             FE_ext = self._load_external_extractors(self._external_file)
-
-
 
         # output file name base
         output_base_file = None
@@ -498,7 +504,7 @@ class FeatureProcessing:
                         
                         # build hdf5 file name
                         dump_str = str(dump_counter)
-                        dump_str ='_F' + dump_str.zfill(4)
+                        dump_str = '_F' + dump_str.zfill(4)
                         file_name =  output_base_file +  dump_str + '.hdf5'
                     
                         # convert to vaex
@@ -706,9 +712,10 @@ class FeatureProcessing:
 
                 # done processing event!
                 # append event dictionary to dataframe
-                feature_df = feature_df.append(event_features,
-                                               ignore_index=True)
-           
+                event_df = pd.DataFrame([event_features])
+                feature_df = pd.concat([feature_df, event_df],
+                                       ignore_index=True)
+                         
         # return features
         return feature_df
        
@@ -818,17 +825,29 @@ class FeatureProcessing:
                         file_list.append(a_path)
 
             else:
-                raise ValueError('File or directory "' + a_path
-                                 + '" does not exist!')
+                raise ValueError(f'File or directory "{a_path}" '
+                                 f'does not exist!')
             
         if not file_list:
-            raise ValueError('ERROR: No raw input data found. Check arguments!')
+            if is_raw:
+                msg = ('No input raw data found. '
+                       'Check data path! ')
+                if series is not None:
+                    msg = msg + ' Or check "series" argument.'
+                raise ValueError(msg)
+            else:
+                msg = ('No input dataframe vaex files found. '
+                       'Check data path!')
+                if series is not None:
+                    msg = (msg
+                           + ' Or check "series" argument (it should be '
+                           + '"series" of dataframe files, not raw data)')
+                raise ValueError(msg)
+            
 
         # sort
         file_list.sort()
 
-
-        
       
         # convert to series dictionary so can be easily split
         # in multiple cores
@@ -1327,7 +1346,6 @@ class FeatureProcessing:
             if series_sublist.size == 0:
                 continue
             output_list.append(list(series_sublist))
-            
 
         return output_list
 
