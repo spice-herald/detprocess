@@ -564,9 +564,10 @@ class _UniqueKeyLoader(SafeLoader):
             key = self.construct_object(key_node, deep=deep)
             if key in mapping:
                 raise ValueError(f'ERROR: Duplicate key "{key}" '
-                                 'foundr in the yaml file. '
-                                 'This is not allowed to avoid '
-                                 'unwanted configuration!')
+                                 f'found in the yaml file for same '
+                                 f'channel and algorithm. '
+                                 f'This is not allowed to avoid '
+                                 f'unwanted configuration!')
             value = self.construct_object(value_node, deep=deep)
             mapping[key] = value
         return mapping

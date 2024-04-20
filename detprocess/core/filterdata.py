@@ -266,7 +266,9 @@ class FilterData:
         filter_io.save_fromdict(self._filter_data,
                                 overwrite=overwrite)
 
-    def get_psd(self, channels, tag='default', fold=False):
+    def get_psd(self, channels, tag='default',
+                fold=False,
+                return_metadata=False):
         """
         Get PSD for a specific channel in unit of  Amps^2/Hz
 
@@ -289,7 +291,7 @@ class FilterData:
             psd [Amps^2/Hz]
         f  : ndarray
             psd frequencies
-
+        metadata : dict 
         """
 
         if isinstance(channels, str):
@@ -297,10 +299,13 @@ class FilterData:
 
         output_psd = None
         output_psd_freqs = None
+        output_metadata = dict()
+        
         for chan in channels:
         
             psd, psd_freqs, metadata = self._get_param_array(
                 'psd', chan, tag=tag, return_metadata=True)
+            output_metadata[chan] = copy.deepcopy(metadata)
             
             if fold:
                 sample_rate = None
@@ -328,11 +333,18 @@ class FilterData:
 
         if output_psd.shape[0] == 1:
             output_psd  = np.squeeze(output_psd[0,:])
-            
-        return output_psd, output_psd_freqs
+
+        if return_metadata:
+            if len(channels) == 1:
+                output_metadata = output_metadata[channels[0]]
+            return output_psd, output_psd_freqs, output_metadata
+        else:
+            return output_psd, output_psd_freqs
     
     
-    def get_csd(self, channels, tag='default', fold=False):
+    def get_csd(self, channels, tag='default',
+                fold=False,
+                return_metadata=False):
         """
         Get CSD for a specified channel list or string with channels
         separated with "|" in unit of  Amps^2/Hz. Channel order is 
@@ -357,7 +369,8 @@ class FilterData:
             csd [Amps^2/Hz]
         f  : ndarray
             csd frequencies
-
+        metadata : dict
+          csd metadata if return_metadata=True
         """
         
         # check channel
@@ -367,14 +380,19 @@ class FilterData:
                 'ERROR: At least 2 channels required to calculate csd'
             )
         
-        # return values
+        # get values
+        output_metadata = dict()
         csd, csd_freqs, metadata = (
             self._get_param_array('csd',
                                   channels,
                                   tag=tag,
                                   return_metadata=True)
         )
+
         
+        output_metadata = copy.deepcopy(metadata)
+
+
         if fold:
             sample_rate = None
             if 'sample_rate' in metadata:
@@ -383,11 +401,15 @@ class FilterData:
                 sample_rate = 2*np.max(np.abs(csd_freqs))
                 
             csd_freqs, csd = fold_spectrum(csd, sample_rate)
+
+        if return_metadata:
+            return csd, csd_freqs, output_metadata
+        else:
+            return csd, csd_freqs
             
-        return csd, csd_freqs
-        
     
-    def get_template(self, channel, tag='default'):
+    def get_template(self, channel, tag='default',
+                     return_metadata=False):
         """
         Get template for a specific channel
 
@@ -410,12 +432,11 @@ class FilterData:
         """
         
         # return values
-        return self._get_param_array('template',
-                                     channel,
-                                     tag=tag,
-                                     fold=False)
-
-        return val, time
+        return self._get_param_array(
+            'template',
+            channel,
+            tag=tag,
+            return_metadata=return_metadata)
 
 
 

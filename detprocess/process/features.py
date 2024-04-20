@@ -17,7 +17,7 @@ import time
 import astropy
 from humanfriendly import parse_size
 from itertools import groupby
-
+import copy
 from detprocess.core.algorithms  import FeatureExtractors
 from detprocess.process.processing_data  import ProcessingData
 from detprocess.utils import utils
@@ -108,7 +108,7 @@ class FeatureProcessing:
         
         # display
         self._verbose = verbose
-
+        
         # series argument (FIXME: filter solely based raw data series?)
         #  -> raw data series if no dataframe
         #  -> dataframe series if trigger_dataframe_path
@@ -171,7 +171,6 @@ class FeatureProcessing:
             raise ValueError('No channels to be processed! ' +
                              'Check configuration...')
         
-        
         # External feature extractors
         self._external_file = None
         if external_file is not None:
@@ -197,16 +196,16 @@ class FeatureProcessing:
             trigger_files=trigger_files,
             trigger_group_name =trigger_group_name,
             filter_file=filter_file,
+            available_channels=available_channels,
             verbose=verbose)
-                                
-
+   
         
     def process(self,
                 nevents=-1,
                 lgc_save=False, save_path=None,
                 lgc_output=False, 
                 ncores=1,
-                memory_limit='2GB'):
+                memory_limit='1GB'):
         
         """
         Process data 
@@ -343,9 +342,6 @@ class FeatureProcessing:
 
             # concatenate
             output_df = pd.concat(output_df_list)
-
-
-
             
         # processing done
         if self._verbose:
@@ -429,7 +425,6 @@ class FeatureProcessing:
             output_base_file = (output_group_path
                                 + '/' + file_prefix
                                 + '_' + series_name)
-
                 
         # intialize counters
         dump_counter = 1
@@ -464,8 +459,7 @@ class FeatureProcessing:
                 # flag memory limit reached
                 memory_usage = feature_df.memory_usage(deep=True).sum()
                 memory_limit_reached =  memory_usage  >= memory_limit
-                
-
+        
                 # display
                 if self._verbose:
                     if (event_counter%500==0 and event_counter!=0):
@@ -486,7 +480,6 @@ class FeatureProcessing:
                 # end of file
                 if not success:
                     do_stop = True
-
             
                 # -----------------------
                 # save file if needed
@@ -508,8 +501,9 @@ class FeatureProcessing:
                         file_name =  output_base_file +  dump_str + '.hdf5'
                     
                         # convert to vaex
-                        feature_vx = vx.from_pandas(feature_df,
-                                                    copy_index=False)
+                        feature_vx = vx.from_pandas(
+                            feature_df,
+                            copy_index=False)
 
 
                         # export
@@ -547,14 +541,12 @@ class FeatureProcessing:
                             +'(lgc_save=True AND lgc_output=False) '
                         )
 
-
                 # Now let's stop or increment event counter....
                 if do_stop:
                     break
                 else:
                     event_counter += 1
-                    
-             
+                   
                 # -----------------------
                 # Features calculation
                 # -----------------------
@@ -565,7 +557,6 @@ class FeatureProcessing:
                 # update signal trace in OF base objects
                 # -> calculate FFTs, etc.
                 self._processing_data.update_signal_OF()
-
               
                 # Processing id   
                 event_features.update(
@@ -601,30 +592,19 @@ class FeatureProcessing:
                     if 'feature_channel' in algorithms.keys():
                         feature_channel = algorithms['feature_channel']
 
-                    # number of samples
+                    # number of samples raw data
                     nb_samples = self._processing_data.get_nb_samples()
-                    if 'nb_samples' in algorithms.keys():
-                        nb_samples = algorithms['nb_samples']
                     nb_pretrigger_samples = (
-                        self._processing_data.get_nb_samples_pretrigger()
+                        self._processing_data.get_nb_pretrigger_samples()
                     )
-                    if 'nb_pretrigger_samples' in algorithms.keys():
-                        nb_pretrigger_samples = algorithms['nb_pretrigger_samples']
                     
-                        
                     # loop algorithms to extact features
                     for algorithm, algorithm_params in algorithms.items():
 
-
                         # skip if "feature_channel"
-                        if algorithm=='feature_channel':
+                        if algorithm == 'feature_channel':
                             continue
-
-                        # skip if nb samples
-                        if (algorithm=='nb_samples'
-                            or  algorithm=='nb_pretrigger_samples'):
-                            continue
-                        
+                                               
                         # skip if algorithm disable
                         if not algorithm_params['run']:
                             continue
@@ -633,21 +613,22 @@ class FeatureProcessing:
                         base_algorithm = algorithm
                         if 'base_algorithm' in algorithm_params.keys():
                             base_algorithm = algorithm_params['base_algorithm']
-                            
-                            
-                        # check if different number of samples
-                        # for specified parameter
-                        nb_samples_algorithm = nb_samples
-                        nb_pretrigger_samples_algorithm = nb_pretrigger_samples
-                        if 'nb_samples' in algorithm_params.keys():
-                            nb_samples_algorithm = (
-                                algorithm_params['nb_samples']
+
+                        # number samples from configuration
+                        nb_samples_algorithm = (
+                            algorithm_params['nb_samples']
+                        )
+                        nb_pretrigger_samples_algorithm = (
+                            algorithm_params['nb_pretrigger_samples']
+                        )
+
+                        if nb_samples_algorithm is not None:
+                            nb_samples = nb_samples_algorithm
+                        if nb_pretrigger_samples_algorithm is not None:
+                            nb_pretrigger_samples = (
+                                nb_pretrigger_samples_algorithm
                             )
-                        if 'nb_pretrigger_samples' in algorithm_params.keys():
-                            nb_pretrigger_samples_algorithm = (
-                                algorithm_params['nb_pretrigger_samples']
-                            )
-                                                  
+                        
                         # get feature extractor
                         extractor = None
                         if base_algorithm in self._algorithm_list:
@@ -655,32 +636,38 @@ class FeatureProcessing:
                         elif base_algorithm in self._ext_algorithm_list:
                             extractor = getattr(FE_ext, base_algorithm)
                         else:
-                            raise ValueError('ERROR: Cannot find algorithm "'
-                                             + base_algorithm
-                                             + '" anywhere. '
-                                             + 'Check feature extractor exists!')
+                            raise ValueError(
+                                f'ERROR: Cannot find algorithm '
+                                f'"{base_algorithm}" anywhere. '
+                                f'Check feature extractor exists!')
 
                         
                         # extractor arguments (removing run)
                         # add parameter if needed
                         kwargs = {key: value
                                   for (key, value) in algorithm_params.items()
-                                  if key!='run'}
+                                  if key != 'run'}
 
                         # add various parameters that may be needed
                         # by the algoithm
                         kwargs['fs'] = (
                             self._processing_data.get_sample_rate()
                         )
-                        kwargs['nb_samples_pretrigger'] = (
-                            nb_pretrigger_samples_algorithm-1
-                        )
-                        kwargs['nb_samples'] = nb_samples_algorithm
-                        
-                        kwargs['window_min_index'], kwargs['window_max_index'] = (
+
+                        if 'nb_samples' not in kwargs:
+                            kwargs['nb_samples'] = nb_samples
+                        #if 'nb_pretrigger_samples' not in kwargs:
+                        #    kwargs['nb_pretrigger_samples'] = (
+                        #        nb_pretrigger_samples
+                        #    )
+                  
+                        window_min, window_max = (
                             self._get_window_indices(**kwargs)
                         )
-
+                        
+                        kwargs['window_min_index'] = window_min
+                        kwargs['window_max_index'] = window_max
+                            
                         # base feature name = algorithm name
                         kwargs['feature_base_name'] = algorithm
                         
@@ -688,11 +675,16 @@ class FeatureProcessing:
                         extracted_features = dict()
                         
                         # For OF algorithms, get OB base object
-                        OF_base = self._processing_data.get_OF_base(
-                            channel, algorithm)
+                        key_tuple = (nb_samples_algorithm,
+                                     nb_pretrigger_samples_algorithm)
                         
+                        OF_base = self._processing_data.get_OF_base(
+                            key_tuple, algorithm)
+                                                  
                         if OF_base is not None:
-                            extracted_features = extractor(OF_base, **kwargs)
+                            extracted_features = extractor(channel,
+                                                           OF_base,
+                                                           **kwargs)
                         else:
                             trace = self._processing_data.get_channel_trace(
                                 channel,
@@ -700,6 +692,7 @@ class FeatureProcessing:
                                 nb_pretrigger_samples=(
                                     nb_pretrigger_samples_algorithm)
                             )
+                            
                             extracted_features = extractor(trace, **kwargs)
 
                                                         
@@ -958,8 +951,7 @@ class FeatureProcessing:
 
 
     
-    def _read_config(self, yaml_file, available_channels,
-                     processing_type='feature'):
+    def _read_config(self, yaml_file, available_channels):
         """
         Read and check yaml configuration
         file 
@@ -989,228 +981,148 @@ class FeatureProcessing:
            
         
         """
+        # read configuration file
+        all_config = utils.read_config(yaml_file,
+                                       available_channels)
+        # feature config
+        if 'feature' not in all_config:
+            raise ValueError(f'ERROR: No "feature" configuration '
+                             f'found in yaml file {yaml_file}')
 
-        # initialize output
-        processing_config = dict()
-        filter_file = None
-        selected_channels = list()
-        traces_info = dict()
-        
-
-        # open configuration file
-        yaml_dict = dict()
-        with open(yaml_file) as f:
-            yaml_dict = yaml.safe_load(f)
-
-        # check if configuration loaded
-        if not yaml_dict:
-            raise ValueError('ERROR: Unable to read processing configuration!')
-
-
-        # let's first extract dictionary relevant for processing
-        if processing_type == 'feature':
-            if 'trigger' in yaml_dict.keys():
-                yaml_dict.pop('trigger')
-            if 'filter' in yaml_dict.keys():
-                yaml_dict.pop('filter')
-        elif processing_type == 'trigger':
-            yaml_dict = yaml_dict['trigger']
-        elif processing_type == 'filter':
-            yaml_dict = yaml_dict['filter']
-            
-
+        processing_config =  copy.deepcopy(all_config['feature'])
 
         # filter file
-        if (processing_type == 'feature'
-            or processing_type == 'trigger'):
-            if 'filter_file' in yaml_dict.keys():
-                filter_file = yaml_dict['filter_file']
-            else:
-                raise ValueError(
-                    'ERROR: Required "filter_file" parameter '
-                    'not found in yaml file!')
-            yaml_dict.pop('filter_file')
+        if all_config['global']['filter_file'] is None:
+            raise ValueError(f'ERROR: No filter file path '
+                             f'found in yaml file {yaml_file}. '
+                             f'This is required for feature processing ')
+
+        filter_file = all_config['global']['filter_file']
+
+        # Initialize some list/dict
+        selected_channels = list()
+        traces_config = dict()
+
+        # loop channels
+        list_of_config_channels = list(processing_config.keys())
+        for chan in list_of_config_channels:
             
-
-        # Let's check for duplicate keys
-        # (only case ',' used...)
-        key_list = list()
-        for key in yaml_dict.keys():
-            if ',' in key:
-                key_split,_ = utils.split_channel_name(
-                    key, available_channels, separator=','
-                )
-                key_list.extend(key_split)
-            else:
-                key_list.append(key)
-
-        if len(key_list) != len(set(key_list)):
-            raise ValueError(
-                'ERROR: Duplicate key/channel(s) found in yaml file!'
-            )
-
-
-            
-        # case 'all' channels key available
-        if 'all' in yaml_dict.keys():
-            for chan in available_channels:
-                processing_config[chan] = yaml_dict['all'].copy()
-
-
-
-        # loop config to load individual channels
-        # overwriting "all" configuration
-        for chan, chan_config in yaml_dict.items():
-            
-            # "all" already taking into account:
-            if chan == 'all':
-                continue
-
-            # split based on ','
-            chan_list = list()
-            if  ',' in chan:
-                chan_list,_ = utils.split_channel_name(
-                    chan, available_channels, separator=','
-                )
-            else:
-                chan_list.append(chan)
-                
-            # loop channels
-            for achan in chan_list:
-                
-                # If disable -> skip!
-                if ('disable' in chan_config.keys()
-                    and chan_config['disable']):
-
-                    # remove if already stored
-                    if achan in processing_config.keys():
-                        processing_config.pop(achan)
+            chan_config = copy.deepcopy(processing_config[chan])
                         
-                    continue
-                
-                # check if chan already exist
-                # if so, add/replace feature config
-                if achan in processing_config.keys():
-                    for item_key, item_val in chan_config.items():
-
-                        if isinstance(item_val, dict):
-                            item_val = item_val.copy()
-                            
-                        if not isinstance(processing_config[achan], dict):
-                            processing_config[achan] = dict()
-                            
-                        processing_config[achan][item_key] = item_val
-                else:
-                    # store all paramters 
-                    processing_config[achan] = chan_config.copy()
-
-                # remove disable if needed (no more needed)
-                if 'disable' in processing_config[achan]:
-                    processing_config[achan].pop('disable')
-                
-                
-        # Now loop configuration and
-        # make a list of all individual channels
-        # and trace shape
-        for chan, chan_items in processing_config.items():
-
             # check channel has any parameters
-            if not isinstance(chan_items, dict):
+            if not isinstance(chan_config, dict):
                 raise ValueError(
-                    'ERROR: Channel '
-                    +  chan + ' has no parameters! '
-                    + ' Remove from yaml file or disable it!')
-
-
+                    f'ERROR: Channel {chan} has '
+                    f'no configuration! Remove '
+                    f'from yaml file or disable it!'
+                )
+            
             # add to selected channel
             chan_split, separator = utils.split_channel_name(
                 chan, available_channels
             )
+            
             selected_channels.extend(chan_split.copy())
-                
 
-            # nb samples
+                    
+            # Get trace/pretrigger length at the detector level
             nb_samples = None
             nb_pretrigger_samples = None
-            if 'nb_samples' in chan_items.keys():
-                nb_samples = chan_items['nb_samples']
-            if 'nb_pretrigger_samples' in chan_items.keys():
-                nb_pretrigger_samples = chan_items['nb_pretrigger_samples'] 
+            
+            if 'trace_length_samples' in chan_config.keys():
+                nb_samples  = chan_config['trace_length_samples']
+            if 'pretrigger_length_samples' in chan_config.keys():
+                nb_pretrigger_samples = chan_config['pretrigger_length_samples'] 
 
-            # check
-            if (nb_samples  is not None
+            if (nb_samples is not None
                 and nb_pretrigger_samples is None):
                 raise ValueError(
-                    'ERROR: Missing "nb_pretrigger_samples" '
-                    + ' for channel ' +  chan)
-            elif (nb_samples  is None
+                    f'ERROR: Missing "pretrigger_length_samples" '
+                    f'for channel {chan} !')
+            elif (nb_samples is None
                   and nb_pretrigger_samples is not None):
                 raise ValueError(
-                    'ERROR: Missing "nb_samples" '
-                    + ' for channel ' +  chan)
-                
-            # loop through algorithms and check if specific trace length
-            # requested
-            for alg_name, alg_config in chan_items.items():
+                    f'ERROR: Missing "trace_length_samples" '
+                    f' for channel {chan} !')
 
-                if (alg_name == 'nb_samples'
-                    or alg_name == 'nb_pretrigger_samples'
+            
+            # now loop through algorithms, get/add trace length at the
+            # algorithm level 
+            for alg_name, alg_config in chan_config.items():
+            
+                if (alg_name == 'trace_length_samples'
+                    or alg_name == 'pretrigger_length_samples'
                     or not isinstance(alg_config, dict)):
                     continue
-
-                if 'run' not in alg_config.keys():
-                    raise ValueError(
-                        'Missing "run" parameter for algorithm '
-                        + alg_name + ', channel ' + chan)
                 
                 if not alg_config['run']:
                     continue
-
 
                 # overwite nb samples for this particular algorithm
                 nb_samples_alg =  nb_samples
                 nb_pretrigger_samples_alg = nb_pretrigger_samples
                 
-                if 'nb_samples' in alg_config.keys():
-                    nb_samples_alg = alg_config['nb_samples']
-                    if 'nb_pretrigger_samples' not in alg_config.keys():
-                        raise ValueError(
-                            'Missing "nb_pretrigger_samples" parameter '
-                            + 'for algorithm ' + alg_name
-                            + ', channel ' + chan)
+                if 'trace_length_samples' in alg_config.keys():
+                    nb_samples_alg = alg_config['trace_length_samples']
                     
-                if 'nb_pretrigger_samples' in alg_config.keys():
+                    if 'pretrigger_length_samples' not in alg_config.keys():
+                        raise ValueError(
+                            f'Missing "pretrigger_length_samples" parameter '
+                            f'for algorithm {alg_name}, '
+                            f'channel {chan} !')
+                    
+                if 'pretrigger_length_samples' in alg_config.keys():
                     nb_pretrigger_samples_alg = (
-                        alg_config['nb_pretrigger_samples']
+                        alg_config['pretrigger_length_samples']
                     )
-                    if 'nb_samples' not in alg_config.keys():
-                        raise ValueError(
-                            'Missing "nb_samples" parameter '
-                            + 'for algorithm ' + alg_name
-                            + ', channel ' + chan)
                     
-                # add in traces indo
+                    if 'trace_length_samples' not in alg_config.keys():
+                        raise ValueError(
+                            f'Missing "trace_length_samples" parameter '
+                            f'for algorithm {alg_name}, '
+                            f'channel {chan} !')
+
+                # update algorithm with trace length
+                processing_config[chan][alg_name]['nb_samples'] = (
+                    nb_samples_alg
+                )
+                
+                processing_config[chan][alg_name]['nb_pretrigger_samples'] = (
+                    nb_pretrigger_samples_alg 
+                )
+                    
+                # fill traces info
                 if (nb_samples_alg is not None
                     and nb_pretrigger_samples_alg is not None):
-                    
-                    key = (str(nb_samples_alg) + '_'
-                           + str(nb_pretrigger_samples_alg))
-                    
-                    if key in traces_info.keys():
-                        traces_info[key].extend(chan_split.copy())
-                    else:
-                        traces_info[key] = chan_split.copy()
 
-        # make selected channel list unique
+                    trace_tuple = (nb_samples_alg, nb_pretrigger_samples_alg)
+                    if trace_tuple in traces_config:
+                        traces_config[trace_tuple].extend(chan_split.copy())
+                    else:
+                        traces_config[trace_tuple] = chan_split.copy()
+                        
+            # remove trace length parameter at the channel level
+            # (it is part of algorithm)
+            if 'trace_length_samples' in  chan_config.keys():
+                processing_config[chan].pop('trace_length_samples')
+            if 'pretrigger_length_samples' in  chan_config.keys():
+                processing_config[chan].pop('pretrigger_length_samples')
+                
+                        
         selected_channels = list(set(selected_channels))
-        for key in traces_info.keys():
-            traces_info[key] = list(set(traces_info[key]))
+        if not selected_channels:
+            raise ValueError('ERROR: No valid channels found in '
+                             'yaml file. Nothing can be processed!')
+
+        for key in traces_config.keys():
+            traces_config[key] = list(set(traces_config[key]))
             
-        if not traces_info:
-            traces_info = None
-        
+        if not traces_config:
+            traces_config = None
+
+                  
         # return
-        return processing_config, filter_file, selected_channels, traces_info
+        return processing_config, filter_file, selected_channels, traces_config
 
 
     def _create_output_directory(self, base_path, facility,
@@ -1384,7 +1296,7 @@ class FeatureProcessing:
 
 
     def _get_window_indices(self, nb_samples,
-                            nb_samples_pretrigger, fs,
+                            nb_pretrigger_samples, fs,
                             window_min_from_start_usec=None,
                             window_min_to_end_usec=None,
                             window_min_from_trig_usec=None,
@@ -1402,7 +1314,7 @@ class FeatureProcessing:
         nb_samples : int
           total number of samples 
 
-        nb_samples_pretrigger : int
+        nb_pretrigger_samples : int
            number of pretrigger samples
 
         window_min_from_start_usec : float, optional
@@ -1430,10 +1342,7 @@ class FeatureProcessing:
         window_max_from_trig_usec : float, optional
            OF filter window end in micro seconds from
            pre-trigger (can be negative if prior pre-trigger)
-         
-
-
-
+      
         Return:
         ------
 
@@ -1454,7 +1363,7 @@ class FeatureProcessing:
                          - abs(int(window_min_to_end_usec*fs*1e-6))
                          - 1)
         elif window_min_from_trig_usec is not None:
-                        min_index = (nb_samples_pretrigger 
+                        min_index = (nb_pretrigger_samples 
                                      + int(window_min_from_trig_usec*fs*1e-6))
 
         # check
@@ -1472,7 +1381,7 @@ class FeatureProcessing:
                          - abs(int(window_max_to_end_usec*fs*1e-6))
                          - 1)
         elif window_max_from_trig_usec is not None:
-            max_index =  (nb_samples_pretrigger 
+            max_index =  (nb_pretrigger_samples 
                           + int(window_max_from_trig_usec*fs*1e-6))
 
         # check
