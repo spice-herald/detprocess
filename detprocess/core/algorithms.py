@@ -1,6 +1,7 @@
 import numpy as np
 import qetpy as qp
-from numpy.fft import fftfreq, fft
+from detprocess.utils import utils
+import random
 
 
 __all__ = [
@@ -16,6 +17,71 @@ class FeatureExtractors:
     convenience.
 
     """
+    @staticmethod
+    def ofnxm(channel, of_base,
+              lowchi2_fcutoff=10000,
+              available_channels=None,
+              feature_base_name='ofnxm',
+              **kwargs):
+        """
+        Feature extraction for the no delay Optimum Filter.
+
+
+        Parameters
+        ----------
+        channel : str
+          channel with format 'chan1|chan2|chan3'
+          (order matter)
+
+        of_base : OFBase object
+           OFBase QETpy object 
+
+        lowchi2_fcutoff : float, optional
+            The frequency (in Hz) that we should cut off the chi^2 when
+            calculating the low frequency chi^2. Default is 10 kHz.
+
+        available_channels : list
+           list of available channels
+
+        feature_base_name : str, option
+            output feature base name
+
+
+        Returns
+        -------
+        retdict : dict
+            Dictionary containing the various extracted features.
+
+        """
+
+        # TEMP -> check OF base
+        #print(f'Signal shape: {of_base.signal(channel).shape}')
+        #print(f'Template tags: {of_base.template_tags(channel)}')
+        #print(f'csd shape: {of_base.csd(channels).shape}')
+
+        # store features
+        # For multi-channels algorithm feature should already
+        # include indidual channel names at the end 
+
+
+        # split channel name
+        channel_list = utils.split_channel_name(
+            channel,
+            available_channels=available_channels,
+            separator='|')
+
+        
+        
+        # DUMMY OUTPUT    
+
+        retdict = dict()
+        for ichan, chan in enumerate(channel_list):
+           retdict[f'amp_{feature_base_name}_{chan}'] = random.uniform(4, 10)
+           retdict[f'chi2_{feature_base_name}_{chan}'] = 1.0
+           retdict[f't0_{feature_base_name}_{chan}'] = 1e-6
+           
+        return retdict
+    
 
     @staticmethod
     def of1x1_nodelay(channel, of_base,
@@ -45,8 +111,6 @@ class FeatureExtractors:
 
         feature_base_name : str, option
             output feature base name
-
-
 
         Returns
         -------
@@ -253,7 +317,6 @@ class FeatureExtractors:
         ampres = OF.get_energy_resolution()
         timeres = OF.get_time_resolution(amp)
 
-
         retdict = {
             ('amp_' + feature_base_name): amp,
             ('t0_' + feature_base_name): t0,
@@ -267,14 +330,11 @@ class FeatureExtractors:
         return retdict
     
     @staticmethod
-    def of1x2(of_base=None, trace=None, template_1_tag='Scintillation',
-                            template_1=None,template_2_tag='Evaporation',template_2=None,
-                            psd=None, sample_rate=None,fs=None,
-                            pretrigger_msec=None, pretrigger_samples=None,
-                            coupling='AC', integralnorm=False,
-                            channel_name='unknown',
-                            feature_base_name='of1x2',
-                            **kwargs):
+    def of1x2(channel, of_base,
+              template_tag_1='Scintillation',
+              template_tag_2='Evaporation',
+              feature_base_name='of1x2',
+              **kwargs):
         """
         Feature extraction for the one channel, two template Optimum Filter.
 
@@ -283,58 +343,13 @@ class FeatureExtractors:
         of_base : OFBase object, optional
            OFBase  if it has been instantiated independently
 
-        trace : ndarray, optional
-            An ndarray containing the raw data to extract the feature
-            from. It is required if trace not already added in OFbase,
-            otherwise keep it as None
-
-        template_1_tag : str, option
+        template_tag_1: str, option
            tag of the template to be used for OF calculation of the scintillation part; please use Scintilation,
            Default: 'Scintillation'
 
-        template_1 : ndarray, optional
-            The scintillation template to use for the optimum filter. It is required
-            if template not already added in OFbase,
-            otherwise keep it as None
-
-        template_2_tag : str, option
+        template_tag_2 : str, option
            tag of the template to be used for OF calculation of the evaporation part; please use Evaporation,
            Default: 'Evaporation'
-
-        template_2 : ndarray, optional
-            The evaporation template to use for the optimum filter. It is required
-            if template not already added in OFbase,
-            otherwise keep it as None
-
-        psd : ndarray, optional
-            The PSD to use for the optimum filter.It is required
-            if psd not already added in OFbase,
-            otherwise keep it as None
-
-        fs : float, optional
-            The digitization rate of the data in trace, required
-            if  "of_base" argument  is None, otherwise set to None
-
-        nb_samples_pretrigger : int, optional
-            Number of pre-trigger samples, required
-            if "of_base" argument is None, otherwise set to None
-
-
-        coupling : str, optional
-            Only used if "psd" argument is not None.
-            "coupling" string etermines if the zero
-            frequency bin of the psd should be ignored (i.e. set to infinity)
-            when calculating the optimum amplitude. If set to 'AC', then ths zero
-            frequency bin is ignored. If set to anything else, then the
-            zero frequency bin is kept. O
-
-        integralnorm : bool, optional
-            Only used if "template" argument is not None.
-            If set to True, then  template will be normalized
-            to an integral of 1, and any optimum filters will
-            instead return the optimum integral in units of Coulombs.
-            If set to False, then the usual optimum filter amplitudes
-            will be returned (in units of Amps).
 
         feature_base_name : str, option
             output feature base name
@@ -348,27 +363,16 @@ class FeatureExtractors:
 
         """
 
-
         # instantiate OF1x2
         OF = qp.OF1x2(
             of_base=of_base,
-            template_1_tag=template_1_tag,
-            template_1=template_1,
-            template_2_tag=template_2_tag,
-            template_2=template_2,
-            psd=psd,
-            sample_rate=fs,
-            pretrigger_samples=pretrigger_samples,
-            coupling=coupling,
-            channel_name= channel_name,
-            integralnorm=integralnorm,
+            template_1_tag=template_tag_1,
+            template_2_tag=template_tag_1,
+            channel_name= channel,
         )
 
-
-
         # calc (signal needs to be None if set already)
-        OF.calc(signal=trace,
-                lgc_plot=False)
+        OF.calc(lgc_plot=False)
 
         # get results
         scintillation_amp = OF._amplitude[OF._template_1_tag]
@@ -648,9 +652,9 @@ class FeatureExtractors:
 
     @staticmethod
     def psd_amp(channel, of_base,
-               f_lims=[],
-               feature_base_name='psd_amp',
-               **kwargs):
+                f_lims=[],
+                feature_base_name='psd_amp',
+                **kwargs):
         """
         Feature extraction for measuring the average amplitude of a
         ffted trace in a range of frequencies. Rather than recalculating

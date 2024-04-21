@@ -694,7 +694,6 @@ class FeatureProcessing:
                             )
                             
                             extracted_features = extractor(trace, **kwargs)
-
                                                         
                         # append channel name and save in data frame
                         for feature_base_name in extracted_features:
@@ -990,7 +989,7 @@ class FeatureProcessing:
                              f'found in yaml file {yaml_file}')
 
         processing_config =  copy.deepcopy(all_config['feature'])
-
+   
         # filter file
         if all_config['global']['filter_file'] is None:
             raise ValueError(f'ERROR: No filter file path '
@@ -1004,19 +1003,8 @@ class FeatureProcessing:
         traces_config = dict()
 
         # loop channels
-        list_of_config_channels = list(processing_config.keys())
-        for chan in list_of_config_channels:
-            
-            chan_config = copy.deepcopy(processing_config[chan])
-                        
-            # check channel has any parameters
-            if not isinstance(chan_config, dict):
-                raise ValueError(
-                    f'ERROR: Channel {chan} has '
-                    f'no configuration! Remove '
-                    f'from yaml file or disable it!'
-                )
-            
+        for chan in list(processing_config.keys()):
+
             # add to selected channel
             chan_split, separator = utils.split_channel_name(
                 chan, available_channels
@@ -1024,91 +1012,31 @@ class FeatureProcessing:
             
             selected_channels.extend(chan_split.copy())
 
-                    
-            # Get trace/pretrigger length at the detector level
-            nb_samples = None
-            nb_pretrigger_samples = None
-            
-            if 'trace_length_samples' in chan_config.keys():
-                nb_samples  = chan_config['trace_length_samples']
-            if 'pretrigger_length_samples' in chan_config.keys():
-                nb_pretrigger_samples = chan_config['pretrigger_length_samples'] 
-
-            if (nb_samples is not None
-                and nb_pretrigger_samples is None):
-                raise ValueError(
-                    f'ERROR: Missing "pretrigger_length_samples" '
-                    f'for channel {chan} !')
-            elif (nb_samples is None
-                  and nb_pretrigger_samples is not None):
-                raise ValueError(
-                    f'ERROR: Missing "trace_length_samples" '
-                    f' for channel {chan} !')
-
-            
+            # chan config
+            chan_config = copy.deepcopy(
+                processing_config[chan]
+            )        
             # now loop through algorithms, get/add trace length at the
             # algorithm level 
-            for alg_name, alg_config in chan_config.items():
+            for algo, algo_config in chan_config.items():
             
-                if (alg_name == 'trace_length_samples'
-                    or alg_name == 'pretrigger_length_samples'
-                    or not isinstance(alg_config, dict)):
+                if not isinstance(algo_config, dict):
                     continue
                 
-                if not alg_config['run']:
+                if not algo_config['run']:
                     continue
 
-                # overwite nb samples for this particular algorithm
-                nb_samples_alg =  nb_samples
-                nb_pretrigger_samples_alg = nb_pretrigger_samples
+                nb_samples =  algo_config['nb_samples']
+                nb_pretrigger_samples = algo_config['nb_pretrigger_samples']
+                trace_tuple = (nb_samples, nb_pretrigger_samples)
                 
-                if 'trace_length_samples' in alg_config.keys():
-                    nb_samples_alg = alg_config['trace_length_samples']
-                    
-                    if 'pretrigger_length_samples' not in alg_config.keys():
-                        raise ValueError(
-                            f'Missing "pretrigger_length_samples" parameter '
-                            f'for algorithm {alg_name}, '
-                            f'channel {chan} !')
-                    
-                if 'pretrigger_length_samples' in alg_config.keys():
-                    nb_pretrigger_samples_alg = (
-                        alg_config['pretrigger_length_samples']
-                    )
-                    
-                    if 'trace_length_samples' not in alg_config.keys():
-                        raise ValueError(
-                            f'Missing "trace_length_samples" parameter '
-                            f'for algorithm {alg_name}, '
-                            f'channel {chan} !')
-
-                # update algorithm with trace length
-                processing_config[chan][alg_name]['nb_samples'] = (
-                    nb_samples_alg
-                )
-                
-                processing_config[chan][alg_name]['nb_pretrigger_samples'] = (
-                    nb_pretrigger_samples_alg 
-                )
-                    
-                # fill traces info
-                if (nb_samples_alg is not None
-                    and nb_pretrigger_samples_alg is not None):
-
-                    trace_tuple = (nb_samples_alg, nb_pretrigger_samples_alg)
-                    if trace_tuple in traces_config:
-                        traces_config[trace_tuple].extend(chan_split.copy())
-                    else:
-                        traces_config[trace_tuple] = chan_split.copy()
+                if trace_tuple in traces_config:
+                    traces_config[trace_tuple].extend(chan_split.copy())
+                else:
+                    traces_config[trace_tuple] = chan_split.copy()
                         
-            # remove trace length parameter at the channel level
-            # (it is part of algorithm)
-            if 'trace_length_samples' in  chan_config.keys():
-                processing_config[chan].pop('trace_length_samples')
-            if 'pretrigger_length_samples' in  chan_config.keys():
-                processing_config[chan].pop('pretrigger_length_samples')
-                
-                        
+
+        # make unique
         selected_channels = list(set(selected_channels))
         if not selected_channels:
             raise ValueError('ERROR: No valid channels found in '
@@ -1120,7 +1048,6 @@ class FeatureProcessing:
         if not traces_config:
             traces_config = None
 
-                  
         # return
         return processing_config, filter_file, selected_channels, traces_config
 

@@ -5,7 +5,7 @@ from scipy.optimize import curve_fit
 import yaml
 import copy
 from yaml.loader import SafeLoader
-
+import re
 
 __all__ = ['split_channel_name', 'extract_window_indices',
            'find_linear_segment', 'read_config']
@@ -13,72 +13,100 @@ __all__ = ['split_channel_name', 'extract_window_indices',
 
 
 def split_channel_name(channel_name,
-                       available_channels,
+                       available_channels=None,
                        separator=None):
     """
     Split channel name and return
     list of individual channels and separator
     """
-    
-    # intialize output
-    channel_list = list()
-        
+
+    # allowed separators
+    separators = ['+','-','|']
+
+    # case available_channels is None
+    if  available_channels is None:
+
+        if separator is None:
+            raise ValueError(
+                'ERROR: separator required when '
+                'available_channels not provided!')
+        else:
+            channel_list = channel_name.split(separator)
+            return channel_list, separator
+                          
     # case already an individual channel
+    # or no separator found
     if (channel_name in available_channels
-        or channel_name == 'all'
-        or (separator is not None
-            and separator not in channel_name)):
+        or channel_name == 'all'):
+        return [channel_name], None
+      
+    # Let's first find the separator if None
+    if separator is None:
 
-        channel_list.append(channel_name)
-        return channel_list, None
-        
-    # keep copy
-    channel_name_orig = channel_name
-        
-        
-    # split
-    if separator is not None:
-        channel_split = channel_name.split(separator)
-        for chan in channel_split:
-            if chan:
-                channel_list.append(chan.strip())
+        separator_check = channel_name
 
-    else:
-
-        # remove all known channels from string
+        # remove all channels
         for chan in available_channels:
-            if chan in channel_name:
-                channel_list.append(chan)
-                channel_name = channel_name.replace(chan, '')
+            if chan in separator_check:
+                separator_check = separator_check.replace(chan, '')
                 
-        # find remaining separator
-        separator_list = list()
-        channel_name = channel_name.strip()
-        for sep in channel_name:
-            if sep not in separator_list:
-                separator_list.append(sep)
+        separator_check = separator_check.strip()
 
+        # convert to list
+        separator_list = [x for x in separator_check]
         separator_list = list(set(separator_list))
-               
+        
         if len(separator_list) == 1:
             separator = separator_list[0]
         else:
             raise ValueError(
-                f'ERROR: Unable to split {channel_name_orig}, '
-                f'possibly because some channels are not in the '
-                f'raw data and cannot be used in the yaml file. '
-                f'Available channels: {available_channels}')
+                f'ERROR: Multiple separators found! '
+                f'Only one allowed from {separators}! '
+            )
 
-        # check if channel available in raw data
-        for chan in channel_list:
-            if chan not in available_channels:
-                raise ValueError('ERROR: Channel "' + chan
-                                 + '" does not exist in '
-                                 + 'raw data! Check yaml file!')
-            
-    return channel_list, separator
+
+    # check separator
+    if separator not in separators:
+        raise ValueError(
+            f'ERROR: separator {separator} not '
+            f'recognized. Allowed separator '
+            f'{separators} ')
+
+    # check if separator in channe_name
+    if separator not in channel_name:
+        return [channel_name], None
+
+    # now let's split channel name
+    pattern = f"([{re.escape(separator)}])"
+    split_parts = re.split(pattern, channel_name)
+      
+    channel_list = []
+    current_name = ''
+    for part in split_parts:
         
-   
+        if part in available_channels:
+            if current_name:
+                channel_list.append(current_name)
+            channel_list.append(part)
+            current_name = ''
+
+        elif part == separator:
+
+            if (current_name
+                and  current_name in available_channels):
+                channel_list.append(current_name)
+                current_name = ''
+                
+            elif current_name:
+                current_name += part
+        else:
+            current_name += part
+        
+    if current_name:
+        channel_list.append(current_name)
+
+    return channel_list, separator
+
 
 
 def extract_window_indices(nb_samples,
@@ -516,37 +544,129 @@ def read_config(yaml_file, available_channels):
                              f'not in raw data?')
 
         
-    # check feature processing
+    # Feature processing specific config
     if 'feature' in processing_config:
         
-        # 1: loop channels and remove disabled algorithm
         chan_list = list(processing_config['feature'].keys())
         for chan in chan_list:
 
             chan_config = copy.deepcopy(
                 processing_config['feature'][chan]
             )
+
+            # check channel has any parameters
+            if not isinstance(chan_config, dict):
+                raise ValueError(
+                    f'ERROR: Channel {chan} has '
+                    f'no configuration! Remove '
+                    f'from yaml file or disable it!'
+                )
+            
+
+            # channel list
+            chan_list, separator = split_channel_name(
+                chan, available_channels
+            )
+
+            # Get trace/pretrigger length at the channel level
+            nb_samples = None
+            nb_pretrigger_samples = None
+            
+            if 'trace_length_samples' in chan_config.keys():
+                nb_samples  = chan_config['trace_length_samples']
+            if 'pretrigger_length_samples' in chan_config.keys():
+                nb_pretrigger_samples = chan_config['pretrigger_length_samples'] 
+
+            if (nb_samples is not None
+                and nb_pretrigger_samples is None):
+                raise ValueError(
+                    f'ERROR: Missing "pretrigger_length_samples" '
+                    f'for channel {chan} !')
+            elif (nb_samples is None
+                  and nb_pretrigger_samples is not None):
+                raise ValueError(
+                    f'ERROR: Missing "trace_length_samples" '
+                    f' for channel {chan} !'
+                )
+            
+            # loop algorithms  
             algorithm_list = list()
-            for param, val in chan_config.items():
+            for algo, algo_config in chan_config.items():
 
-                if not isinstance(val, dict):
+                # check if algorithm dictionary
+                if (algo == 'trace_length_samples'
+                    or algo == 'pretrigger_length_samples'
+                    or not isinstance(algo_config, dict)):
                     continue
-
-                if 'run' not in val.keys():
+                
+                if 'run' not in algo_config.keys():
                     raise ValueError(
                         f'ERROR: Missing "run" parameter for channel '
                         f'{chan}, algorithm {param}. Please fix the '
                         f'configuration yaml file')
 
-                if not val['run']:
-                    processing_config['feature'][chan].pop(param)
-                else:
-                    algorithm_list.append(param)
+                # remove from configuration if not run
+                if not algo_config['run']:
+                    processing_config['feature'][chan].pop(algo)
+                    continue
 
+                # add to list of algorithms
+                algorithm_list.append(algo)
+
+                # overwite nb samples for this particular algorithm
+                nb_samples_alg =  nb_samples
+                nb_pretrigger_samples_alg = nb_pretrigger_samples
+                
+                if 'trace_length_samples' in algo_config.keys():
+                    nb_samples_alg = algo_config['trace_length_samples']
+                    
+                    if 'pretrigger_length_samples' not in algo_config.keys():
+                        raise ValueError(
+                            f'Missing "pretrigger_length_samples" parameter '
+                            f'for algorithm {algo}, '
+                            f'channel {chan} !')
+                    
+                if 'pretrigger_length_samples' in algo_config.keys():
+                    nb_pretrigger_samples_alg = (
+                        algo_config['pretrigger_length_samples']
+                    )
+                    
+                    if 'trace_length_samples' not in algo_config.keys():
+                        raise ValueError(
+                            f'Missing "trace_length_samples" parameter '
+                            f'for algorithm {algo}, '
+                            f'channel {chan} !')
+
+                # update algorithm with trace length
+                processing_config['feature'][chan][algo]['nb_samples'] = (
+                    nb_samples_alg
+                )
+                
+                processing_config['feature'][chan][algo]['nb_pretrigger_samples'] = (
+                    nb_pretrigger_samples_alg 
+                )
+
+                # templates (multi-channels)
+                if '|' in chan:
+
+                    if 'template_tag' in algo_config.keys():
+                        for chan_split in chan_list:
+                            param = f'template_tag_{chan_split}'
+                            processing_config['feature'][chan][algo][param] = (
+                                algo_config['template_tag']
+                            )
+                        processing_config['feature'][chan][algo].pop('template_tag')
+           
             # remove channel if no algorithm
             if not algorithm_list:
                 processing_config['feature'].pop(chan)
-                
+            else:
+                # remove trace length
+                if 'trace_length_samples' in processing_config['feature'][chan]:
+                    processing_config['feature'][chan].pop('trace_length_samples')
+                if 'pretrigger_length_samples' in processing_config['feature'][chan]:
+                    processing_config['feature'][chan].pop('pretrigger_length_samples')
+        
     # return
     return processing_config
 
