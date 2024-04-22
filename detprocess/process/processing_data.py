@@ -88,7 +88,7 @@ class ProcessingData:
         
         # initialize raw data reader
         self._h5 = h5io.H5Reader()
-
+        
         # initialize current event traces and metadata
         self._current_traces  = None
         self._current_admin_info = None
@@ -169,7 +169,11 @@ class ProcessingData:
             
             # loop configuration and get list of templates
             for algo_name, algo_config in chan_config.items():
-                          
+
+                # skip if not dictionary
+                if not isinstance(algo_config, dict):
+                    continue
+                
                 # skip if disable
                 if not algo_config['run']:
                     continue
@@ -253,7 +257,7 @@ class ProcessingData:
                     tag = 'default'
                     if 'psd_tag' in algo_config.keys():
                         tag = algo_config['psd_tag']
-                        
+
                     psd, psd_freqs, psd_metadata = (
                         self._filter_data.get_psd(
                             chan,
@@ -618,7 +622,7 @@ class ProcessingData:
         return True
 
 
-    def update_signal_OF(self):
+    def update_signal_OF(self, weights=None):
         """
         Update OF base object with traces
 
@@ -644,20 +648,25 @@ class ProcessingData:
                    
             # loop channels
             for chan in channels:
-                              
+
+                weights_chan = None
+                if (weights is not None
+                    and chan in weights):
+                    weights_chan = weights[chan]
+                    
                 # get trace
                 trace = self.get_channel_trace(
                     chan,
                     nb_samples=nb_samples,
-                    nb_pretrigger_samples=nb_pretrigger_samples
+                    nb_pretrigger_samples=nb_pretrigger_samples,
+                    weights=weights_chan
                 )
 
                 # add to OF base if not yet added
                 self._OF_base_objs[key_tuple]['OF'].update_signal(
                     chan, trace
                 )
-
-
+         
     def get_event_admin(self, return_all=False):
         """
         Get event admin info
@@ -816,7 +825,8 @@ class ProcessingData:
 
     def get_channel_trace(self, channel,
                           nb_samples=None,
-                          nb_pretrigger_samples=None):
+                          nb_pretrigger_samples=None,
+                          weights=None):
         """
         Get trace (s)
 
@@ -842,6 +852,20 @@ class ProcessingData:
             channel, self._current_admin_info['detector_chans']
         )
 
+        weights_array = None
+        if weights is not None:
+            
+            weights_array = np.ones(len(channels))
+            
+            for ichan, chan in enumerate(channels):
+                param = f'weight_{chan}'
+                if param not in weights:
+                    raise ValueError(
+                        f'ERROR: Missing parameter weight {param} '
+                        f'for channel {channel}!'
+                    )
+                val = weights[param]
+                weights_array[ichan] = val
 
         # case full trace
         if nb_samples is None:
@@ -882,9 +906,18 @@ class ProcessingData:
 
         # Build output
         if separator == '+':
-            array = np.sum(array,  axis=0)
+            if weights is not None:
+                weights_array = weights_array[:, np.newaxis]
+                array = array * weights_array
+            array = np.sum(array,axis=0)
+            
         elif separator == '-':
-            array = array[0,:] - array[1,:]
+            if weights is not None:
+                array = (array[0,:]*weights_array[0]
+                         - array[1,:]*weights_array[1])
+            else:
+                array = array[0,:] - array[1,:]
+                
         elif separator is None:
             array = array[0,:]
 

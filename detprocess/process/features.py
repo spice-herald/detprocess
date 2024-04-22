@@ -93,13 +93,15 @@ class FeatureProcessing:
         verbose : bool, optional
             if True, display info
 
-
-
         Return
         ------
         None
         """
 
+        # feature processing data type
+        self._feature_processing_type = ['cont','rand','thresh',
+                                         'exttrig']
+        
         # processing id
         self._processing_id = processing_id
 
@@ -159,12 +161,13 @@ class FeatureProcessing:
         if not os.path.exists(config_file):
             raise ValueError('Configuration file "' + config_file
                              + '" not found!')
-        config, filter_file, selected_channels, traces_config = (
+        config, filter_file, selected_channels, traces_config, weights = (
             self._read_config(config_file, available_channels)
         )
         self._processing_config = config
         self._selected_channels = selected_channels
         self._traces_config = traces_config
+        self._weights = weights
         
         # check channels to be processed
         if not self._selected_channels:
@@ -194,7 +197,7 @@ class FeatureProcessing:
             raw_files,
             group_name=group_name,
             trigger_files=trigger_files,
-            trigger_group_name =trigger_group_name,
+            trigger_group_name=trigger_group_name,
             filter_file=filter_file,
             available_channels=available_channels,
             verbose=verbose)
@@ -556,7 +559,9 @@ class FeatureProcessing:
 
                 # update signal trace in OF base objects
                 # -> calculate FFTs, etc.
-                self._processing_data.update_signal_OF()
+                self._processing_data.update_signal_OF(
+                    weights=self._weights
+                )
               
                 # Processing id   
                 event_features.update(
@@ -597,14 +602,19 @@ class FeatureProcessing:
                     nb_pretrigger_samples = (
                         self._processing_data.get_nb_pretrigger_samples()
                     )
-                    
+
+                    # weights
+                    weights_chan = None
+                    if channel in self._weights:
+                        weights_chan = self._weights[channel]
+                                   
                     # loop algorithms to extact features
                     for algorithm, algorithm_params in algorithms.items():
 
                         # skip if "feature_channel"
-                        if algorithm == 'feature_channel':
+                        if not isinstance(algorithm_params, dict):
                             continue
-                                               
+                                                                       
                         # skip if algorithm disable
                         if not algorithm_params['run']:
                             continue
@@ -656,10 +666,11 @@ class FeatureProcessing:
 
                         if 'nb_samples' not in kwargs:
                             kwargs['nb_samples'] = nb_samples
-                        #if 'nb_pretrigger_samples' not in kwargs:
-                        #    kwargs['nb_pretrigger_samples'] = (
-                        #        nb_pretrigger_samples
-                        #    )
+                            
+                        if 'nb_pretrigger_samples' not in kwargs:
+                            kwargs['nb_pretrigger_samples'] = (
+                                nb_pretrigger_samples
+                            )
                   
                         window_min, window_max = (
                             self._get_window_indices(**kwargs)
@@ -690,7 +701,9 @@ class FeatureProcessing:
                                 channel,
                                 nb_samples=nb_samples_algorithm,
                                 nb_pretrigger_samples=(
-                                    nb_pretrigger_samples_algorithm)
+                                    nb_pretrigger_samples_algorithm
+                                ),
+                                weights=weights_chan
                             )
                             
                             extracted_features = extractor(trace, **kwargs)
@@ -711,9 +724,6 @@ class FeatureProcessing:
         # return features
         return feature_df
        
-
-
-        
         
     def _get_file_list(self, file_path,
                        is_raw=True,
@@ -855,10 +865,12 @@ class FeatureProcessing:
             if 'filter' in file_name:
                 continue
 
-            # skip didv
-            if 'didv' in file_name:
+            # skip iv or didv
+            if 'didv_' in file_name:
                 continue
-
+            if 'iv_' in file_name:
+                continue
+            
             # restricted
             if (restricted
                 and 'restricted' not in file_name):
@@ -914,10 +926,6 @@ class FeatureProcessing:
       
         return series_dict, base_path, group_name
 
-
-
-    
-    
     def _load_external_extractors(self, external_file):
         """
         Helper function for loading an alternative SingleChannelExtractors
@@ -1001,21 +1009,31 @@ class FeatureProcessing:
         # Initialize some list/dict
         selected_channels = list()
         traces_config = dict()
+        weights = dict()
 
         # loop channels
         for chan in list(processing_config.keys()):
 
             # add to selected channel
-            chan_split, separator = utils.split_channel_name(
+            chan_list, separator = utils.split_channel_name(
                 chan, available_channels
             )
             
-            selected_channels.extend(chan_split.copy())
+            selected_channels.extend(chan_list.copy())
 
             # chan config
             chan_config = copy.deepcopy(
                 processing_config[chan]
-            )        
+            )
+
+            # weights
+            for chan_split in chan_list:
+                param = f'weight_{chan_split}'
+                if param in chan_config:
+                    if chan not in weights:
+                        weights[chan] = dict()
+                    weights[chan][param] = chan_config[param]
+            
             # now loop through algorithms, get/add trace length at the
             # algorithm level 
             for algo, algo_config in chan_config.items():
@@ -1031,9 +1049,9 @@ class FeatureProcessing:
                 trace_tuple = (nb_samples, nb_pretrigger_samples)
                 
                 if trace_tuple in traces_config:
-                    traces_config[trace_tuple].extend(chan_split.copy())
+                    traces_config[trace_tuple].extend(chan_list.copy())
                 else:
-                    traces_config[trace_tuple] = chan_split.copy()
+                    traces_config[trace_tuple] = chan_list.copy()
                         
 
         # make unique
@@ -1049,7 +1067,9 @@ class FeatureProcessing:
             traces_config = None
 
         # return
-        return processing_config, filter_file, selected_channels, traces_config
+        return (processing_config, filter_file,
+                selected_channels, traces_config,
+                weights)
 
 
     def _create_output_directory(self, base_path, facility,

@@ -6,6 +6,7 @@ import yaml
 import copy
 from yaml.loader import SafeLoader
 import re
+from pprint import pprint
 
 __all__ = ['split_channel_name', 'extract_window_indices',
            'find_linear_segment', 'read_config']
@@ -280,7 +281,7 @@ def find_linear_segment(x, y, tolerance=0.05):
 
 
 
-def read_config(yaml_file, available_channels):
+def read_config(yaml_file, available_channels, sample_rate=None):
     """
     Read configuration (yaml) file 
     
@@ -290,6 +291,12 @@ def read_config(yaml_file, available_channels):
     yaml_file : str
         yaml configuraton file name (full path)
 
+    available_channels : list
+        list of all individual channels in the raw data
+
+    sample_rate : float (optinal)
+        sample rate 
+ 
     Return
     ------
         
@@ -313,8 +320,7 @@ def read_config(yaml_file, available_channels):
 
     # global trigger parameters
     global_trigger_parameters = ['coincident_window_msec',
-                                 'coincident_window_samples']
-    
+                                 'coincident_window_samples']        
     # available channel separator
     separators = [',', '+', '-', '|']
 
@@ -341,7 +347,7 @@ def read_config(yaml_file, available_channels):
             
 
         
-    # let's split configuration based on type of processing
+    # let's split configuration based on know type of processing
     config_dicts = dict()
     for config_name  in configuration_types:
         
@@ -379,7 +385,7 @@ def read_config(yaml_file, available_channels):
     for old_key, new_key in obsolete_keys.items():
         config_dicts = _rename_key_recursively(config_dicts, old_key, new_key)
 
-        
+     
     # intialize output
     processing_config = dict()
         
@@ -459,7 +465,7 @@ def read_config(yaml_file, available_channels):
                                      f'Check yaml file!')
 
                 parameter_list.append(chan)
-                
+
         # check duplication of "length" parameters
         if ('coincident_window_msec' in parameter_list
             and 'coincident_window_samples' in  parameter_list):
@@ -467,9 +473,9 @@ def read_config(yaml_file, available_channels):
                              f'and "coincident_window_samples" in '
                              f'{config_name} configuration. Choose between '
                              f'msec or samples!')
-        
+    
             
-        # loop channels/keys and add to output configuratiob
+        # loop channels/keys and add to output configuration
         for chan, config in config_dict.items():
 
             # check if empty 
@@ -548,6 +554,7 @@ def read_config(yaml_file, available_channels):
     if 'feature' in processing_config:
         
         chan_list = list(processing_config['feature'].keys())
+
         for chan in chan_list:
 
             chan_config = copy.deepcopy(
@@ -561,17 +568,27 @@ def read_config(yaml_file, available_channels):
                     f'no configuration! Remove '
                     f'from yaml file or disable it!'
                 )
-            
-
+    
             # channel list
             chan_list, separator = split_channel_name(
                 chan, available_channels
             )
 
-            # Get trace/pretrigger length at the channel level
+            # trace length
             nb_samples = None
             nb_pretrigger_samples = None
+
+            # check if in global:
+            if 'trace_length_samples' in processing_config['global']:
+                nb_samples  = (
+                    processing_config['global']['trace_length_samples']
+                )
+            if 'pretrigger_length_samples' in processing_config['global']:
+                nb_pretrigger_samples = (
+                    processing_config['global']['pretrigger_length_samples']
+                )
             
+            # Get trace/pretrigger length at the channel level
             if 'trace_length_samples' in chan_config.keys():
                 nb_samples  = chan_config['trace_length_samples']
             if 'pretrigger_length_samples' in chan_config.keys():
@@ -588,15 +605,13 @@ def read_config(yaml_file, available_channels):
                     f'ERROR: Missing "trace_length_samples" '
                     f' for channel {chan} !'
                 )
-            
+
             # loop algorithms  
             algorithm_list = list()
             for algo, algo_config in chan_config.items():
 
                 # check if algorithm dictionary
-                if (algo == 'trace_length_samples'
-                    or algo == 'pretrigger_length_samples'
-                    or not isinstance(algo_config, dict)):
+                if not isinstance(algo_config, dict):
                     continue
                 
                 if 'run' not in algo_config.keys():
@@ -641,11 +656,11 @@ def read_config(yaml_file, available_channels):
                 processing_config['feature'][chan][algo]['nb_samples'] = (
                     nb_samples_alg
                 )
-                
+
                 processing_config['feature'][chan][algo]['nb_pretrigger_samples'] = (
                     nb_pretrigger_samples_alg 
-                )
-
+                )   
+                
                 # templates (multi-channels)
                 if '|' in chan:
 
@@ -661,12 +676,12 @@ def read_config(yaml_file, available_channels):
             if not algorithm_list:
                 processing_config['feature'].pop(chan)
             else:
-                # remove trace length
+                # remove trace length / weight
                 if 'trace_length_samples' in processing_config['feature'][chan]:
                     processing_config['feature'][chan].pop('trace_length_samples')
                 if 'pretrigger_length_samples' in processing_config['feature'][chan]:
                     processing_config['feature'][chan].pop('pretrigger_length_samples')
-        
+                                  
     # return
     return processing_config
 
