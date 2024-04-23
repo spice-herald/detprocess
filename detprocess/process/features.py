@@ -156,7 +156,10 @@ class FeatureProcessing:
 
         # get list of available channels in raw data
         available_channels = self._get_channel_list(raw_files)
-            
+
+        # sample rate
+        self._sample_rate = self._get_sample_rate(raw_files)
+    
         # read  configuration file
         if not os.path.exists(config_file):
             raise ValueError('Configuration file "' + config_file
@@ -710,7 +713,10 @@ class FeatureProcessing:
                                                         
                         # append channel name and save in data frame
                         for feature_base_name in extracted_features:
-                            feature_name = f'{feature_base_name}_{feature_channel}'
+                            feature_name = feature_base_name
+                            if ('|' not in feature_channel and
+                                feature_channel not in feature_name):
+                                feature_name = f'{feature_base_name}_{feature_channel}'
                             event_features.update(
                                 {feature_name: extracted_features[feature_base_name]}
                             )
@@ -990,7 +996,8 @@ class FeatureProcessing:
         """
         # read configuration file
         all_config = utils.read_config(yaml_file,
-                                       available_channels)
+                                       available_channels,
+                                       sample_rate=self._sample_rate)
         # feature config
         if 'feature' not in all_config:
             raise ValueError(f'ERROR: No "feature" configuration '
@@ -1240,6 +1247,42 @@ class FeatureProcessing:
         return list(detector_settings.keys())
 
 
+    
+    def _get_sample_rate(self, file_dict):
+        """ 
+        Get the list of channels from raw data file
+        
+        Parameters
+        ----------
+        file_dict  : dict
+           directionary with list of files for each series
+
+        Return
+        -------
+        sample_rate : float or NoneType
+          return sample rate
+    
+        """
+        fs = None
+        
+        # let's get list of channels available in file
+        # first file
+        file_name = str()
+        for key, val in file_dict.items():
+            file_name = val[0]
+            break
+        
+        # get list from configuration
+        h5 = h5io.H5Reader()
+        metadata = h5.get_metadata(file_name=file_name,
+                                   include_dataset_metadata=False)
+
+        adc_name = metadata['adc_list'][0]
+        data_info = metadata['groups'][adc_name]
+        if 'sample_rate' in  data_info:
+            fs = float(data_info['sample_rate'])
+
+        return fs
 
 
     def _get_window_indices(self, nb_samples,
@@ -1341,9 +1384,7 @@ class FeatureProcessing:
         if max_index<min_index:
             raise ValueError('ERROR window calculation: '
                              + 'max index smaller than min!'
-                             + 'Check configuration!')
-
-        
+                             + 'Check configuration!')        
 
         return min_index, max_index
         

@@ -53,25 +53,27 @@ class FeatureExtractors:
             Dictionary containing the various extracted features.
 
         """
+        
+        debug = False
 
-        # TEMP -> check OF base
-        #print(f'Signal shape: {of_base.signal(channel).shape}')
-        #print(f'Template tags: {of_base.template_tags(channel)}')
-        #print(f'csd shape: {of_base.csd(channels).shape}')
-
-        # store features
-        # For multi-channels algorithm feature should already
-        # include indidual channel names at the end 
-
-
-        # split channel name
-        channel_list = utils.split_channel_name(
+        
+        # split channel name into list (same order)
+        channel_list, separator = utils.split_channel_name(
             channel,
             available_channels=available_channels,
             separator='|')
 
+
+        # TEMP CHECK data in of_base
+        if debug:
+            print(f'csd shape for channel {channel} = '
+                  f'{of_base.csd(channel).shape}')
+       
+            for chan in channel_list:
+                print(f'Signal template fft for {chan} = '
+                      f'{of_base.template_fft(chan).shape}')
         
-        
+
         # DUMMY OUTPUT    
 
         retdict = dict()

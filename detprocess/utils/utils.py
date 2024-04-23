@@ -7,6 +7,7 @@ import copy
 from yaml.loader import SafeLoader
 import re
 from pprint import pprint
+from pytesdaq.io import convert_length_msec_to_samples
 
 __all__ = ['split_channel_name', 'extract_window_indices',
            'find_linear_segment', 'read_config']
@@ -22,7 +23,7 @@ def split_channel_name(channel_name,
     """
 
     # allowed separators
-    separators = ['+','-','|']
+    separators = [',','+','-','|']
 
     # case available_channels is None
     if  available_channels is None:
@@ -69,7 +70,7 @@ def split_channel_name(channel_name,
     # check separator
     if separator not in separators:
         raise ValueError(
-            f'ERROR: separator {separator} not '
+            f'ERROR: separator "{separator}" not '
             f'recognized. Allowed separator '
             f'{separators} ')
 
@@ -86,24 +87,28 @@ def split_channel_name(channel_name,
     for part in split_parts:
         
         if part in available_channels:
+
+            # add current_name if constructed
             if current_name:
                 channel_list.append(current_name)
-            channel_list.append(part)
             current_name = ''
+            
+            # add part ot list
+            channel_list.append(part)
+
 
         elif part == separator:
 
             if (current_name
                 and  current_name in available_channels):
                 channel_list.append(current_name)
-                current_name = ''
-                
+                current_name = ''     
             elif current_name:
                 current_name += part
         else:
             current_name += part
         
-    if current_name:
+    if current_name and  current_name in available_channels:
         channel_list.append(current_name)
 
     return channel_list, separator
@@ -583,17 +588,60 @@ def read_config(yaml_file, available_channels, sample_rate=None):
                 nb_samples  = (
                     processing_config['global']['trace_length_samples']
                 )
+            elif 'trace_length_msec' in processing_config['global']:
+                if sample_rate is None:
+                    raise ValueError(
+                        'ERROR: sample rate is required '
+                        'when trace length is in msec. '
+                        )
+                trace_length_msec = (
+                    processing_config['global']['trace_length_msec']
+                )
+                nb_samples  = (
+                    convert_length_msec_to_samples(trace_length_msec,
+                                                   sample_rate)
+                )
+
+                
             if 'pretrigger_length_samples' in processing_config['global']:
                 nb_pretrigger_samples = (
                     processing_config['global']['pretrigger_length_samples']
                 )
-            
+            elif 'pretrigger_length_msec' in processing_config['global']:
+                pretrigger_length_msec = (
+                    processing_config['global']['pretrigger_length_msec']
+                )
+                nb_pretrigger_samples  = (
+                    convert_length_msec_to_samples(pretrigger_length_msec,
+                                                   sample_rate)
+                )
+
+
+                
             # Get trace/pretrigger length at the channel level
             if 'trace_length_samples' in chan_config.keys():
                 nb_samples  = chan_config['trace_length_samples']
+            elif 'trace_length_msec' in chan_config.keys():
+                if sample_rate is None:
+                    raise ValueError(
+                        'ERROR: sample rate is required '
+                        'when trace length is in msec. '
+                        )
+                trace_length_msec = chan_config['trace_length_msec']
+                nb_samples  = (
+                    convert_length_msec_to_samples(trace_length_msec,
+                                                   sample_rate)
+                )
+
             if 'pretrigger_length_samples' in chan_config.keys():
                 nb_pretrigger_samples = chan_config['pretrigger_length_samples'] 
-
+            elif 'pretrigger_length_msec' in chan_config.keys():
+                pretrigger_length_msec = chan_config['pretrigger_length_msec']
+                nb_pretrigger_samples  = (
+                    convert_length_msec_to_samples(pretrigger_length_msec,
+                                                   sample_rate)
+                )
+                
             if (nb_samples is not None
                 and nb_pretrigger_samples is None):
                 raise ValueError(
@@ -634,23 +682,24 @@ def read_config(yaml_file, available_channels, sample_rate=None):
                 
                 if 'trace_length_samples' in algo_config.keys():
                     nb_samples_alg = algo_config['trace_length_samples']
-                    
-                    if 'pretrigger_length_samples' not in algo_config.keys():
-                        raise ValueError(
-                            f'Missing "pretrigger_length_samples" parameter '
-                            f'for algorithm {algo}, '
-                            f'channel {chan} !')
+                elif 'trace_length_msec' in algo_config.keys():
+                    trace_length_msec = algo_config['trace_length_msec']
+                    nb_samples_alg  = (
+                        convert_length_msec_to_samples(trace_length_msec,
+                                                       sample_rate)
+                )
+                   
                     
                 if 'pretrigger_length_samples' in algo_config.keys():
                     nb_pretrigger_samples_alg = (
                         algo_config['pretrigger_length_samples']
                     )
-                    
-                    if 'trace_length_samples' not in algo_config.keys():
-                        raise ValueError(
-                            f'Missing "trace_length_samples" parameter '
-                            f'for algorithm {algo}, '
-                            f'channel {chan} !')
+                elif 'pretrigger_length_msec' in algo_config.keys():
+                    pretrigger_length_msec = algo_config['pretrigger_length_msec']
+                    nb_pretrigger_samples_alg  = (
+                        convert_length_msec_to_samples(pretrigger_length_msec,
+                                                       sample_rate)
+                    )
 
                 # update algorithm with trace length
                 processing_config['feature'][chan][algo]['nb_samples'] = (

@@ -209,7 +209,6 @@ class ProcessingData:
                 # Add CSD
                 if '|' in chan:
 
-                    """
                     tag = 'default'
                     if 'csd_tag' in algo_config.keys():
                         tag = algo_config['csd_tag']
@@ -243,13 +242,10 @@ class ProcessingData:
                             f'and csd for channel {chan}, '
                             f'algorithm {algo_name}!'
                         )
-                    
                                                 
                     # add in OF base
                     if self._OF_base_objs[key_tuple]['OF'].csd(chan) is None:
                         self._OF_base_objs[key_tuple]['OF'].set_csd(chan, csd)
-
-                    """
 
                 # Add PSD
                 else:

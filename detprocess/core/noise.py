@@ -9,7 +9,7 @@ import vaex as vx
 from pathlib import Path
 from detprocess.process.randoms import Randoms
 from detprocess.core.filterdata import FilterData
-
+from detprocess.utils import utils
 
 class Noise(FilterData):
     """
@@ -224,6 +224,7 @@ class Noise(FilterData):
                  pretrigger_length_msec=None,
                  pretrigger_length_samples=None,
                  nevents=None,
+                 weights=None,
                  tag='default'):
         """
         Calculate two-sided and folded-over PSD in Amps^2/Hz
@@ -233,7 +234,7 @@ class Noise(FilterData):
         # --------------------------------
         # Check arguments
         # --------------------------------
-        
+              
         if nevents is None:
             raise ValueError('ERROR: Maximum number of randoms required!'
                              ' Add "nevents" argument.')
@@ -253,6 +254,10 @@ class Noise(FilterData):
             and pretrigger_length_samples is not None):
             raise ValueError('ERROR: Pretrigger length need to be '
                              'in msec OR samples, nto both')
+
+
+        # available channels
+        available_channels = self._get_channel_list()
         
         # --------------------------------
         # Loop channels and calculate PSD
@@ -273,12 +278,22 @@ class Noise(FilterData):
 
 
             # let's check if sum of pulses 
-            chan_list = [chan]
-            do_sum = False
-            if '+' in chan:
-                chan_list = chan.split('+')
-                do_sum = True
-                    
+            separator = None
+            chan_list, separator = utils.split_channel_name(
+                chan, available_channels
+            )
+
+
+            # weights
+            weights_array = None
+            if weights is not None:
+            
+                weights_array = np.ones(len(chan_list))
+            
+                for ichan, chan_split in enumerate(chan_list):
+                    if chan_split in weights:
+                        weights_array[ichan] = weights[chan_split]
+            
             # let's do first overall all PSD
             traces, traces_metadata = self._get_traces(
                 chan_list,
@@ -292,8 +307,23 @@ class Noise(FilterData):
 
             self._fs = traces_metadata['sample_rate']
 
-            if do_sum:
+            if separator == '+':
+                if weights_array is not None:
+                    weights_array = weights_array[np.newaxis, :, np.newaxis]
+                    traces = traces * weights_array
                 traces = np.sum(traces, axis=1)
+                           
+            elif separator == '-':
+                if weights_array is not None:
+                    traces = (traces[:,0,:]*weights_array[0]
+                              - traces[:,1,:]*weights_array[1])
+                else:
+                    traces = traces[:,0,:] - traces[:,1,:]
+
+                print(f'trace shape for {chan} = {traces.shape}')
+            elif separator is not None:
+                raise ValueError('ERROR: PSD can only be calculated '
+                                 'on single channels!')
                 
             if traces.ndim==3:
                 if traces.shape[1] != 1:
@@ -335,6 +365,11 @@ class Noise(FilterData):
             # metadata
             traces_metadata['channel'] = chan
             traces_metadata['cut_efficiency'] = cut_eff
+
+            if weights is not None:
+                for wchan,wval in weights.items():
+                    param = f'weights_{wchan}'
+                    traces_metadata[param] = wval
           
             self._filter_data[chan][psd_name + '_metadata'] = traces_metadata
          
@@ -880,4 +915,38 @@ class Noise(FilterData):
 
       
         return series_dict, base_path, group_name
+
+    
+    def _get_channel_list(self):
+        """ 
+        Get the list of channels from raw data file
+        
+        Parameters
+        ----------
+        file_dict  : dict
+           directionary with list of files for each series
+
+        Return
+        -------
+        channels: list
+          List of channels
+    
+        """
+
+        if self._raw_data is None:
+            raise ValueError('ERROR: Unable to get channel list '
+                             'from raw data. No data dictionary '
+                             'available!')
+
+        # let's get list of channels available in file
+        # first file
+        file_name = str()
+        for key, val in self._raw_data.items():
+            file_name = val[0]
+            break
+        
+        # get list from configuration
+        h5 = h5io.H5Reader()
+        detector_settings = h5.get_detector_config(file_name=file_name)
+        return list(detector_settings.keys())
 
