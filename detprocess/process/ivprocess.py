@@ -358,8 +358,8 @@ class IVSweepProcessing:
                 try:
                     os.makedirs(save_path)
                 except OSError:
-                    raise ValueError('\nERROR: Unable to create directory "'
-                                     + output_dir  + '"!\n')
+                    raise ValueError(f'\nERROR: Unable to create directory '
+                                     f'"{save_path}"!')
                        
             now = datetime.now()
             series_day = now.strftime('%Y') +  now.strftime('%m') + now.strftime('%d') 
