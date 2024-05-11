@@ -1215,7 +1215,20 @@ class FilterData:
             par_name =   base_name + '_' + par + '_' + tag
             if par_name in self._filter_data[channel].keys():
                 output_data[par] = self._filter_data[channel][par_name].to_dict()
-            
+
+
+        if 'ssp_light' in output_data:
+            ssp_light = {'vals':dict(), 'sigmas':dict()}
+            for par, val in output_data['ssp_light'].items():
+                if par == 'cov':
+                    continue
+                if 'sigma' in par:
+                    ssp_light['sigmas'][par] = val
+                else:
+                    ssp_light['vals'][par] = val
+
+            output_data['ssp_light'].update(ssp_light)
+                        
         return  output_data
 
     def set_didv_dataframe(self, 

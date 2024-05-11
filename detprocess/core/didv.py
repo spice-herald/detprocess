@@ -450,10 +450,11 @@ class DIDVAnalysis(FilterData):
 
             if lgc_plot:
                 
+                if 2 in list_of_poles:
+                    self.print_fit_result(chan, poles=2)
+                    
                 if 3 in list_of_poles:
                     self.print_fit_result(chan, poles=3)
-                elif 2 in list_of_poles:
-                    self.print_fit_result(chan, poles=2)
                 
                 self.plot_fit_result(chan)
 
@@ -697,10 +698,6 @@ class DIDVAnalysis(FilterData):
             raise ValueError(f'ERROR: No data found for '
                              'channel {channel}!')
 
-        # check if poles fitted
-        if poles != 3:
-            raise ValueError(f'ERROR: Resoultion can only be calculated for '
-                             '3-poles fit currently!')
         list_of_fitted_poles = (
             self._didv_data[channel]['didvobj'].get_list_fitted_poles()
         )
@@ -1001,7 +998,7 @@ class DIDVAnalysis(FilterData):
                       'channel {chan}!')
                 continue
             
-            print(f'\n{chan} dIdV Fit Result:')
+            print(f'\n{chan} dIdV {poles}-poles Fit Result:')
 
             
             print('Fit chi2/Ndof = {:.3f}'.format(results['cost']))

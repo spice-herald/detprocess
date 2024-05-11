@@ -923,7 +923,7 @@ class IVSweepAnalysis(FilterData):
             self.save_hdf5(file_path_name, overwrite=True)
         
 
-    def plot_didv_summary(self, channel):
+    def plot_didv_summary(self, channel, poles=3):
         """
         """
 
@@ -959,8 +959,8 @@ class IVSweepAnalysis(FilterData):
         # transition
         if 'transition' in self._didv_summary[channel]:
 
-            data = self._didv_summary[channel]['transition']
-            print(f'\nTES in Transition Measurements:')
+            data = self._didv_summary[channel]['transition'][poles]
+            print(f'\nMeasurements TES in Transition {poles}-poles Fit:')
 
                   
             plt.plot(data['Rn %'], data['chi2'],  'bo')
@@ -1034,8 +1034,10 @@ class IVSweepAnalysis(FilterData):
                 plt.show()
 
 
-    def calc_energy_resolution(self, channels=None, template=None, template_name=None,
-                               collection_eff=1, lgc_power_template=False,
+    def calc_energy_resolution(self, channels=None,
+                               template=None, template_name=None,
+                               lgc_power_template=False,
+                               collection_eff=1, poles=3, 
                                lgc_plot=False, tag='default'):
         """
         Calculate resolution
@@ -1110,14 +1112,17 @@ class IVSweepAnalysis(FilterData):
                 # calculate resolution for direct delta
                 resolution_dirac = obj.calc_energy_resolution(
                     chan, psd, fs=fs, template=None,
-                    collection_eff=collection_eff)
+                    collection_eff=collection_eff,
+                    poles=poles
+                )
 
                 resolution_template = None
                 if template is not None:
                     resolution_template = obj.calc_energy_resolution(
                         chan, psd, fs=fs, template=template,
                         collection_eff=collection_eff,
-                        lgc_power_template=lgc_power_template)
+                        lgc_power_template=lgc_power_template,
+                        poles=poles)
 
                 # store
                 resolution_data['tes_bias_uA'].append(bias)
@@ -1220,10 +1225,9 @@ class IVSweepAnalysis(FilterData):
         self._gta[channel] = gta
         
               
-    def analyze_noise(self, channels=None,
-                      fit_range=(100, 1e5),
-                      squiddc0=6e-12, squidpole0=200, squidn0=0.7,
+    def analyze_noise(self, channels=None, poles=2,
                       lgc_plot=False,
+                      fit_range=(100, 1e5),
                       xlims=None, ylims_current=None, ylims_power=None, 
                       lgc_save_fig=False, save_path=None,
                       tag='default'):
@@ -1344,12 +1348,10 @@ class IVSweepAnalysis(FilterData):
               print(f'\nINFO: Performing {chan} Normal Noise Fit')  
 
             # initialize fit par list
-            squiddc_list = []
-            squidpole_list = []
-            squidn_list = []
             tload_guess_list = []
-            
             lgc_plot_once = lgc_plot
+
+            squid_noise_list = []
             for bias, obj in  didv_normal_objs.items():
 
                 # get normal psd 
@@ -1382,11 +1384,13 @@ class IVSweepAnalysis(FilterData):
                 noise_sim.set_tbath(tbath)
                                 
                 # set data
-                noise_sim.set_psd(chan, psd, psd_freqs, tes_bias, 'normal' )
+                noise_sim.set_psd(chan, psd, psd_freqs, 'normal' )
 
                 # set IV sweep results
                 noise_sim.set_iv_didv_results_from_dict(
                     chan,
+                    didv_results=fitresult,
+                    poles=poles,
                     ivsweep_results=ivsweep_result
                 )
 
@@ -1395,43 +1399,35 @@ class IVSweepAnalysis(FilterData):
                 noise_sim.set_inductance(chan, L, 'normal')
                 
                 # fit 
-                noise_sim.fit_normal_noise(channels=chan,
-                                           fit_range=fit_range,
-                                           squiddc0=squiddc0,
-                                           squidpole0=squidpole0,
-                                           squidn0=squidn0,
-                                           lgc_plot=lgc_plot_once,
-                                           xlims=xlims, ylims=ylims_current)
+                noise_sim.calc_squid_noise(channels=chan,
+                                           lgc_plot=lgc_plot_once)
                 lgc_plot_once = False
 
-                # store result
-                squiddc_list.append(
-                    noise_sim._noise_data[chan]['normal']['fit']['squiddc']
+                squid_noise = (
+                    noise_sim._noise_data[chan]['sim']['normal']['s_isquid']
                 )
-                squidpole_list.append(
-                    noise_sim._noise_data[chan]['normal']['fit']['squidpole']
-                )
-                squidn_list.append(
-                    noise_sim._noise_data[chan]['normal']['fit']['squidn']
+                squid_noise_freqs = (
+                    noise_sim._noise_data[chan]['sim']['normal']['freqs']
                 )
 
+                squid_noise_list.append(squid_noise)
 
-            # take median
-            squiddc = np.median(squiddc_list)
-            squidpole = np.median(squidpole_list)
-            squidn = np.median(squidn_list)
-            tload_guess = np.median(tload_guess_list)
+                
+            # take average
+            sum_array = np.zeros_like(squid_noise_list[0])
+
+            # Sum up all arrays
+            for arr in squid_noise_list:
+                sum_array += arr
+
+            squid_noise = sum_array / len(squid_noise_list)
         
             # replace noise_sim fit result
-            noise_sim._noise_data[chan]['normal']['fit']['squiddc'] = squiddc
-            noise_sim._noise_data[chan]['normal']['fit']['squidpole'] = squidpole
-            noise_sim._noise_data[chan]['normal']['fit']['squidn'] = squidn
-
-
+            noise_sim.set_squid_noise(chan, squid_noise, squid_noise_freqs)
+            
             # add to IV Sweep result
-            ivsweep_result['noise_model_fit_squiddc'] = squiddc
-            ivsweep_result['noise_model_fit_squidpole'] = squidpole
-            ivsweep_result['noise_model_fit_squidn'] = squidn
+            ivsweep_result['noise_model_squid_noise'] = squid_noise
+            ivsweep_result['noise_model_squid_noise_freqs'] = squid_noise_freqs
             ivsweep_result['noise_model_tload_guess'] = tload_guess
 
             
@@ -1475,14 +1471,16 @@ class IVSweepAnalysis(FilterData):
                 noise_sim.set_tbath(tbath)
                              
                 # set data
-                noise_sim.set_psd(chan, psd, psd_freqs, tes_bias, 'sc' )
+                noise_sim.set_psd(chan, psd, psd_freqs, 'sc' )
 
                 # set IV sweep results
                 noise_sim.set_iv_didv_results_from_dict(
                     chan,
+                    didv_results=fitresult,
+                    poles=poles,
                     ivsweep_results=ivsweep_result
                 )
-
+                
                 # set inductance
                 L = float(fitresult['smallsignalparams']['L'])
                 noise_sim.set_inductance(chan, L, 'sc')
@@ -1533,7 +1531,7 @@ class IVSweepAnalysis(FilterData):
                                      f' tes bias = {bias}')
 
                 # didv fit result
-                fitresult = obj.get_fit_results(chan, poles=2)
+                fitresult = obj.get_fit_results(chan, poles=poles)
                             
                 # get psd 
                 psd =  df_bias['psd'].iloc[0]
@@ -1556,28 +1554,30 @@ class IVSweepAnalysis(FilterData):
                 tbath_list.append(tbath)
                 
                 # Gta
-                gta = None
-                if chan in self._gta:
-                    gta = self._gta[chan]
-                else:
-                    gta = 5*p0/self._tc[chan]
+                #gta = None
+                #if chan in self._gta:
+                #    gta = self._gta[chan]
+                #else:
+                #    gta = 5*p0/self._tc[chan]
                     
-                noise_sim.set_gta(chan, gta)
-                gta_list.append(gta)
+                #noise_sim.set_gta(chan, gta)
+                #gta_list.append(gta)
                 
                 # set data
-                noise_sim.set_psd(chan, psd, psd_freqs, float(tes_bias), 'transition' )
+                noise_sim.set_psd(chan, psd, psd_freqs, 'transition' )
 
-                # set didv data (2-poles fit)
+                # set didv data
+                # set IV sweep results
                 noise_sim.set_iv_didv_results_from_dict(
                     chan,
                     didv_results=fitresult,
+                    poles=poles,
                     ivsweep_results=ivsweep_result
                 )
-
-
+                
                 # analyze
-                noise_sim.analyze_noise(lgc_plot=lgc_plot,
+                noise_sim.analyze_noise(channels=chan,
+                                        lgc_plot=lgc_plot,
                                         xlims=xlims,
                                         ylims_current=ylims_current,
                                         ylims_power=ylims_power)
@@ -1789,54 +1789,78 @@ class IVSweepAnalysis(FilterData):
                 results = None
                 if (data_type == 'normal' or data_type == 'sc'):
                     didvanalysis.dofit(1)
-                    results = didvanalysis.get_fit_results(chan,1)
+                    results = {1: didvanalysis.get_fit_results(chan,1)}
                 else:
+                    if self._verbose:
+                        print('INFO: Fitting dIdV (2 and 3-poles)')
                     didvanalysis.dofit([2,3])
                     didvanalysis.set_ivsweep_results_from_data(chan, iv_results)
                     didvanalysis.calc_smallsignal_params(
                         calc_true_current=False,
                         inf_loop_gain_approx=inf_loop_gain_approx,
                     )
-
+                    if self._verbose:
+                        print('INFO: Calculating TES bias parameters with '
+                              'infinite loop gain approximation')
                     didvanalysis.calc_bias_params_infinite_loop_gain()
-                    
+                                     
+                    # calc dpdi
                     if 'psd_freq' in  pd_series:
+                        print(f'INFO: Calculating dPdI (2 and 3-poles)')
                         freqs = pd_series['psd_freq']
                         didvanalysis.calc_dpdi(freqs, channels=chan,
-                                               list_of_poles=3)
-                    results = didvanalysis.get_fit_results(chan,3)
+                                               list_of_poles=[2,3])
+                    results = {2: didvanalysis.get_fit_results(chan,2),
+                               3:  didvanalysis.get_fit_results(chan,3)}
+                                        
+                # store results  
+                if 1 in results:
+                    rpn = results[1]['smallsignalparams']['rp']
+                    if data_type == 'normal':
+                        rpn -= rp_iv
+                    rpn_list.append(rpn)
+                    dt_list.append(results[1]['smallsignalparams']['dt'])
+                    inductance_list.append(results[1]['smallsignalparams']['L'])
 
+                # transition
+                for poles in [2,3]:
                     
-                # store result
-                rpn = results['smallsignalparams']['rp']
-                if data_type == 'normal':
-                    rpn -= rp_iv
-                rpn_list.append(rpn)
-                dt_list.append(results['smallsignalparams']['dt'])
-                inductance_list.append(results['smallsignalparams']['L'])
-
-                # transitiobn
-                if data_type == 'transition':
+                    if (data_type != 'transition'
+                        or poles not in results.keys()):
+                        continue
+                 
+                    cov_matrix = np.abs(results[poles]['ssp_light']['cov'])
+                    vals_vector = results[poles]['ssp_light']['vals']
+                    sigmas_vector = results[poles]['ssp_light']['sigmas']
                     
-                    cov_matrix = np.abs(results['ssp_light']['cov'])
-                    vals_vector = results['ssp_light']['vals']
-                    sigmas_vector = results['ssp_light']['sigmas']
-
                     if self._verbose:
-                        print('Fit chi2/Ndof = {:.3f}'.format(results['cost']))
 
-                        print('\nFit time constants, NOT dIdV Poles: ')
-                        print('Tau1: {:.3g} s'.format(np.abs(results['params']['tau1'])))
-                        print('Tau2: {:.3g} s'.format(results['params']['tau2']))
-                        print('Tau3: {:.4g} s'.format(results['params']['tau3']))
-                        print(' ')
 
-                        print('\nTrue dIdV Poles: ')
-                        print('Tau_plus: {:.3g} s'.format(results['falltimes'][0]))
-                        print('Tau_minus: {:.3g} s'.format(results['falltimes'][1]))
-                        print('Tau_third: {:.4g} s'.format(results['falltimes'][2]))
+                        print(f'\nResults from {poles}-poles dIdV fit')
+                        print('---------------------------------')
+
                         
-                        print('\nSmall Signal Parameters:')
+                        print('\nFit chi2/Ndof = {:.3f}'.format(
+                            results[poles]['cost'])
+                        )
+
+                        print(f'\nFit time constants, NOT dIdV Poles: ')
+                        print('Tau1: {:.3g} s'.format(
+                            np.abs(results[poles]['params']['tau1'])))
+                        print('Tau2: {:.3g} s'.format(
+                            results[poles]['params']['tau2']))
+                        print('Tau3: {:.4g} s'.format(
+                            results[poles]['params']['tau3']))
+                    
+                        print(f'\nTrue dIdV Poles (from {poles}-poles fit): ')
+                        print('Tau_plus: {:.3g} s'.format(
+                            results[poles]['falltimes'][0]))
+                        print('Tau_minus: {:.3g} s'.format(
+                            results[poles]['falltimes'][1]))
+                        print('Tau_third: {:.4g} s'.format(
+                            results[poles]['falltimes'][2]))
+                        
+                        print(f'\nSmall Signal Parameters:')
                         print('l (loop gain) = {:.3f} +/- {:.4f}'.format(
                             vals_vector['l'], sigmas_vector['sigma_l']))
                         print('beta = {:.3f} +/- {:.4f}'.format(
@@ -1848,17 +1872,11 @@ class IVSweepAnalysis(FilterData):
                         print('L = {:.3f} +/- {:.4f} nH'.format(
                             vals_vector['L']*1e9, sigmas_vector['sigma_L']*1e9))
 
-                    if lgc_plot:
-                        cor_matrix = np.zeros([5,5])
-                        i = 0
-                        while i < len(cov_matrix):
-                            j = 0
-                            while j < len(cov_matrix[i]):
-                                cor_matrix[i][j] = cov_matrix[i][j]/(
-                                    np.sqrt(cov_matrix[i][i])
-                                    * np.sqrt(cov_matrix[j][j]))
-                                j += 1
-                            i += 1
+                    if lgc_plot and poles==3:
+                        cov_matrix_reduced = cov_matrix[:5,:5]
+                        std_deviations = np.sqrt(np.diag(cov_matrix_reduced))
+                        cor_matrix = cov_matrix_reduced / np.outer(std_deviations,
+                                                                   std_deviations)
 
                         labels = ['beta', 'loopgain', 'L', 'tau0', 'gratio']
                         ticks = np.arange(0, 5, 1)
@@ -1873,21 +1891,22 @@ class IVSweepAnalysis(FilterData):
 
 
                     # store summary
-                    if 'Rn %' not in self._didv_summary[chan]['transition']:
-                        self._didv_summary[chan]['transition'] = {
+                    if poles not in self._didv_summary[chan]['transition']:
+                        self._didv_summary[chan]['transition'][poles] = {
                             'Rn %': [], 'tes_bias_uA': [], 'chi2': [],
                             'tau+': [], 'tau-': [], 'tau3': [],
                             'l': [], 'l_err': [], 'beta': [], 'beta_err': [],
                             'gratio': [], 'gratio_err': [], 'tau0': [], 
-                            'tau0_err': [], 'L': [], 'L_err': []}
+                            'tau0_err': [], 'L': [], 'L_err': []
+                        }
                     else:
-                        current = self._didv_summary[chan]['transition']
+                        current = self._didv_summary[chan]['transition'][poles]
                         current['Rn %'].append(pd_series[var_name])
                         current['tes_bias_uA'].append(pd_series['tes_bias_uA'])
-                        current['chi2'].append(results['cost'])
-                        current['tau+'].append(results['falltimes'][0])
-                        current['tau-'].append(results['falltimes'][1])
-                        current['tau3'].append(results['falltimes'][2])
+                        current['chi2'].append(results[poles]['cost'])
+                        current['tau+'].append(results[poles]['falltimes'][0])
+                        current['tau-'].append(results[poles]['falltimes'][1])
+                        current['tau3'].append(results[poles]['falltimes'][2])
                         current['l'].append(vals_vector['l'])
                         current['l_err'].append(sigmas_vector['sigma_l'])
                         current['beta'].append(vals_vector['beta'])
@@ -1898,60 +1917,60 @@ class IVSweepAnalysis(FilterData):
                         current['tau0_err'].append(sigmas_vector['sigma_tau0'])
                         current['L'].append(vals_vector['L'])
                         current['L_err'].append(sigmas_vector['sigma_L'])
-                        self._didv_summary[chan]['transition'] = current
+                        self._didv_summary[chan]['transition'][poles] = current
 
 
                     # store in dataframe
-                    df.loc[df_index, 'didv_3poles_chi2'] = results['cost']
+                    df.loc[df_index, f'didv_{poles}poles_chi2'] = results[poles]['cost']
                     
-                    df.loc[df_index, 'didv_3poles_tau+'] = results['falltimes'][0]
-                    df.loc[df_index, 'didv_3poles_tau-'] = results['falltimes'][1]
-                    df.loc[df_index, 'didv_3poles_tau3'] = results['falltimes'][2]
+                    df.loc[df_index, f'didv_{poles}poles_tau+'] = results[poles]['falltimes'][0]
+                    df.loc[df_index, f'didv_{poles}poles_tau-'] = results[poles]['falltimes'][1]
+                    df.loc[df_index, f'didv_{poles}poles_tau3'] = results[poles]['falltimes'][2]
                     
-                    df.loc[df_index, 'didv_3poles_l'] = vals_vector['l']
-                    df.loc[df_index, 'didv_3poles_l_err'] = (
+                    df.loc[df_index, f'didv_{poles}poles_l'] = vals_vector['l']
+                    df.loc[df_index, f'didv_{poles}poles_l_err'] = (
                         sigmas_vector['sigma_l']
                     )
-                    df.loc[df_index, 'didv_3poles_beta'] = vals_vector['beta']
-                    df.loc[df_index, 'didv_3poles_beta_err'] = (
+                    df.loc[df_index, f'didv_{poles}poles_beta'] = vals_vector['beta']
+                    df.loc[df_index, f'didv_{poles}poles_beta_err'] = (
                         sigmas_vector['sigma_beta']
                     )
 
-                    df.loc[df_index, 'didv_3poles_gratio'] = vals_vector['gratio']
-                    df.loc[df_index, 'didv_3poles_gratio_err'] = (
+                    df.loc[df_index, f'didv_{poles}poles_gratio'] = vals_vector['gratio']
+                    df.loc[df_index, f'didv_{poles}poles_gratio_err'] = (
                         sigmas_vector['sigma_gratio']
                     )
 
-                    df.loc[df_index, 'didv_3poles_tau0'] = vals_vector['tau0']
-                    df.loc[df_index, 'didv_3poles_tau0_err'] = (
+                    df.loc[df_index, f'didv_{poles}poles_tau0'] = vals_vector['tau0']
+                    df.loc[df_index, f'didv_{poles}poles_tau0_err'] = (
                         sigmas_vector['sigma_tau0']
                     )
 
-                    df.loc[df_index, 'didv_3poles_L'] = vals_vector['L']
-                    df.loc[df_index, 'didv_3poles_L_err'] = (
+                    df.loc[df_index, f'didv_{poles}poles_L'] = vals_vector['L']
+                    df.loc[df_index, f'didv_{poles}poles_L_err'] = (
                         sigmas_vector['sigma_L']
                     )
 
 
                     # infinite loop gain bias
-                    bias_params_inf_lgain = results['biasparams_infinite_lgain']
-                    df.loc[df_index, 'didv_3poles_r0_infinite_lgain'] = (
+                    bias_params_inf_lgain = results[poles]['biasparams_infinite_lgain']
+                    df.loc[df_index, f'didv_{poles}poles_r0_infinite_lgain'] = (
                         bias_params_inf_lgain['r0']
                     )
-                    df.loc[df_index, 'didv_3poles_r0_err_infinite_lgain'] = (
+                    df.loc[df_index, f'didv_{poles}poles_r0_err_infinite_lgain'] = (
                         bias_params_inf_lgain['r0_err']
                     )
-                    df.loc[df_index, 'didv_3poles_i0_infinite_lgain'] = (
+                    df.loc[df_index, f'didv_{poles}poles_i0_infinite_lgain'] = (
                         bias_params_inf_lgain['i0']
                     )
-                    df.loc[df_index, 'didv_3poles_i0_err_infinite_lgain'] = (
+                    df.loc[df_index, f'didv_{poles}poles_i0_err_infinite_lgain'] = (
                         bias_params_inf_lgain['i0_err']
                     )
 
-                    df.loc[df_index, 'didv_3poles_p0_infinite_lgain'] = (
+                    df.loc[df_index, f'didv_{poles}poles_p0_infinite_lgain'] = (
                         bias_params_inf_lgain['p0']
                     )
-                    df.loc[df_index, 'didv_3poles_p0_err_infinite_lgain'] = (
+                    df.loc[df_index, f'didv_{poles}poles_p0_err_infinite_lgain'] = (
                         bias_params_inf_lgain['p0_err']
                     )
 
@@ -1991,7 +2010,7 @@ class IVSweepAnalysis(FilterData):
             inductance_fit = np.median(inductance_list)
 
             
-            # store summay
+            # store summary
          
             if data_type == 'normal':
                 self._didv_summary[chan]['normal'] = {
