@@ -154,13 +154,31 @@ class NoiseModel(FilterData):
             # add to noise data
             if 'biasparams' not in self._noise_data[channel]:
                 self._noise_data[channel]['biasparams'] = ivsweep_results
+            else:
+                self._noise_data[channel]['biasparams'].update(ivsweep_results)
 
+             # add to noise data
+            if didv_results is not None:
+                if 'biasparams' not in 
+                self._noise_data[channel]['biasparams'] = ivsweep_results
 
+ 'biasparams' not in self._noise_data[channel]:
+                self._noise_data[channel]['biasparams'] = ivsweep_results
+
+ 
+                
             # add more quantities
             if 'rn' not in  self._noise_data[channel]['biasparams']:
                 self._noise_data[chan]['biasparams']['rn'] = (
                     ivsweep_results['rn']
                 )
+
+            # add more quantities
+            if 'rp' not in  self._noise_data[channel]['biasparams']:
+                self._noise_data[chan]['biasparams']['rp'] = (
+                    ivsweep_results['rp']
+                )
+                
 
             if 'rshunt' not in self._noise_data[channel]['biasparams']:
                 self._noise_data[channel]['biasparams']['rshunt'] = (
