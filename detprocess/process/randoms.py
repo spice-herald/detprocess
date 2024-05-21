@@ -815,6 +815,10 @@ class Randoms:
                 and 'restricted' in file_name):
                 continue
             
+            # skip iv
+            if 'iv_' in file_name:
+                continue
+                
             # skip didv / external trigger
             if ('didv_' in file_name
                 or 'exttrig_' in file_name):
