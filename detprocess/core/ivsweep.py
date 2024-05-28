@@ -677,6 +677,8 @@ class IVSweepAnalysis(FilterData):
                 results['rn_err'] = rn_err
                 results['rshunt'] = param_dict['rshunt']
                 results['rshunt_err'] = param_dict['rshunt_err']
+                results['rsh'] = param_dict['rshunt']
+                results['rsh_err'] = param_dict['rshunt_err']
                 results['i0_off'] = i0_off
                 results['i0_off_err'] = i0_off_err
                 results['ibias_off'] = ibias_off
@@ -1341,17 +1343,19 @@ class IVSweepAnalysis(FilterData):
             noise_sim.set_tc(chan, self._tc[chan])
            
             # ----------------------------
-            # Normal Fit
+            # Normal  noise
             # ----------------------------
 
             if self._verbose:
-              print(f'\nINFO: Performing {chan} Normal Noise Fit')  
+              print(f'\nINFO: Calculating {chan} SQUID noise from normal noise')  
 
             # initialize fit par list
-            tload_guess_list = []
             lgc_plot_once = lgc_plot
-
+            
+            # initialize SQUID noise list 
             squid_noise_list = []
+
+            # loop normal noise
             for bias, obj in  didv_normal_objs.items():
 
                 # get normal psd 
@@ -1378,19 +1382,16 @@ class IVSweepAnalysis(FilterData):
                 if tbath is None:
                     tbath = df_bias['temperature_mc'].iloc[0]
 
-                    
-                noise_sim.set_tload_guess(tload_guess)
-                tload_guess_list.append(tload_guess)
-                noise_sim.set_tbath(tbath)
-                                
                 # set data
+                noise_sim.set_tload_guess(tload_guess)
+                noise_sim.set_tbath(tbath)
                 noise_sim.set_psd(chan, psd, psd_freqs, 'normal' )
 
                 # set IV sweep results
                 noise_sim.set_iv_didv_results_from_dict(
                     chan,
                     didv_results=fitresult,
-                    poles=poles,
+                    poles=1,
                     ivsweep_results=ivsweep_result
                 )
 
@@ -1424,13 +1425,11 @@ class IVSweepAnalysis(FilterData):
         
             # replace noise_sim fit result
             noise_sim.set_squid_noise(chan, squid_noise, squid_noise_freqs)
-            
+
             # add to IV Sweep result
             ivsweep_result['noise_model_squid_noise'] = squid_noise
             ivsweep_result['noise_model_squid_noise_freqs'] = squid_noise_freqs
-            ivsweep_result['noise_model_tload_guess'] = tload_guess
-
-            
+                     
             # ----------------------------
             # SC Fit
             # ----------------------------
@@ -1477,7 +1476,7 @@ class IVSweepAnalysis(FilterData):
                 noise_sim.set_iv_didv_results_from_dict(
                     chan,
                     didv_results=fitresult,
-                    poles=poles,
+                    poles=1,
                     ivsweep_results=ivsweep_result
                 )
                 
@@ -1503,7 +1502,8 @@ class IVSweepAnalysis(FilterData):
             noise_sim._noise_data[chan]['sc']['fit']['tload'] = tload
           
             if self._verbose:
-                print(f'INFO: Channel {chan} Tload from SC Fit: {tload*1e3} mK')
+                tload_str  = format(tload*1e3, '.2f')
+                print(f'INFO: Channel {chan} Tload from SC Fit: {tload_str} mK')
 
 
             # save in sweep result
@@ -1513,9 +1513,7 @@ class IVSweepAnalysis(FilterData):
             # Transition data model
             # ----------------------------
 
-            if self._verbose:
-                print(f'\nINFO: Analyzing {chan} Noise in Transition')  
-
+            
             # initialize tbath list
             tbath_list = []
             gta_list = []
@@ -1525,11 +1523,7 @@ class IVSweepAnalysis(FilterData):
                 # get normal psd 
                 df_bias = df[df.tes_bias_uA==bias]
                 df_index = df_bias.index[0]
-                
-                if df_bias.empty:
-                    raise ValueError(f'ERROR: Unable to get psd for {chan},'
-                                     f' tes bias = {bias}')
-
+           
                 # didv fit result
                 fitresult = obj.get_fit_results(chan, poles=poles)
                             
@@ -1541,28 +1535,17 @@ class IVSweepAnalysis(FilterData):
                 p0 = float(df_bias['p0_noise'].iloc[0])
                 percent_rn =  float(df_bias['percent_rn_noise'].iloc[0])
 
-                # set Tload and Tbath
-                tload_guess = self._tload_guess
+                if self._verbose:
+                    print(f'\nINFO: Analyzing {chan} Noise in Transition for '
+                          f'QET bias = {bias} uA ({percent_rn}% Rn)')  
+
+                # set Tbath
                 tbath = self._tbath
-                if tload_guess is None:
-                    tload_guess =  df_bias['temperature_cp'].iloc[0]
                 if tbath is None:
                     tbath = df_bias['temperature_mc'].iloc[0]
-
-                noise_sim.set_tload_guess(tload_guess)
                 noise_sim.set_tbath(tbath)
                 tbath_list.append(tbath)
-                
-                # Gta
-                #gta = None
-                #if chan in self._gta:
-                #    gta = self._gta[chan]
-                #else:
-                #    gta = 5*p0/self._tc[chan]
-                    
-                #noise_sim.set_gta(chan, gta)
-                #gta_list.append(gta)
-                
+
                 # set data
                 noise_sim.set_psd(chan, psd, psd_freqs, 'transition' )
 
@@ -1583,9 +1566,7 @@ class IVSweepAnalysis(FilterData):
                                         ylims_power=ylims_power)
 
             tbath = np.median(tbath_list)
-            gta = np.median(gta_list)
             ivsweep_result['noise_model_tbath'] = tbath
-            ivsweep_result['noise_model_gta'] = gta
             ivsweep_result['noise_model_tc']  = self._tc[chan]
             
             # save ivsweep

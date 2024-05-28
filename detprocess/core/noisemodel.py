@@ -760,7 +760,8 @@ class NoiseModel(FilterData):
                 or 'normal' not  in self._noise_data[chan]['sim']):
                 raise ValueError(f'ERROR: SQUID noise should be first calculated '
                                  f'from normal noise for channel {chan}')
-        
+
+                     
             if chan not in self._tc.keys():
                 raise ValueError(f'ERROR: No Tc for channel {chan} '
                                  f'available. Set Tc first using function '
@@ -777,6 +778,13 @@ class NoiseModel(FilterData):
                 raise ValueError(f'ERROR: No inductance value for channel {chan} '
                                  f'available. Set inductance first using function '
                                  f'set_inductance("{chan}", L, "sc")')
+
+        if (lgc_plot
+            and (self._poles != 2 or self._poles != 3)):
+            print('WARNING: Unable to display SC noise model. Fit results (2 or 3-poles) '
+                  'required!')
+            
+
         # Loop channels and fit data
         for chan in channels:
             
@@ -791,7 +799,6 @@ class NoiseModel(FilterData):
             fs =  np.max(np.abs(psd_freqs))*2
             psd_fold_freqs, psd_fold = qp.foldpsd(psd, fs)
 
-            
             # Tc
             tc = self._tc[chan]
         
@@ -807,10 +814,7 @@ class NoiseModel(FilterData):
             
             # inductance
             L = self._inductance[chan]['sc']
-
-            # didv results
-            didv_results = self.get_didv_results(chan, poles=self._poles)
-            
+                      
             # SQUID noise 
             squid_noise = self._noise_data[chan]['sim']['normal']['s_isquid']
             squid_noise_freqs = self._noise_data[chan]['sim']['normal']['freqs']
@@ -852,10 +856,20 @@ class NoiseModel(FilterData):
             self._noise_data[chan]['sc']['fit'] = fitvals
 
             if self._verbose:
+                tload = format(fitvals['tload']*1e3, '.2f')
                 print(f'INFO: Fitted Tload from SC noise for '
-                      f'channel {chan} = {fitvals["tload"]*1e3} mK')
+                      f'channel {chan} = {tload} mK')
 
 
+            # if 2 or 3-poles fit not availble:
+            # unable to instantiate QETpy TESnoise
+            if (self._poles != 2 and self._poles != 3):
+                continue
+
+            # get didv results
+            didv_results = self.get_didv_results(chan, poles=self._poles)
+            
+                
             # Instantiate Noise sim
             noise_sim = qp.sim.TESnoise(
                 freqs=psd_freqs,
@@ -874,7 +888,7 @@ class NoiseModel(FilterData):
             s_isquid = noise_sim.s_isquid(psd_freqs)
             s_iloadsc = noise_sim.s_iloadsc(psd_freqs)
             s_itotsc = noise_sim.s_itotsc(psd_freqs)
-            self._noise_data[chan]['sim']['sc']['s_iloadsc'] = s_iloadsc
+          
             self._noise_data[chan]['sim']['sc']['s_itotsc'] = s_itotsc
             self._noise_data[chan]['sim']['sc']['s_isquid'] = s_itotsc
             self._noise_data[chan]['sim']['sc']['freqs'] = psd_freqs
@@ -893,19 +907,19 @@ class NoiseModel(FilterData):
                 
                 ax.grid(which="minor", linestyle="dotted", alpha=0.5)
                 ax.loglog(
-                    f, np.sqrt(psd_fold), alpha=0.5,
+                    f[1:], np.sqrt(psd_fold[1:]), alpha=0.5,
                     color='#8c564b', label='Raw Data',
                 )
                 ax.loglog(
-                    f, np.sqrt(s_isquid_fold),
+                    f[1:], np.sqrt(s_isquid_fold[1:]),
                     color='#9467bd', label='Squid+Electronics Noise',
                 )
                 ax.loglog(
-                    f, np.sqrt(s_iloadsc_fold),
+                    f[1:], np.sqrt(s_iloadsc_fold[1:]),
                     color='#ff7f0e', label='Load Noise',
                 )
                 ax.loglog(
-                    f, np.sqrt(s_itotsc_fold),
+                    f[1:], np.sqrt(s_itotsc_fold[1:]),
                     color='#d62728', label='Total Noise',
                 )
                 ax.legend()
@@ -915,7 +929,8 @@ class NoiseModel(FilterData):
                 ax.set_title(f'{chan} Superconducting State noise')
                 ax.tick_params(which="both", direction="in",
                                right=True, top=True)
-            
+
+                plt.show()
             
 
     def analyze_noise(self, channels=None,
@@ -1015,9 +1030,10 @@ class NoiseModel(FilterData):
             p0 = self._noise_data[chan]['biasparams']['p0']
             
             # SQUID  noise from normal noise
-            if 'sim' not in self._noise_data[chan]:
-                self. calc_squid_noise(
-                    channels=channels,
+            if ('sim' not in self._noise_data[chan]
+                or not self._noise_data[chan]['sim']['normal']):
+                self.calc_squid_noise(
+                    channels=chan,
                     do_fit_normal_noise=do_fit_normal_noise,
                     fit_range=fit_range,
                     squiddc0=squiddc0, squidpole0=squidpole0,
@@ -1025,8 +1041,7 @@ class NoiseModel(FilterData):
                     lgc_plot=lgc_plot, xlims=xlims, ylims=ylims,
                     lgc_save_fig=lgc_save_fig, save_path=save_path
                 )
-                    
-            
+                                  
             # two sided SQUID noise
             squid_noise = self._noise_data[chan]['sim']['normal']['s_isquid']
             squid_noise_freqs = self._noise_data[chan]['sim']['normal']['freqs']
@@ -1087,10 +1102,11 @@ class NoiseModel(FilterData):
                 'freqs': psd_freqs
             }
          
+         
             
             # plot
             if lgc_plot:
-
+                
                 # fold
                 fs =  np.max(np.abs(psd_freqs))*2
                 psd_fold_freqs, psd_fold = qp.foldpsd(psd, fs)
@@ -1108,8 +1124,6 @@ class NoiseModel(FilterData):
                 _,s_ptfn_fold = qp.foldpsd(s_ptfn, fs)
                 _,s_psquid_fold = qp.foldpsd(s_psquid, fs)
                 _,s_ptot_fold = qp.foldpsd(s_ptot, fs)
-
-                _,
                 
                 f = psd_fold_freqs
                     
@@ -1121,43 +1135,45 @@ class NoiseModel(FilterData):
                 ax.set_title(f'{chan} Current Noise')
 
                 ax.loglog(
-                    f,
-                    np.sqrt(np.abs(s_ites_fold)),
+                    f[1:],
+                    np.sqrt(np.abs(s_ites_fold[1:])),
                     color='#1f77b4',
                     linewidth=1.5,
                     label='TES Johnson Noise',
                 )
                 
                 ax.loglog(
-                    f,
-                    np.sqrt(np.abs(s_iload_fold)),
+                    f[1:],
+                    np.sqrt(np.abs(s_iload_fold[1:])),
                     color='#ff7f0e',
                     linewidth=1.5,
                     label='Load Noise',
                 )
                 ax.loglog(
-                    f,
-                    np.sqrt(np.abs(s_itfn_fold)),
+                    f[1:],
+                    np.sqrt(np.abs(s_itfn_fold[1:])),
                     color='#2ca02c',
                     linewidth=1.5,
                     label='TFN Noise',
                 )
                 ax.loglog(
-                    f,
-                    np.sqrt(np.abs(s_itot_fold)),
+                    f[1:],
+                    np.sqrt(np.abs(s_itot_fold[1:])),
                     color='#d62728',
                     linewidth=1.5,
                     label='Total Noise',
     )
                 ax.loglog(
-                    f,
-                    np.sqrt(np.abs(s_isquid_fold)),
+                    f[1:],
+                    np.sqrt(np.abs(s_isquid_fold[1:])),
                     color='#9467bd',
                     linewidth=1.5,
                     label='Squid+Electronics Noise',
                 )
                 
-                ax.loglog(f, np.sqrt(psd_fold), color='#8c564b', alpha=0.8, label='Raw Data')
+                ax.loglog(f[1:], np.sqrt(psd_fold[1:]),
+                          color='#8c564b', alpha=0.8,
+                          label='Raw Data')
                 
                 ax.set_ylabel('TES Current Noise $[A/\sqrt{\mathrm{Hz}}]$')
 
@@ -1173,50 +1189,50 @@ class NoiseModel(FilterData):
                 ax.set_title(f'{chan} Power Noise')
 
                 ax.loglog(
-                    f,
-                    np.sqrt(np.abs(s_ptes_fold)),
+                    f[1:],
+                    np.sqrt(np.abs(s_ptes_fold[1:])),
                     color='#1f77b4',
                     linewidth=1.5,
                     label='TES Johnson Noise',
                 )
                 
                 ax.loglog(
-                    f,
-                    np.sqrt(np.abs(s_pload_fold)),
+                    f[1:],
+                    np.sqrt(np.abs(s_pload_fold[1:])),
                     color='#ff7f0e',
                     linewidth=1.5,
                     label='Load Noise',
                 )
                 ax.loglog(
-                    f,
-                    np.sqrt(np.abs(s_ptfn_fold)),
+                    f[1:],
+                    np.sqrt(np.abs(s_ptfn_fold[1:])),
                     color='#2ca02c',
                     linewidth=1.5,
                     label='TFN Noise',
                 )
                 ax.loglog(
-                    f,
-                    np.sqrt(np.abs(s_ptot_fold)),
+                    f[1:],
+                    np.sqrt(np.abs(s_ptot_fold[1:])),
                     color='#d62728',
                     linewidth=1.5,
                     label='Total Noise',
     )
                 ax.loglog(
-                    f,
-                    np.sqrt(np.abs(s_psquid_fold)),
+                    f[1:],
+                    np.sqrt(np.abs(s_psquid_fold[1:])),
                     color='#9467bd',
                     linewidth=1.5,
                     label='Squid+Electronics Noise',
                 )
                 
-                ax.loglog(f, np.sqrt(p_psd_fold), color='#8c564b',
+                ax.loglog(f[1:], np.sqrt(p_psd_fold[1:]), color='#8c564b',
                           alpha=0.8, label='Raw Data')
 
                 ax.set_ylabel(r'Input Referenced Power Noise [W/$\sqrt{\mathrm{Hz}}$]')
              
                 lgd = plt.legend(loc='upper right')
 
-
+                plt.show()
                 
     def _flatten_psd(self, f, psd):
         """
