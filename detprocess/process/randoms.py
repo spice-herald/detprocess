@@ -530,7 +530,7 @@ class Randoms:
                         feature_dict['trigger_index'].append(int(trigger_index))
                         feature_dict['trigger_time'].append(trigger_time)
                         feature_dict['trigger_type'].append(3)
-                        feature_dict['data_type'].append(int(metadata['run_type']))
+                        feature_dict['data_type'].append((metadata['run_type']))
                         feature_dict['fridge_run_number'].append(int(metadata['fridge_run']))
                         feature_dict['trigger_prod_id'].append(trigger_id)
                         feature_dict['trigger_prod_group_name'].append(trigger_prod_group_name)
@@ -815,6 +815,10 @@ class Randoms:
                 and 'restricted' in file_name):
                 continue
             
+            # skip iv
+            if 'iv_' in file_name:
+                continue
+                
             # skip didv / external trigger
             if ('didv_' in file_name
                 or 'exttrig_' in file_name):
