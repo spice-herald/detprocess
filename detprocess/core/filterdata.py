@@ -1440,7 +1440,12 @@ class FilterData:
         ax.tick_params(which='both', direction='in', right=True, top=True)
         ax.grid(which='minor', linestyle='dotted')
         ax.grid(which='major')
-        ax.set_title('Noise PSD',fontweight='bold')
+        if tag != 'default':
+            ax.set_title(f'Noise PSD ("{tag}")',
+                         fontweight='bold')
+        else:
+            ax.set_title(f'Noise PSD',fontweight='bold')
+        
         ax.set_xlabel('Frequency [Hz]',fontweight='bold')
         if  unit=='pA':
             ax.set_ylabel('PSD [pA/rtHz]',fontweight='bold')
