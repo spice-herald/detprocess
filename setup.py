@@ -36,7 +36,7 @@ class CleanCommand(Command):
 
 setup(
     name="detprocess",
-    version="0.4.2",
+    version="0.4.3",
     description="Detector Data Processing Package",
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -54,9 +54,9 @@ setup(
         'scipy',
         'matplotlib',
         'pyyaml',
-        'qetpy>=1.6.8',
+        'qetpy>=1.6.9',
         'pandas',
-        'pytesdaq>=0.3.9',
+        'pytesdaq>=0.4.0',
         'scikit-image',
         'iminuit>=2',
         'seaborn',

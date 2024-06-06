@@ -8,7 +8,10 @@ from glob import glob
 import vaex as vx
 from pathlib import Path
 from scipy.signal import unit_impulse
+from datetime import datetime
 from detprocess.core.filterdata import FilterData
+import stat
+
 
 
 class DIDVAnalysis(FilterData):
@@ -17,7 +20,9 @@ class DIDVAnalysis(FilterData):
     QETpy. DIDV data are stored 
     """
 
-    def __init__(self, verbose=True):
+    def __init__(self, verbose=True,
+                 auto_save_hdf5=False,
+                 file_path_name=None):
         """
         Initialize class
 
@@ -36,6 +41,30 @@ class DIDVAnalysis(FilterData):
         self._didv_data = None
         
 
+        # save results
+        self._save_hdf5 = auto_save_hdf5
+        self._save_path = None
+        self._file_name = self._set_file_name()
+        
+        if file_path_name is not None:
+            if os.path.isfile(file_path_name):
+                self._save_path = os.path.dirname(file_path_name)
+                self._file_name = os.path.basename(file_path_name)
+            elif os.path.isdir(file_path_name):
+                self._save_path = file_path_name
+            else:
+                raise ValueError('ERROR: "file_path_name" should be a '
+                                 'file or path!')
+
+        # display
+        if self._save_hdf5:
+            full_path_file = self._file_name
+            if self._save_path is not None:
+                full_path_file = self._save_path + '/' + self._file_name
+            print(f'INFO: Results will be automatically saved '
+                  f'in {full_path_file}')
+
+            
     def clear(self, channels=None):
         """
         Clear all data
@@ -87,7 +116,7 @@ class DIDVAnalysis(FilterData):
         poles_str = str(poles) + 'poles'
         if 'dpdi_' + poles_str not in self._didv_data[channel]:
             raise ValueError(f'ERROR: No dpdi found for '
-                             'channel {channel}!')
+                             f'channel {channel}!')
      
         dpdi = self._didv_data[channel]['dpdi_' +  poles_str]
         dpdi_freqs = self._didv_data[channel]['dpdi_freqs_' +  poles_str]
@@ -137,7 +166,7 @@ class DIDVAnalysis(FilterData):
 
         
     def process_raw_data(self, channels,
-                         raw_path, series=None,
+                         files_or_path, series=None,
                          overwrite=False):
         
         """
@@ -152,11 +181,37 @@ class DIDVAnalysis(FilterData):
             channels = [channels]
 
         for chan in channels:
-            self._process_raw_data(chan, raw_path,
+            self._process_raw_data(chan, files_or_path,
                                    series=series,
                                    overwrite=overwrite)
 
-            
+        # update save path if not set already
+        if self._save_path is None:
+
+            dir_name = files_or_path
+            if isinstance(files_or_path, list):
+                dir_name = files_or_path[0]
+            if os.path.isfile(dir_name):
+                dir_name = os.path.dirname(dir_name)
+                
+            if '/processed' in dir_name:
+                dir_name = dir_name.replace('/processed',
+                                            '/filterdata')
+            if '/raw' in dir_name:
+                dir_name = dir_name.replace('/raw',
+                                            '/filterdata')
+            self._save_path = dir_name
+
+            if not os.path.isdir(dir_name):
+                try:
+                    os.makedirs(dir_name)
+                    os.chmod(dir_name, stat.S_IRWXG | stat.S_IRWXU |
+                             stat.S_IROTH | stat.S_IXOTH)
+                except OSError:
+                    raise ValueError('\nERROR: Unable to create directory "'
+                                     + dir_name  + '"!\n')
+        else:
+            self._save_path = './'       
         
     def set_processed_data(self, channels,
                            data,
@@ -395,15 +450,19 @@ class DIDVAnalysis(FilterData):
 
             if lgc_plot:
                 
+                if 2 in list_of_poles:
+                    self.print_fit_result(chan, poles=2)
+                    
                 if 3 in list_of_poles:
                     self.print_fit_result(chan, poles=3)
-                elif 2 in list_of_poles:
-                    self.print_fit_result(chan, poles=2)
                 
                 self.plot_fit_result(chan)
 
 
-            
+        # save hdf5
+        if self._save_hdf5:
+            self.save_didv_data()
+          
     
     
     def calc_smallsignal_params(self,
@@ -478,7 +537,13 @@ class DIDVAnalysis(FilterData):
 
             # replace
             self._didv_data[chan]['didvobj'] = didvobj
-      
+
+            
+        # save hdf5
+        if self._save_hdf5:
+            self.save_didv_data()
+            
+            
     def calc_bias_params_infinite_loop_gain(self, channels=None):
                                            
         """
@@ -554,14 +619,19 @@ class DIDVAnalysis(FilterData):
                     rp=rp)
 
                 self._didv_data[chan]['didvobj'] = didvobj
-               
-                                                          
-            
+
+
+
+                
+        # save hdf5
+        if self._save_hdf5:
+            self.save_didv_data()
+                        
    
     def calc_dpdi(self, freqs, channels=None, list_of_poles=None,
                   lgc_plot=False):
         """
-        calculate dpdi
+        calculate dpdi in units of Volts
         """
 
         # check channels
@@ -606,7 +676,12 @@ class DIDVAnalysis(FilterData):
                 self._didv_data[chan]['dpdi_err_' +  poles_str] = dpdi_err
                 self._didv_data[chan]['dpdi_freqs_' + poles_str] = freqs
 
+
                 
+        # save hdf5
+        if self._save_hdf5:
+            self.save_didv_data()
+                   
                 
     def calc_energy_resolution(self, channel, psd,
                                poles=3, fs=None, template=None,
@@ -623,10 +698,6 @@ class DIDVAnalysis(FilterData):
             raise ValueError(f'ERROR: No data found for '
                              'channel {channel}!')
 
-        # check if poles fitted
-        if poles != 3:
-            raise ValueError(f'ERROR: Resoultion can only be calculated for '
-                             '3-poles fit currently!')
         list_of_fitted_poles = (
             self._didv_data[channel]['didvobj'].get_list_fitted_poles()
         )
@@ -677,7 +748,7 @@ class DIDVAnalysis(FilterData):
         res_dict['collection_efficiency'] = collection_eff
         res_dict['energy_resolution'] = resolution
         self._didv_data[channel]['resolution'] = res_dict
-        
+
         return resolution
             
                 
@@ -810,7 +881,7 @@ class DIDVAnalysis(FilterData):
             # save
             self._didv_data[chan]['didvobj_prior'] = didvobj_prior
               
-    def get_fit_results(self, channel, poles):
+    def get_fit_results(self, channel, poles, verbose=True):
         """
         Get fit result
         """
@@ -823,7 +894,7 @@ class DIDVAnalysis(FilterData):
         # check if fit done
         result = self._didv_data[channel]['didvobj'].fitresult(poles)
         if not result:
-            if self._verbose:
+            if self._verbose and verbose:
                 print(f'WARNING: {channel}: No fit result found for poles {poles}! '
                       'Returning empty dictionary.')
         return result
@@ -897,7 +968,7 @@ class DIDVAnalysis(FilterData):
                     savepath=save_path,
                     savename=save_name,
                 )
-
+    
                 
     def print_fit_result(self, channels=None, poles=3):
         """
@@ -927,7 +998,7 @@ class DIDVAnalysis(FilterData):
                       'channel {chan}!')
                 continue
             
-            print(f'\n{chan} dIdV Fit Result:')
+            print(f'\n{chan} dIdV {poles}-poles Fit Result:')
 
             
             print('Fit chi2/Ndof = {:.3f}'.format(results['cost']))
@@ -956,11 +1027,7 @@ class DIDVAnalysis(FilterData):
                 print('L = {:.3f} +/- {:.4f} nH'.format(
                     vals_vector['L']*1e9, sigmas_vector['sigma_L']*1e9))
                 
-        
-
-
-
-                
+                    
     def compare_with_ivsweep(self, channel, poles=3):
         """
         Create a dataframe to compare results with
@@ -1138,9 +1205,98 @@ class DIDVAnalysis(FilterData):
         return df
 
 
+    def save_didv_data(self, channels=None, file_path_name=None):
+        """
+        Save didv data
+        """
+
+        # file_name
+        file_path = self._save_path
+        if file_path is None:
+            file_path = './'
+        file_name = self._file_name
+        
+        if  file_path_name is not None:
+            if os.path.isfile(file_path_name):
+                file_path = os.path.dirname(file_path_name)
+                file_name = os.path.basename(file_path_name)
+            elif os.path.isdir(file_path_name):
+                file_path = file_path_name
+            else:
+                raise ValueError('ERROR: "file_path_name" should be a '
+                                 'file or path!')
+        full_file_name = file_path + '/' + file_name
+        if file_path[-1] == '/':
+            full_file_name = file_path + file_name
+
+
+        # channels
+        if channels is None:
+            channels = self._didv_data.keys()
+        elif isinstance(channels, str):
+            channels = [channels]
+
+        for chan in channels:
+            if chan not in self._didv_data.keys():
+                raise ValueError(f'ERROR: No data found for '
+                                 'channel {chan}!')
+
+
+        # loop channels and set data
+        save_data = False
+        for chan in channels:
+
+            # metadata
+            metadata = dict()
+            metadata['channel'] = chan
+            
+            data_config = self.get_didv_data(chan)['data_config']
+            if data_config is not None:
+                metadata.update(data_config.copy())
+                
+            # 2-poles
+            results = self.get_fit_results(chan, 2, verbose=False)
+            if results:
+                self.set_didv_results(chan, results, 2,
+                                      metadata=metadata)
+                save_data = True
+
+                
+            # 3-poles
+            results = self.get_fit_results(chan, 3, verbose=False)
+            if results:
+                self.set_didv_results(chan, results, 3,
+                                      metadata=metadata)
+                save_data = True
+            
+            # dpdi
+            fs = None
+            if ('data_config' in self._didv_data[chan]
+                and 'fs' in self._didv_data[chan]['data_config']):
+                fs = self._didv_data[chan]['data_config']['fs']
+            
+            if 'dpdi_2poles' in self._didv_data[chan]:
+                dpdi_freqs,  dpdi= self.get_dpdi(chan, 2)
+                self.set_dpdi(chan, dpdi, dpdi_freqs, 2,
+                              sample_rate=fs,
+                              metadata=metadata)
+                
+            if 'dpdi_3poles' in self._didv_data[chan]:
+                dpdi_freqs, dpdi = self.get_dpdi(chan, 3)
+                self.set_dpdi(chan, dpdi, dpdi_freqs, 3,
+                              sample_rate=fs,
+                              metadata=metadata)
+
+        if not save_data:
+            print('WARNING: No dIdV data to save!')
+            return
+
+
+        self.save_hdf5(full_file_name, overwrite=True)
+     
                         
             
-    def _get_file_list(self, file_path,
+    def _get_file_list(self, files_or_path,
                        series=None):
         """
         Get file list from path. Return as a dictionary
@@ -1149,7 +1305,7 @@ class DIDVAnalysis(FilterData):
         Parameters
         ----------
 
-        file_path : str or list of str 
+        files_or_path : str or list of str 
            raw data group directory OR full path to HDF5  file 
            (or list of files). Only a single raw data group 
            allowed 
@@ -1171,9 +1327,9 @@ class DIDVAnalysis(FilterData):
 
         """
 
-        # convert file_path to list 
-        if isinstance(file_path, str):
-            file_path = [file_path]
+        # convert files_or_path to list 
+        if isinstance(files_or_path, str):
+            files_or_path = [files_or_path]
             
             
         # initialize
@@ -1183,7 +1339,7 @@ class DIDVAnalysis(FilterData):
 
 
         # loop files 
-        for a_path in file_path:
+        for a_path in files_or_path:
                    
             # case path is a directory
             if os.path.isdir(a_path):
@@ -1208,7 +1364,7 @@ class DIDVAnalysis(FilterData):
                     file_list = glob(a_path + '/*.hdf5')
                
                 # check a single directory
-                if len(file_path) != 1:
+                if len(files_or_path) != 1:
                     raise ValueError('Only single directory allowed! ' +
                                      'No combination files and directories')
                 
@@ -1315,7 +1471,7 @@ class DIDVAnalysis(FilterData):
             rshunt = float(detector_settings[channel]['shunt_resistance'])
         elif 'rshunt' in detector_settings[channel].keys():
             rshunt = float(detector_settings[channel]['rshunt'])
-        if rshunt == np.nan:
+        if rshunt is not None and np.isnan(rshunt):
             rshunt = None
             
         # parasitic resistance 
@@ -1324,9 +1480,9 @@ class DIDVAnalysis(FilterData):
             rp = float(detector_settings[channel]['parasitic_resistance'])
         elif 'rp' in detector_settings[channel].keys():
             rp = float(detector_settings[channel]['rp'])
-        if rp == np.nan:
+        if rp is not None and np.isnan(rp):
             rp = None
-            
+
                         
         # save relevant detector settings in dictionary
         data_config = dict()
@@ -1342,6 +1498,17 @@ class DIDVAnalysis(FilterData):
         data_config['sgfreq'] = sgfreq
         data_config['sgamp'] = sgamp
 
+
+
+        # add temperature
+        temperature_list = ['cp','mc','still']
+        for temp in temperature_list:
+            temp_par = 'temperature_' + temp
+            if temp_par in  detector_settings[channel].keys():
+                data_config[temp_par] = (
+                    float(detector_settings[channel][temp_par])
+                )
+                      
 
         # Apply cuts
         zerocut = np.all(traces!=0, axis=1)
@@ -1488,4 +1655,19 @@ class DIDVAnalysis(FilterData):
                                     'data_config': data_config,
                                     'resolution': None}
         
-    
+
+    def _set_file_name(self):
+        """
+        Set file name 
+        """
+
+        
+        now = datetime.now()
+        series_day = now.strftime('%Y') +  now.strftime('%m') + now.strftime('%d') 
+        series_time = now.strftime('%H') + now.strftime('%M')
+        series_name = ('D' + series_day + '_T'
+                       + series_time + now.strftime('%S'))
+
+        file_name = 'didv_analysis_' + series_name + '.hdf5'
+        
+        return file_name

@@ -257,7 +257,7 @@ class EventBuilder:
                 [event_metadata['dump_num']]*nb_triggers) .astype(int)   
         if 'run_type' in event_metadata.keys():
             metadata_dict['data_type'] = np.array(
-                [event_metadata['run_type']]*nb_triggers).astype(int)   
+                [event_metadata['run_type']]*nb_triggers)  
         if 'fridge_run' in event_metadata.keys():
             metadata_dict['fridge_run_number'] = np.array(
                 [event_metadata['fridge_run']]*nb_triggers).astype(int)   

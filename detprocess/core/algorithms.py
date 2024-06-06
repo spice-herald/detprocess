@@ -1,12 +1,12 @@
 import numpy as np
 import qetpy as qp
-from numpy.fft import fftfreq, fft
+from detprocess.utils import utils
+import random
 
 
 __all__ = [
     'FeatureExtractors',
 ]
-
 
 
 class FeatureExtractors:
@@ -17,81 +17,34 @@ class FeatureExtractors:
     convenience.
 
     """
-
     @staticmethod
-    def of1x1_nodelay(of_base=None,  template_tag='default',
-                      trace=None, template=None, psd=None,
-                      fs=None, nb_samples_pretrigger=None,
-                      lowchi2_fcutoff=10000,
-                      coupling='AC', integralnorm=False,
-                      feature_base_name='of1x1_nodelay',
-                      **kwargs):
+    def ofnxm(channel, of_base,
+              lowchi2_fcutoff=10000,
+              available_channels=None,
+              feature_base_name='ofnxm',
+              **kwargs):
         """
         Feature extraction for the no delay Optimum Filter.
-
-        The arguments "trace", "template", "psd"
-        (and associated parameters "fs", "nb_samples_pretrigger")
-        should only be used if  not already added in OF base object.
-        Otherwise keep as None
 
 
         Parameters
         ----------
-        of_base : OFBase object, optional
-           OFBase  if it has been instantiated independently
+        channel : str
+          channel with format 'chan1|chan2|chan3'
+          (order matter)
 
-
-        template_tag : str, option
-           tag of the template to be used for OF calculation,
-           Default: 'default'
-
-
-        trace : ndarray, optional
-            An ndarray containing the raw data to extract the feature
-            from. It is required if trace not already added in OFbase,
-            otherwise keep it as None
-
-        template : ndarray, optional
-            The template to use for the optimum filter. It is required
-            if template not already added in OFbase,
-            otherwise keep it as None
-
-        psd : ndarray, optional
-            The PSD to use for the optimum filter.It is required
-            if psd not already added in OFbase,
-            otherwise keep it as None
-
-        fs : float, optional
-            The digitization rate of the data in trace, required
-            if  "of_base" argument  is None, otherwise set to None
-
-        nb_samples_pretrigger : int, optional
-            Number of pre-trigger samples, required
-            if "of_base" argument is None, otherwise set to None
+        of_base : OFBase object
+           OFBase QETpy object 
 
         lowchi2_fcutoff : float, optional
             The frequency (in Hz) that we should cut off the chi^2 when
             calculating the low frequency chi^2. Default is 10 kHz.
 
-        coupling : str, optional
-            Only used if "psd" argument is not None.
-            "coupling" string etermines if the zero
-            frequency bin of the psd should be ignored (i.e. set to infinity)
-            when calculating the optimum amplitude. If set to 'AC', then the zero
-            frequency bin is ignored. If set to anything else, then the
-            zero frequency bin is kept. O
-
-        integralnorm : bool, optional
-            Only used if "template" argument is not None.
-            If set to True, then  template will be normalized
-            to an integral of 1, and any optimum filters will
-            instead return the optimum integral in units of Coulombs.
-            If set to False, then the usual optimum filter amplitudes
-            will be returned (in units of Amps).
+        available_channels : list
+           list of available channels
 
         feature_base_name : str, option
             output feature base name
-
 
 
         Returns
@@ -100,29 +53,84 @@ class FeatureExtractors:
             Dictionary containing the various extracted features.
 
         """
+        
+        debug = False
 
+        
+        # split channel name into list (same order)
+        channel_list, separator = utils.split_channel_name(
+            channel,
+            available_channels=available_channels,
+            separator='|')
+
+
+        # TEMP CHECK data in of_base
+        if debug:
+            print(f'csd shape for channel {channel} = '
+                  f'{of_base.csd(channel).shape}')
+       
+            for chan in channel_list:
+                print(f'Signal template fft for {chan} = '
+                      f'{of_base.template_fft(chan).shape}')
+        
+
+        # DUMMY OUTPUT    
+
+        retdict = dict()
+        for ichan, chan in enumerate(channel_list):
+           retdict[f'amp_{feature_base_name}_{chan}'] = random.uniform(4, 10)
+           retdict[f'chi2_{feature_base_name}_{chan}'] = 1.0
+           retdict[f't0_{feature_base_name}_{chan}'] = 1e-6
+           
+        return retdict
+    
+
+    @staticmethod
+    def of1x1_nodelay(channel, of_base,
+                      template_tag='default',
+                      lowchi2_fcutoff=10000,
+                      feature_base_name='of1x1_nodelay',
+                      **kwargs):
+        """
+        Feature extraction for the no delay Optimum Filter.
+
+
+        Parameters
+        ----------
+        channel : str
+          channel name
+
+        of_base : OFBase object
+           OFBase QETpy object 
+
+        template_tag : str, option
+           tag of the template to be used for OF calculation,
+           Default: 'default'
+
+        lowchi2_fcutoff : float, optional
+            The frequency (in Hz) that we should cut off the chi^2 when
+            calculating the low frequency chi^2. Default is 10 kHz.
+
+        feature_base_name : str, option
+            output feature base name
+
+        Returns
+        -------
+        retdict : dict
+            Dictionary containing the various extracted features.
+
+        """
 
         # instantiate OF 1x1
-        OF = qp.OF1x1(
-            of_base=of_base,
-            template_tag=template_tag,
-            template=template,
-            psd=psd,
-            sample_rate=fs,
-            pretrigger_samples=nb_samples_pretrigger,
-            coupling=coupling,
-            integralnorm=integralnorm,
-        )
-
-
-        # calc (signal needs to be None if set already)
-        OF.calc_nodelay(signal=trace,
-                       lowchi2_fcutoff=lowchi2_fcutoff)
+        OF = qp.OF1x1(of_base=of_base,
+                      channel=channel,
+                      template_tag=template_tag)
+        
+        # calc 
+        OF.calc_nodelay(lowchi2_fcutoff=lowchi2_fcutoff)
 
         # get results
         amp, t0, chi2, lowchi2 = OF.get_result_nodelay()
-
-
 
         # store features
         retdict = {
@@ -136,79 +144,35 @@ class FeatureExtractors:
 
 
     @staticmethod
-    def of1x1_unconstrained(of_base=None, template_tag='default',
+    def of1x1_unconstrained(channel, of_base,
+                            template_tag='default',
                             interpolate=False,
-                            trace=None, template=None, psd=None,
-                            fs=None, nb_samples_pretrigger=None,
                             lowchi2_fcutoff=10000,
-                            coupling='AC', integralnorm=False,
                             feature_base_name='of1x1_unconstrained',
                             **kwargs):
         """
         Feature extraction for the unconstrained Optimum Filter.
 
-        The arguments "trace", "template", "psd"
-        (and associated parameters "fs", "nb_samples_pretrigger")
-        should only be used if  not already added in OF base object.
-        Otherwise keep as None
-
 
         Parameters
         ----------
-        of_base : OFBase object, optional
-           OFBase  if it has been instantiated independently
+        channel : str
+          channel name
 
+        of_base : OFBase object
+           OFBase  
 
         template_tag : str, option
            tag of the template to be used for OF calculation,
            Default: 'default'
 
-       interpolate : bool, optional
+        interpolate : bool, optional
            if True, do delay interpolation
            default: False
-
-        trace : ndarray, optional
-            An ndarray containing the raw data to extract the feature
-            from. It is required if trace not already added in OFbase,
-            otherwise keep it as None
-
-        template : ndarray, optional
-            The template to use for the optimum filter. It is required
-            if template not already added in OFbase,
-            otherwise keep it as None
-
-        psd : ndarray, optional
-            The PSD to use for the optimum filter.It is required
-            if psd not already added in OFbase,
-            otherwise keep it as None
-
-        fs : float, optional
-            The digitization rate of the data in trace, required
-            if  "of_base" argument  is None, otherwise set to None
-
-        nb_samples_pretrigger : int, optional
-            Number of pre-trigger samples, required
-            if "of_base" argument is None, otherwise set to None
 
         lowchi2_fcutoff : float, optional
             The frequency (in Hz) that we should cut off the chi^2 when
             calculating the low frequency chi^2. Default is 10 kHz.
-
-        coupling : str, optional
-            Only used if "psd" argument is not None.
-            "coupling" string etermines if the zero
-            frequency bin of the psd should be ignored (i.e. set to infinity)
-            when calculating the optimum amplitude. If set to 'AC', then ths zero
-            frequency bin is ignored. If set to anything else, then the
-            zero frequency bin is kept. O
-
-        integralnorm : bool, optional
-            Only used if "template" argument is not None.
-            If set to True, then  template will be normalized
-            to an integral of 1, and any optimum filters will
-            instead return the optimum integral in units of Coulombs.
-            If set to False, then the usual optimum filter amplitudes
-            will be returned (in units of Amps).
 
         feature_base_name : str, option
             output feature base name
@@ -224,22 +188,11 @@ class FeatureExtractors:
 
 
         # instantiate OF1x1
-        OF = qp.OF1x1(
-            of_base=of_base,
-            template_tag=template_tag,
-            template=template,
-            psd=psd,
-            sample_rate=fs,
-            pretrigger_samples=nb_samples_pretrigger,
-            coupling=coupling,
-            integralnorm=integralnorm,
-        )
-
-
-
-        # calc (signal needs to be None if set already)
-        OF.calc(signal=trace,
-                lowchi2_fcutoff=lowchi2_fcutoff,
+        OF = qp.OF1x1(of_base=of_base,
+                      channel=channel,
+                      template_tag=template_tag)
+        # calc
+        OF.calc(lowchi2_fcutoff=lowchi2_fcutoff,
                 interpolate_t0=interpolate,
                 lgc_fit_nodelay=False,
                 lgc_plot=False)
@@ -258,165 +211,30 @@ class FeatureExtractors:
 
         return retdict
 
-    @staticmethod
-    def of1x2(of_base=None, trace=None, template_1_tag='Scintillation',
-                            template_1=None,template_2_tag='Evaporation',template_2=None,
-                            psd=None, sample_rate=None,fs=None,
-                            pretrigger_msec=None, pretrigger_samples=None,
-                            coupling='AC', integralnorm=False,
-                            channel_name='unknown',
-                            feature_base_name='of1x2',
-                            **kwargs):
-        """
-        Feature extraction for the one channel, two template Optimum Filter.
-
-        The arguments "trace", "template_1_tag", "template_1", "template_2_tag", "template_2", "psd"
-        (and associated parameters "fs", "nb_samples_pretrigger")
-        should only be used if  not already added in OF base object.
-        Otherwise keep as None
-
-
-        Parameters
-        ----------
-        of_base : OFBase object, optional
-           OFBase  if it has been instantiated independently
-
-        trace : ndarray, optional
-            An ndarray containing the raw data to extract the feature
-            from. It is required if trace not already added in OFbase,
-            otherwise keep it as None
-
-        template_1_tag : str, option
-           tag of the template to be used for OF calculation of the scintillation part; please use Scintilation,
-           Default: 'Scintillation'
-
-        template_1 : ndarray, optional
-            The scintillation template to use for the optimum filter. It is required
-            if template not already added in OFbase,
-            otherwise keep it as None
-
-        template_2_tag : str, option
-           tag of the template to be used for OF calculation of the evaporation part; please use Evaporation,
-           Default: 'Evaporation'
-
-        template_2 : ndarray, optional
-            The evaporation template to use for the optimum filter. It is required
-            if template not already added in OFbase,
-            otherwise keep it as None
-
-        psd : ndarray, optional
-            The PSD to use for the optimum filter.It is required
-            if psd not already added in OFbase,
-            otherwise keep it as None
-
-        fs : float, optional
-            The digitization rate of the data in trace, required
-            if  "of_base" argument  is None, otherwise set to None
-
-        nb_samples_pretrigger : int, optional
-            Number of pre-trigger samples, required
-            if "of_base" argument is None, otherwise set to None
-
-
-        coupling : str, optional
-            Only used if "psd" argument is not None.
-            "coupling" string etermines if the zero
-            frequency bin of the psd should be ignored (i.e. set to infinity)
-            when calculating the optimum amplitude. If set to 'AC', then ths zero
-            frequency bin is ignored. If set to anything else, then the
-            zero frequency bin is kept. O
-
-        integralnorm : bool, optional
-            Only used if "template" argument is not None.
-            If set to True, then  template will be normalized
-            to an integral of 1, and any optimum filters will
-            instead return the optimum integral in units of Coulombs.
-            If set to False, then the usual optimum filter amplitudes
-            will be returned (in units of Amps).
-
-        feature_base_name : str, option
-            output feature base name
-
-
-
-        Returns
-        -------
-        retdict : dict
-            Dictionary containing the various extracted features.
-
-        """
-
-
-        # instantiate OF1x2
-        OF = qp.OF1x2(
-            of_base=of_base,
-            template_1_tag=template_1_tag,
-            template_1=template_1,
-            template_2_tag=template_2_tag,
-            template_2=template_2,
-            psd=psd,
-            sample_rate=fs,
-            pretrigger_samples=pretrigger_samples,
-            coupling=coupling,
-            channel_name= channel_name,
-            integralnorm=integralnorm,
-        )
-
-
-
-        # calc (signal needs to be None if set already)
-        OF.calc(signal=trace,
-                lgc_plot=False)
-
-        # get results
-        scintillation_amp = OF._amplitude[OF._template_1_tag]
-        evaporation_amp = OF._amplitude[OF._template_2_tag]
-        time_diff= OF._time_diff_two_Pulses
-        Starting_time_first_pulse =  OF._time_first_pulse
-        Starting_time_second_pulse =  OF._time_second_pulse
-
-
-        # store features
-        retdict = {
-            ('scintillation_amp_' + feature_base_name): scintillation_amp,
-            ('evaporation_amp_' + feature_base_name): evaporation_amp,
-            ('time_diff_' + feature_base_name): time_diff,
-            ('scintillation_time_index' + feature_base_name): Starting_time_first_pulse ,
-            ('evaporation_time_index' + feature_base_name): Starting_time_second_pulse
-        }
-
-        return retdict
-
-
 
     @staticmethod
-    def of1x1_constrained(of_base=None, template_tag='default',
+    def of1x1_constrained(channel, of_base,
+                          template_tag='default',
                           window_min_from_trig_usec=None,
                           window_max_from_trig_usec=None,
                           window_min_index=None,
                           window_max_index=None,
                           lgc_outside_window=False,
                           interpolate=False,
-                          trace=None, template=None, psd=None,
-                          fs=None, nb_samples_pretrigger=None,
                           lowchi2_fcutoff=10000,
-                          coupling='AC', integralnorm=False,
                           feature_base_name='of1x1_constrained',
                           **kwargs):
         """
         Feature extraction for the constrained Optimum Filter.
 
-        The arguments "trace", "template", "psd"
-        (and associated parameters "fs", "nb_samples_pretrigger")
-        should only be used if  not already added in OF base object.
-        Otherwise keep as None
-
-
+   
         Parameters
         ----------
-        of_base : OFBase object, optional
-           OFBase  if it has been instantiated independently
+        channel : str
+          channel name
 
+        of_base : OFBase object
+           OFBase QETpy object 
 
         template_tag : str, optional
            tag of the template to be used for OF calculation,
@@ -458,48 +276,10 @@ class FeatureExtractors:
            if True, do delay interpolation
            default: False
 
-        trace : ndarray, optional
-            An ndarray containing the raw data to extract the feature
-            from. It is required if trace not already added in OFbase,
-            otherwise keep it as None
-
-        template : ndarray, optional
-            The template to use for the optimum filter. It is required
-            if template not already added in OFbase,
-            otherwise keep it as None
-
-        psd : ndarray, optional
-            The PSD to use for the optimum filter.It is required
-            if psd not already added in OFbase,
-            otherwise keep it as None
-
-        fs : float, optional
-            The digitization rate of the data in trace, required
-            if  "of_base" argument  is None, otherwise set to None
-
-        nb_samples_pretrigger : int, optional
-            Number of pre-trigger samples, required
-            if "of_base" argument is None, otherwise set to None
-
         lowchi2_fcutoff : float, optional
             The frequency (in Hz) that we should cut off the chi^2 when
             calculating the low frequency chi^2. Default is 10 kHz.
 
-        coupling : str, optional
-            Only used if "psd" argument is not None.
-            "coupling" string etermines if the zero
-            frequency bin of the psd should be ignored (i.e. set to infinity)
-            when calculating the optimum amplitude. If set to 'AC', then ths zero
-            frequency bin is ignored. If set to anything else, then the
-            zero frequency bin is kept. O
-
-        integralnorm : bool, optional
-            Only used if "template" argument is not None.
-            If set to True, then  template will be normalized
-            to an integral of 1, and any optimum filters will
-            instead return the optimum integral in units of Coulombs.
-            If set to False, then the usual optimum filter amplitudes
-            will be returned (in units of Amps).
 
         feature_base_name : str, optional
             output feature base name
@@ -512,25 +292,13 @@ class FeatureExtractors:
             Dictionary containing the various extracted features.
 
         """
-
-
         # instantiate OF1x1
-        OF = qp.OF1x1(
-            of_base=of_base,
-            template_tag=template_tag,
-            template=template,
-            psd=psd,
-            sample_rate=fs,
-            pretrigger_samples=nb_samples_pretrigger,
-            coupling=coupling,
-            integralnorm=integralnorm,
-        )
-
-
+        OF = qp.OF1x1(of_base=of_base,
+                      channel=channel,
+                      template_tag=template_tag)
 
         # calc (signal needs to be None if set already)
-        OF.calc(signal=trace,
-                window_min_from_trig_usec=window_min_from_trig_usec,
+        OF.calc(window_min_from_trig_usec=window_min_from_trig_usec,
                 window_max_from_trig_usec=window_max_from_trig_usec,
                 window_min_index=window_min_index,
                 window_max_index=window_max_index,
@@ -543,16 +311,13 @@ class FeatureExtractors:
 
         # get results
         amp, t0, chi2, lowchi2 = OF.get_result_withdelay()
-
-
+              
         # get chi2 no pulse
         chi2_nopulse = OF.get_chisq_nopulse()
-
 
         # get OF resolution
         ampres = OF.get_energy_resolution()
         timeres = OF.get_time_resolution(amp)
-
 
         retdict = {
             ('amp_' + feature_base_name): amp,
@@ -562,6 +327,70 @@ class FeatureExtractors:
             ('chi2nopulse_' + feature_base_name): chi2_nopulse,
             ('ampres_' + feature_base_name): ampres,
             ('timeres_' + feature_base_name): timeres,
+        }
+
+        return retdict
+    
+    @staticmethod
+    def of1x2(channel, of_base,
+              template_tag_1='Scintillation',
+              template_tag_2='Evaporation',
+              feature_base_name='of1x2',
+              **kwargs):
+        """
+        Feature extraction for the one channel, two template Optimum Filter.
+
+        Parameters
+        ----------
+        of_base : OFBase object, optional
+           OFBase  if it has been instantiated independently
+
+        template_tag_1: str, option
+           tag of the template to be used for OF calculation of the scintillation part; please use Scintilation,
+           Default: 'Scintillation'
+
+        template_tag_2 : str, option
+           tag of the template to be used for OF calculation of the evaporation part; please use Evaporation,
+           Default: 'Evaporation'
+
+        feature_base_name : str, option
+            output feature base name
+
+
+
+        Returns
+        -------
+        retdict : dict
+            Dictionary containing the various extracted features.
+
+        """
+
+        # instantiate OF1x2
+        OF = qp.OF1x2(
+            of_base=of_base,
+            template_1_tag=template_tag_1,
+            template_2_tag=template_tag_1,
+            channel_name= channel,
+        )
+
+        # calc (signal needs to be None if set already)
+        OF.calc(lgc_plot=False)
+
+        # get results
+        scintillation_amp = OF._amplitude[OF._template_1_tag]
+        evaporation_amp = OF._amplitude[OF._template_2_tag]
+        time_diff= OF._time_diff_two_Pulses
+        Starting_time_first_pulse =  OF._time_first_pulse
+        Starting_time_second_pulse =  OF._time_second_pulse
+
+
+        # store features
+        retdict = {
+            ('scintillation_amp_' + feature_base_name): scintillation_amp,
+            ('evaporation_amp_' + feature_base_name): evaporation_amp,
+            ('time_diff_' + feature_base_name): time_diff,
+            ('scintillation_time_index' + feature_base_name): Starting_time_first_pulse ,
+            ('evaporation_time_index' + feature_base_name): Starting_time_second_pulse
         }
 
         return retdict
@@ -824,10 +653,10 @@ class FeatureExtractors:
 
 
     @staticmethod
-    def psd_amp(of_base=None, trace=None, fs=None,
-               f_lims=[],
-               feature_base_name='psd_amp',
-               **kwargs):
+    def psd_amp(channel, of_base,
+                f_lims=[],
+                feature_base_name='psd_amp',
+                **kwargs):
         """
         Feature extraction for measuring the average amplitude of a
         ffted trace in a range of frequencies. Rather than recalculating
@@ -841,15 +670,6 @@ class FeatureExtractors:
         ----------
         of_base : OFBase object, optional
             OFBase  if it has been instantiated independently
-
-        trace : ndarray, optional
-            An ndarray containing the raw data to extract the feature
-            from. It is required if trace not already added in OFbase,
-            otherwise keep it as None
-
-        fs : float, optional
-            If trace is passed, used to construct fft of trace and fft
-            frequencies array.
 
         f_lims : list of list of floats
             A list of [f_low, f_high]s between which the averaged PSD is
@@ -865,16 +685,11 @@ class FeatureExtractors:
 
         """
 
-        if of_base is not None:
-            freqs = of_base._fft_freqs
-            trace_psd = np.abs(of_base._signal_fft)
+        # get OF base data
+        freqs = of_base.fft_freqs()
+        trace_psd = np.abs(of_base.signal_fft(channel))
 
-        else:
-            trace_length = len(trace[0])
-            df = fs/trace_length
-            freqs = fftfreq(trace_length, 1.0/fs)
-            trace_psd = np.abs(fft(trace, axis=-1)/trace_length/df)
-
+        # calc
         i = 0
         retdict = {}
         while i < len(f_lims):
@@ -895,7 +710,9 @@ class FeatureExtractors:
             av_psd = np.average(trace_psd[f_low_index:f_high_index])
 
             # store features
-            retdict[feature_base_name + '_' + str(round(f_low)) + '_' + str(round(f_high))] = av_psd
+            retdict[feature_base_name + '_'
+                    + str(round(f_low))
+                    + '_' + str(round(f_high))] = av_psd
             i += 1
 
         return retdict

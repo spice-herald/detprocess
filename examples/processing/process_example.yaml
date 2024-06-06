@@ -1,0 +1,213 @@
+# ##############################################################
+# Processing configuration example using UCB R20 data
+# version: development
+#
+#
+# Available window parameters:
+#
+#   window_min_from_start_usec
+#   window_max_from_start_usec
+#   window_min_to_end_usec
+#   window_max_to_end_usec
+#   window_min_from_trig_usec
+#   window_max_from_trig_usec
+# 
+# 
+# Syntax tip: NO TAB ALLOWED.... If tab you will get an error:
+#      ScannerError: while scanning for the next token
+#      found character '\t' that cannot start any token
+#      in "./process_example.yaml", line 133, column 1
+# ##############################################################
+
+
+
+# Full path to filter file
+# It is used for both trigger and feature processing
+
+filter_file: ./filter_example.hdf5
+
+# ================================================
+# Trigger processing
+# ================================================
+
+trigger:
+
+   coincident_window_msec: 0.01
+   #coincident_window_samples: 12
+
+
+   CPDv21Ge:
+       run: False
+       template_tag: default
+       psd_tag: default
+       pileup_window_msec: 10
+       threshold_sigma: 10
+       #positive_pulses: True	
+       
+   IrPtTESSmall,IrPtTESBig:
+       run: True
+       template_tag: default
+       psd_tag: default
+       pileup_window_msec: 10
+       threshold_sigma: 10
+
+
+   IrPtTESSmall+IrPtTESBig:
+       run: False
+       trigger_name: TotIrPt
+       template_tag: default
+       psd_tag: default
+       pileup_window_msec: 10
+       threshold_sigma: 10
+
+
+
+
+# ================================================
+# Feature processing
+# ================================================
+
+
+# ---------------------------------------
+# Feature configuration for ALL
+# INDIVIDUAL channels (does not include
+# sum of channels for example)
+#
+# 
+# Each channel/algorithm can be modified/disable
+# separately using channel name as field
+#
+# This section enable all channels. If
+# processing not done on a specific
+# channel, it can then be disabled (example
+# further below)
+# ---------------------------------------
+
+all:
+    nb_samples: 25000
+    nb_pretrigger_samples: 12500
+
+    of1x1_constrained:
+        run: False
+        window_min_from_trig_usec: -400
+        window_max_from_trig_usec: 400
+
+    baseline:
+        run: True
+        window_min_from_start_usec: 0
+        window_max_from_trig_usec: -1000
+
+    baseline_start:
+        run: True
+        base_algorithm: baseline
+        window_min_from_start_usec: 0
+        window_max_from_start_usec: 1000
+
+    baseline_end:   
+        run: True
+        base_algorithm: baseline
+        window_min_to_end_usec: 1000
+        window_max_to_end_usec: 0
+
+    integral:
+        run: True
+        window_min_from_trig_usec: -500
+        window_max_from_trig_usec: 500
+
+    maximum:
+        run: True
+        window_min_from_trig_usec: -500
+        window_max_from_trig_usec: 500
+
+    minimum:
+        run: True
+        window_min_from_trig_usec: -500
+        window_max_from_trig_usec: 500
+
+
+
+
+# ---------------------------------------
+# Feature configuration for specific
+# channels
+#
+# Channels can be grouped using a comma
+#  for example: chan1,chan2,chan3
+#
+# overwrite algorithm configuration from
+# ALL
+# ---------------------------------------
+
+
+CPDv21Ge:
+    disable: True
+  
+    of1x1_unconstrained_glitch:
+        run: True
+        base_algorithm: of1x1_unconstrained
+        template_tag: glitch
+        lowchi2_fcutoff: 1000
+      
+
+    of1x1_nodelay:
+        run: True
+     
+
+    of1x1_constrained:
+        run: True
+        window_min_from_trig_usec: -400
+        window_max_from_trig_usec: 400
+        lowchi2_fcutoff: 1000
+
+    energyabsorbed:
+        run: True
+        window_min_from_trig_usec: -100
+        window_max_from_trig_usec: 1500
+        vb: -9.25e-7
+        i0: -11.132e-6
+        rl: 9.4e-3
+
+    minmax:
+        run: True
+        window_min_from_trig_usec: -500
+        window_max_from_trig_usec: 500
+    
+
+# example of disabling channels
+# by default, if at least 1 algorithm
+# channels are enabled
+
+IrPtTESSmall,IrPtTESBig:
+    disable: False
+
+    of1x1_nodelay: 
+        run: True
+
+    of1x1_constrained:
+        run: True
+        template_tag: 3poles
+        window_min_from_trig_usec: -500
+        window_max_from_trig_usec: 500
+     
+
+# ---------------------------------------
+# Other types of "channel" such as
+# sum of pulses
+# ---------------------------------------
+
+IrPtTESSmall+IrPtTESBig:
+    feature_channel: TotIrPt
+    
+    nb_samples: 25000
+    nb_pretrigger_samples: 12500
+    
+    of1x1_nodelay: 
+        run: True
+
+    of1x1_unconstrained:
+        run: True
+
+    of1x1_constrained:
+        run: True
+        window_min_from_trig_usec: -300
+        window_max_from_trig_usec: 300
