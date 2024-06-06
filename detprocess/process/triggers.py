@@ -495,8 +495,7 @@ class TriggerProcessing:
                 # end of file or raw data issue
                 if not success:
                     do_stop = True
-                    
-                            
+                                           
                 # -----------------------
                 # Handle stop or
                 # nb trigger/memory limit
@@ -520,13 +519,13 @@ class TriggerProcessing:
                        
                            
                     # save file if needed
-                    if lgc_save:
+                    if lgc_save and  process_df is not None:
                         
                         # build hdf5 file name
                         dump_str = str(dump_counter)
                         file_name =  (output_base_file + '_F' + dump_str.zfill(4)
                                       + '.hdf5')
-                        
+                            
                         # export
                         process_df.export_hdf5(file_name, mode='w')
                         
@@ -799,15 +798,17 @@ class TriggerProcessing:
         for afile in file_list:
 
             file_name = str(Path(afile).name)
-                        
+                   
             # skip if filter file
             if 'filter' in file_name:
                 continue
 
-            # skip didv
+            # skip didv and iv
             if 'didv_' in file_name:
                 continue
-
+            
+            if 'iv_' in file_name:
+                continue
             # restricted
             if (restricted
                 and 'restricted' not in file_name):
@@ -817,6 +818,26 @@ class TriggerProcessing:
             if (not restricted
                 and 'restricted' in file_name):
                 continue
+
+            # now check if continuous data
+            # case unrecognized
+            if 'cont_' not in  file_name:
+                
+                # unknown file -> check trigger type
+                 # check trigger type of first event
+                metadata = h5reader.get_metadata(afile)
+                data_mode = None
+                if 'adc_list' in metadata:
+                    adc_name = metadata['adc_list'][0]
+                    data_mode = metadata['groups'][adc_name]['data_mode']
+
+                if data_mode is not None:
+                    if data_mode != 'cont':
+                        continue
+                else:
+                    print(f'WARNING: file {file_name} not recognized! '
+                          f'Skipping...')
+                    continue            
             
             # append file if series already in dictionary
             if (series_name is not None
