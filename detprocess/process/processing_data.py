@@ -706,8 +706,8 @@ class ProcessingData:
         admin_dict['series_number'] = np.int64(self._current_admin_info['series_num'])
         admin_dict['event_id'] = np.int32(self._current_admin_info['event_id'])
         admin_dict['event_time'] = np.int64(self._current_admin_info['event_time'])
-        admin_dict['run_type'] = np.int16(self._current_admin_info['run_type'])
-        admin_dict['data_type'] = np.int16(self._current_admin_info['run_type'])
+        admin_dict['run_type'] = self._current_admin_info['run_type']
+        admin_dict['data_type'] = self._current_admin_info['run_type']
 
         # group name
         if self._group_name is not None:
@@ -921,7 +921,81 @@ class ProcessingData:
 
 
 
+    def get_template(self, channel, tag='default'):
+        """
+        Get template from filter file
 
+        Parameters
+        ----------
+
+        channel : str
+          channel name
+
+
+        tag : str
+          tag/ID of the template
+          Default: None
+
+        Return
+        ------
+
+        template : ndarray
+          array with template values
+
+        metadata : dict 
+          psd metadata
+
+        """
+
+        # get template from filter file
+        template, template_time, template_metadata = (
+            self._filter_data.get_template(
+                channel, tag=tag,
+                return_metadata=True)
+        )
+
+        return template, template_metadata
+
+
+    def get_psd(self, channel, tag='default'):
+        """
+        Get psd from filter file
+
+        Parameters
+        ----------
+
+        channel : str
+          channel name
+
+        tag : str
+          tag/ID of the template
+          Default: None
+
+        Return
+        ------
+
+        psd : ndarray
+          array with psd values
+
+        freq : ndarray
+          array with psd frequencies
+
+        metadata : dict 
+          psd metadata
+
+        """
+
+        psd, psd_freqs, psd_metadata = (
+            self._filter_data.get_psd(
+                channel,
+                tag=tag,
+                fold=False,
+                return_metadata=True)
+        )
+    
+        return psd, psd_freqs, psd_metadata
+
+    
     def get_facility(self):
         """
         Function to extract facility # from

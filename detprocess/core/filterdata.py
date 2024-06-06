@@ -819,8 +819,9 @@ class FilterData:
         if sample_rate is None:
             sample_rate = sample_rate_array
         elif sample_rate_array != sample_rate:
-            raise ValueError('ERROR: sample_rate is inconsistent with '
-                             'frequency array!')
+            raise ValueError(f'ERROR: sample rate ({sample_rate}) '
+                             f'is inconsistent with sample rate from '
+                             f'frequency array ({sample_rate_array})!')
         
         # number of channels
         if isinstance(channels, str):

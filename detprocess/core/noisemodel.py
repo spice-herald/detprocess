@@ -339,6 +339,9 @@ class NoiseModel(FilterData):
         Set SQUID noise
         """
 
+        if channel not in  self._noise_data.keys():
+            self._noise_data[channel] = dict()
+
         if 'sim' not in self._noise_data[channel]:
             self._noise_data[channel]['sim'] = {'normal': {},
                                                 'sc' :{},
@@ -977,15 +980,22 @@ class NoiseModel(FilterData):
                 raise ValueError(f'ERROR: No data for channel {chan} '
                                  'available. Set data first!')
             
-            # check if normal/sc psd or fit available
-            states = ['normal', 'sc']
-            for state in states:
-                if (state not in self._noise_data[chan]
-                    or ('psd' not in self._noise_data[chan][state]
-                        and 'fit' not  in self._noise_data[chan][state])):
-                    raise ValueError(f'ERROR: No {state} psd or fit results for '
-                                     f'channel {chan} available!')
+            # check if either sc psd or fit available
+            state = 'sc'
+            if (state not in self._noise_data[chan]
+                or ('psd' not in self._noise_data[chan][state]
+                    and 'fit' not  in self._noise_data[chan][state])):
+                raise ValueError(f'ERROR: No {state} psd or fit results for '
+                                 f'channel {chan} available!')
 
+            # check if either normal psd or fit or squid noise available
+            state = 'normal'
+            if ('sim' not in self._noise_data[chan]
+                and state not in self._noise_data[chan]):
+                raise ValueError(f'ERROR: No {state} psd or fit results '
+                                 f'or squid noise available for '
+                                 f'channel {chan}!')
+            
             # check transition psd
             if ('transition' not in self._noise_data[chan]
                 or 'psd' not in self._noise_data[chan]['transition']):
