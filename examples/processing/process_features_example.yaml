@@ -177,19 +177,43 @@ Melange025pcLeft+Melange025pcRight:
         window_max_from_trig_usec: -2000
 
 
-Melange025pcLeft|Melange025pcRight:
- 
 
-     of2x2_025pc:
+Melange1pc1ch|Melange025pcLeft|Melange025pcRight:
+
+     # channel rename
+     feature_channel: Melange1pc025pcLR
+
+     # weight (default = 1)
+     weight_Melange1pc1ch: 0.9
+     weight_Melange025pcLeft: 0.9
+     weight_Melange025pcRight: 1.1
+       
+
+     of3x1_test:
         run: True
         base_algorithm: ofnxm
-        lowchi2_fcutoff: 50000
-
+  
         # templates
+        template_tag_Melange1pc1ch: None
         template_tag_Melange025pcRight: default
         template_tag_Melange025pcLeft: default
+
+	# or 
+	# equivalent if matrix save in filter file
+        #template_tag: default
+
+        # or
+        #template_tag: [[None],[default],[default]]
+        
+        # amplitude names (default: amp1,amp2,...)
+        amplitude_names: amptest
+
+        # csd tag (if not "default")
+        csd_tag: default
      
-        # or if the same tag
-        # template_tag: default
+        # cutoff
+        lowchi2_fcutoff: 50000
+
+    
        
       
