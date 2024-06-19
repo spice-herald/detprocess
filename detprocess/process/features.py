@@ -101,7 +101,6 @@ class FeatureProcessing:
         # feature processing data type
         self._feature_processing_type = ['cont','rand','thresh',
                                          'exttrig']
-        
         # processing id
         self._processing_id = processing_id
 
@@ -204,7 +203,14 @@ class FeatureProcessing:
             filter_file=filter_file,
             available_channels=available_channels,
             verbose=verbose)
-   
+
+        # cleaup filter data tags cleanup
+        self._processing_config = (
+            self._processing_data.check_filter_data_tags(
+                self._processing_config,
+                default_tag='default'
+            )
+        )
         
     def process(self,
                 nevents=-1,
@@ -297,9 +303,9 @@ class FeatureProcessing:
         # (-> calculate FFT template/noise, optimum filter)
         if self._verbose:
             print('INFO: Instantiate OF base for each channel!')
-        
+
         self._processing_data.instantiate_OF_base(self._processing_config)
-        
+            
         # convert memory usage in bytes
         if isinstance(memory_limit, str):
             memory_limit = parse_size(memory_limit)   
@@ -713,14 +719,12 @@ class FeatureProcessing:
                                                         
                         # append channel name and save in data frame
                         for feature_base_name in extracted_features:
-                            feature_name = feature_base_name
-                            if ('|' not in feature_channel and
-                                feature_channel not in feature_name):
-                                feature_name = f'{feature_base_name}_{feature_channel}'
+                            feature_name = f'{feature_base_name}_{feature_channel}'
                             event_features.update(
                                 {feature_name: extracted_features[feature_base_name]}
                             )
 
+                            
                 # done processing event!
                 # append event dictionary to dataframe
                 event_df = pd.DataFrame([event_features])
@@ -1059,7 +1063,6 @@ class FeatureProcessing:
                     traces_config[trace_tuple].extend(chan_list.copy())
                 else:
                     traces_config[trace_tuple] = chan_list.copy()
-                        
 
         # make unique
         selected_channels = list(set(selected_channels))

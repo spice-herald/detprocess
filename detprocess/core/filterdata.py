@@ -5,6 +5,7 @@ from pprint import pprint
 import pytesdaq.io as h5io
 import matplotlib.pyplot as plt
 from qetpy.utils import fftfreq, rfftfreq, fold_spectrum
+from qetpy.utils import convert_channel_name_to_list, convert_channel_list_to_name
 import qetpy.plotting as plotting
 from qetpy import calc_corrcoeff_from_csd
 import copy
@@ -65,7 +66,7 @@ class FilterData:
         # list of possible parameters
         parameter_list = [
             'psd', 'template',
-            'csd', 'csd_freqs',
+            'csd',
             'dpdi_2poles', 'dpdi_3poles',
             'ivsweep_data',
             'ivsweep_results_noise',
@@ -96,7 +97,11 @@ class FilterData:
             for par_name, val in chan_dict.items():
                 
                 # check if metadata
-                if 'metadata' in par_name:
+                if '_metadata' in par_name:
+                    continue
+                
+                # check if metadata
+                if '_inds' in par_name:
                     continue
 
                 # find tag
@@ -162,7 +167,6 @@ class FilterData:
                 'ERROR: "channels" argument needed when '
                 '"tag" is provided'
             )
-        
         
         if (channels is None and tag is None):
             self._filter_data.clear()
@@ -374,8 +378,11 @@ class FilterData:
         """
         
         # check channel
-        if ((isinstance(channels, str) and  '|' not in  channels)
-            or (isinstance(channels, list)  and len(channels)<2)):
+        channel_list = convert_channel_name_to_list(channels)
+        channel_name = convert_channel_list_to_name(channels)
+        nb_channels = len(channel_list)
+
+        if nb_channels < 2:
             raise ValueError(
                 'ERROR: At least 2 channels required to calculate csd'
             )
@@ -384,7 +391,7 @@ class FilterData:
         output_metadata = dict()
         csd, csd_freqs, metadata = (
             self._get_param_array('csd',
-                                  channels,
+                                  channel_name,
                                   tag=tag,
                                   return_metadata=True)
         )
@@ -471,11 +478,8 @@ class FilterData:
 
         par_name = f'dpdi_{poles}poles'
         
-        
-
         # return values
-        return self._get_param_array(par_name,
-                                     channel,
+        return self._get_param_array(par_name,cchannel,
                                      tag=tag)
             
 
@@ -490,24 +494,27 @@ class FilterData:
         """
 
         #  check array type/dim
-        if isinstance(template, list):
-            template = np.array(template)
-        elif not isinstance(template, np.ndarray):
-            raise ValueError('ERROR: Expecting numpy array!')
-        if template.ndim == 1:
-            template = template[np.newaxis, :]
+        if not isinstance(template, np.ndarray):
+            raise ValueError('ERROR: "template" argument '
+                             'should be a numpy array!')
 
-        # number of channels
-        if isinstance(channels, str):
-            channels = [channels]
-        nb_channels = len(channels)
+        channel_list = convert_channel_name_to_list(channels)
+        channel_name = convert_channel_list_to_name(channels)
+        nb_channels = len(channel_list)
 
         # check array shape
-        if (template.shape[0] !=  nb_channels):
+        if (nb_channels == 1 and template.ndim != 1):
             raise ValueError(
-                'ERROR: Array shape is not consistent with '
-                'number of channels')
-
+                'ERROR: For single channel, expecting and 1D '
+                'array '
+            )
+        
+        if (nb_channels > 1 and template.ndim != 3):
+            raise ValueError(
+                'ERROR: For multiple channels, expecting 3D '
+                'array [nchans, ntemps, nsamples] '
+            )
+        
         # sample rate / pretrigger length
         if sample_rate is None:
             raise ValueError('ERROR: "sample_rate" argument required!')
@@ -534,42 +541,28 @@ class FilterData:
             metadata = dict()
         metadata['sample_rate'] =  sample_rate
         metadata['nb_samples'] = template.shape[1]
-        metadata['nb_pretrigger_samples'] = pretrigger_length_samples
-                    
-        
-        # loop channels and store 
-        for ichan in range(nb_channels):
+        metadata['nb_pretrigger_samples'] = pretrigger_length_samples    
 
-            # channel name
-            chan = channels[ichan]
+        # store
+        if channel_name not in self._filter_data.keys():
+            self._filter_data[channel_name] = dict()   
 
-            # template
-            template = template[ichan,:]
+        if template.ndim == 1:
+            self._filter_data[channel_name][template_name] = (
+                pd.Series(template, t)
+            )
+        else:
+            self._filter_data[channel_name][template_name] = template
 
-            # add channel
-            if chan not in self._filter_data.keys():
-                self._filter_data[chan] = dict()
-            else:
-                # check PSD has same length
-                psd_name = 'psd' + '_' + tag
-                if psd_name in self._filter_data[chan]:
-                    psd = self._filter_data[chan][psd_name].values
-                    if len(psd) != len(template):
-                        raise ValueError(
-                            f'ERROR: template and psd for channel '
-                            f'{chan} are required to have same length for '
-                            f'tag {tag}. Modify tag, or clear data '
-                            f'first using "clear_data(...)" or set '
-                            f'template length to {len(psd)}'
-                        )
-
-            self._filter_data[chan][template_name] = (
-                pd.Series(template, t))
-            
-            # add channel nanme metadata
-            metadata['channel'] = chan
-            self._filter_data[chan][template_name + '_metadata'] = metadata
-            
+            # inds
+            inds_name = template_name + '_inds'
+            self._filter_data[channel_name][inds_name ] = t
+                   
+        # add channel nanme metadata
+        metadata['channel'] = channel_name
+        self._filter_data[channel_name][template_name + '_metadata'] = (
+            metadata
+        )
                 
 
     def set_psd(self, channels, psd, psd_freqs,
@@ -701,20 +694,11 @@ class FilterData:
         """
 
         # channels
-        if isinstance(channels, str):
-            
-            if '|' in channels:
-                channels = channels.replace(' ','')
-                channels = channels.split('|')
-            else:
-                raise ValueError(
-                    'ERROR: Wrong channels argument format. It should be '
-                    'either a list of string with "|" separation!'
-                )
+        channel_list = convert_channel_name_to_list(channels)
+        channel_name = convert_channel_list_to_name(channels)
+        nb_channels = len(channel_list)
 
-        # build name 
-        channel_name = '|'.join(channels)
-
+        
         # metadata
         if metadata is None:
             metadata = dict()
@@ -754,7 +738,7 @@ class FilterData:
                 
         # parameter name
         csd_name = 'csd_' + tag
-        csd_freqs_name = 'csd_freqs_' + tag
+        csd_freqs_name = csd_name + '_inds'
         
         # add pretrigger length (not required)
         if pretrigger_length_msec is not None:
@@ -774,8 +758,7 @@ class FilterData:
         self._filter_data[channel_name][csd_name] = csd
         self._filter_data[channel_name][csd_name + '_metadata'] = metadata
         self._filter_data[channel_name][csd_freqs_name] = csd_freqs
-        self._filter_data[channel_name][csd_freqs_name + '_metadata'] = metadata
-        
+          
             
     def set_dpdi(self, channels,
                  dpdi, dpdi_freqs,
@@ -914,9 +897,7 @@ class FilterData:
         """
 
         for chan, df in data_dict.items():
-            self.set_ivsweep_data(chan,
-                                  df,
-                                  tag=tag)
+            self.set_ivsweep_data(chan, df, tag=tag)
             
     def get_ivsweep_data(self, 
                          channel,
@@ -1543,7 +1524,7 @@ class FilterData:
         plt.show()
 
         
-    def _get_param_array(self, param_name, channel, tag='default',
+    def _get_param_array(self, param_name, channels, tag='default',
                          return_metadata=False):
         """
         Get parameter stored in dictionary
@@ -1569,16 +1550,12 @@ class FilterData:
             array frequencies
 
         """
-        
         # check channel
-        if isinstance(channel, list):
-            channel = '|'.join(channel)
-        elif not  isinstance(channel, str):
-            raise ValueError('ERROR: channel should be a str or list!')
-        
-        
-        if (channel not in self._filter_data.keys()):
-            msg = f'ERROR: Channel "{channel}" not available!'
+        channel_list = convert_channel_name_to_list(channels)
+        channel_name = convert_channel_list_to_name(channels)
+              
+        if (channel_name not in self._filter_data.keys()):
+            msg = f'ERROR: Channel "{channel_name}" not available!'
             
             if self._filter_data.keys():
                 msg += ' List of channels in filter file: '
@@ -1590,13 +1567,14 @@ class FilterData:
         # parameter name
         data_name = param_name + '_' + tag
         metadata_name = data_name + '_metadata'
+        inds_name = data_name + '_inds'
         
         # check available tag
-        if data_name not in self._filter_data[channel].keys():
+        if data_name not in self._filter_data[channel_name].keys():
             raise ValueError(f'ERROR: Parameter {data_name} not found '
-                             f'for channel {channel}!')
+                             f'for channel {channel_name}!')
 
-        data  = copy.deepcopy(self._filter_data[channel][data_name])
+        data  = copy.deepcopy(self._filter_data[channel_name][data_name])
         vals_inds = None
         vals = None
         if isinstance(data, pd.Series):
@@ -1606,19 +1584,15 @@ class FilterData:
             
         elif isinstance(data, np.ndarray):
             vals  = data.copy()
-
-            # check if param freqs available
-            data_freqs_name = param_name + '_freqs_' + tag
-                         
-            if data_freqs_name in self._filter_data[channel]:
-                vals_inds = self._filter_data[channel][data_freqs_name]
-                if isinstance(data, pd.Series):
+            if inds_name in self._filter_data[channel_name]:
+                vals_inds = self._filter_data[channel_name][inds_name]
+                if isinstance(vals_inds, pd.Series):
                     vals_inds = vals_inds.values
 
         metadata = dict()
-        if metadata_name in self._filter_data[channel].keys():
+        if metadata_name in self._filter_data[channel_name].keys():
             metadata =  copy.deepcopy(
-                self._filter_data[channel][metadata_name]
+                self._filter_data[channel_name][metadata_name]
             )
 
         if return_metadata:

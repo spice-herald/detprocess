@@ -8,6 +8,8 @@ import vaex as vx
 from glob import glob
 from detprocess.utils import utils
 from detprocess.core import FilterData
+import copy
+
 
 __all__ = [
     'ProcessingData'
@@ -83,7 +85,7 @@ class ProcessingData:
         self._OF_base_objs = dict()
         self._OF_base_algorithms = [
             'of1x1', 'of1x2', 'of1x3',
-            'ofnxm', 'psd_amp'
+            'ofnxm', 'ofnxmx2', 'psd_amp'
         ]
         
         # initialize raw data reader
@@ -144,7 +146,7 @@ class ProcessingData:
 
         # loop channels
         for chan, chan_config in processing_config.items():
-
+                    
             # skip if filter file
             if (chan == 'filter_file'
                 or not isinstance(chan_config, dict)):
@@ -154,21 +156,23 @@ class ProcessingData:
             if (channel is not None
                 and channel != chan):
                 continue
-            
-            # channel split if |
+
+            # channel list
             chan_list, _ = utils.split_channel_name(
                 chan,
                 self._available_channels,
                 separator='|'
             )
 
+            nb_channels = len(chan_list)
+                    
             # intialize a list of psd/csd tags
             # -> only one allowed
             psd_tags = dict()
             csd_tags = dict()
             
             # loop configuration and get list of templates
-            for algo_name, algo_config in chan_config.items():
+            for algo, algo_config in chan_config.items():
 
                 # skip if not dictionary
                 if not isinstance(algo_config, dict):
@@ -178,10 +182,10 @@ class ProcessingData:
                 if not algo_config['run']:
                     continue
 
-                # check if OF base if used
+                # check if algorithm requires OF base
                 is_of_base_used = False
                 for prefix in self._OF_base_algorithms:
-                    algo_base = algo_name
+                    algo_base = algo
                     if 'base_algorithm' in algo_config:
                         algo_base = algo_config['base_algorithm']
                     if prefix in algo_base:
@@ -199,19 +203,19 @@ class ProcessingData:
                 if key_tuple not in self._OF_base_objs:
                     self._OF_base_objs[key_tuple] = {
                         'OF': qp.OFBase(sample_rate, verbose=True),
-                        'channels': chan_list,
-                        'algorithms': [algo_name]
+                        'channels_split': chan_list,
+                        'channels': [chan],
+                        'algorithms': [algo]
                     }
                 else:
-                    self._OF_base_objs[key_tuple]['channels'].extend(chan_list)
-                    self._OF_base_objs[key_tuple]['algorithms'].append(algo_name)
+                    self._OF_base_objs[key_tuple]['channels_split'].extend(chan_list)
+                    self._OF_base_objs[key_tuple]['channels'].append(chan)
+                    self._OF_base_objs[key_tuple]['algorithms'].append(algo)
+                           
+                # Multichannel: add CSD
+                if nb_channels > 1:
 
-                # Add CSD
-                if '|' in chan:
-
-                    tag = 'default'
-                    if 'csd_tag' in algo_config.keys():
-                        tag = algo_config['csd_tag']
+                    tag = algo_config['csd_tag']
                         
                     csd, csd_freqs, csd_metadata = (
                         self._filter_data.get_csd(
@@ -240,7 +244,7 @@ class ProcessingData:
                             f'Number of samples is not '
                             f'consistent between raw data '
                             f'and csd for channel {chan}, '
-                            f'algorithm {algo_name}!'
+                            f'algorithm {algo}!'
                         )
                                                 
                     # add in OF base
@@ -249,11 +253,8 @@ class ProcessingData:
 
                 # Add PSD
                 else:
+                    tag = algo_config['psd_tag']
                     
-                    tag = 'default'
-                    if 'psd_tag' in algo_config.keys():
-                        tag = algo_config['psd_tag']
-
                     psd, psd_freqs, psd_metadata = (
                         self._filter_data.get_psd(
                             chan,
@@ -265,8 +266,7 @@ class ProcessingData:
                     if nb_samples not in psd_tags:
                         psd_tags[nb_samples] = list()  
                     psd_tags[nb_samples].append(tag)
-                
-                    
+                                    
                     # check sample rate
                     if 'sample_rate' in psd_metadata:
                         fs = psd_metadata['sample_rate']
@@ -282,7 +282,7 @@ class ProcessingData:
                             f'Number of samples is not '
                             f'consistent between raw data '
                             f'and psd for channel {chan}, '
-                            f'algorithm {algo_name}!'
+                            f'algorithm {algo}!'
                         )
 
                     # coupling
@@ -296,65 +296,50 @@ class ProcessingData:
                             chan, psd, coupling=coupling
                         )
 
-                # Add template (s)
 
+                # Add template (s)
+                         
                 # template integral or max
                 integralnorm = False
                 if 'integralnorm' in algo_config.keys():
                     integralnorm = algo_config['integralnorm']
                                 
-                # initialize template list
-                tag_dict = dict()
-                if  '|' in chan:
-                    for chan_split in chan_list:
-                        tag_dict[chan_split] = []
-                else:
-                    tag_dict[chan] = []
-
-                # get tags
-                for key in algo_config.keys():
-                    if key.find('template_tag') == -1:
-                        continue
-                    if '|' in chan:
-                        if key == 'template_tag':
-                            for chan_split in chan_list:
-                               tag_dict[chan_split].append(algo_config[key])
-                        else:
-                            template_chan =  key.split('_')[-1]
-                            if template_chan not in chan_list:
-                                raise ValueError(
-                                    f'ERROR: template tag parameter '
-                                    f'{key} for channel {chan} is not '
-                                    f'is not recognized!')
-                            else:
-                                tag_dict[template_chan].append(algo_config[key])
-                    else:
-                        tag_dict[chan].append(algo_config[key])
-
-                # look channel
-                for chan_tags, tags in tag_dict.items():
-
-                    if not tags:
-                        tags = ['default']
-                    else:
-                        tags = list(set(tags))
-                                        
-                    # check if tag already exist
-                    template_list = (
-                        self._OF_base_objs[key_tuple]['OF'].template_tags(chan_tags)
-                    )
-
+                template_tag = algo_config['template_tag']
+                matrix_tag = None
+                if nb_channels > 1:
+                    matrix_tag = algo_config['template_matrix_tag']
+                                   
+                # create template with zeros
+                template_zeros = np.zeros(nb_samples, dtype='float64')
+                    
+                # store template tags for each channels in
+                # dictionary
+                 
+                template_tag_dict = dict()
+                if nb_channels == 1:
+                    if isinstance(template_tag, str):
+                        template_tag = [template_tag]
+                    template_tag_dict[chan] = template_tag
+                elif matrix_tag is None:
+                    for ichan, chan_split in enumerate(chan_list):
+                        template_tag_dict[chan_split] = (
+                            template_tag[ichan, :].tolist()
+                        )
+                # add individual templates
+                for chan_tag, tags in template_tag_dict.items():
+                    
                     for tag in tags:
 
-                        if tag in template_list:
-                            continue
-                        
-                        # get template from filter file
-                        template, template_time, template_metadata = (
-                            self._filter_data.get_template(
-                                chan_tags, tag=tag,
-                                return_metadata=True)
-                        )
+                        if tag == 'None' or tag is None:
+                            template = template_zeros
+                            template_metadata = dict()
+                        else:
+                            # get template from filter file
+                            template, template_time, template_metadata = (
+                                self._filter_data.get_template(
+                                    chan_tag, tag=tag,
+                                    return_metadata=True)
+                            )
 
                         # check samples
                         if nb_samples != template.shape[-1]:
@@ -362,8 +347,8 @@ class ProcessingData:
                                 f'Number of samples is not '
                                 f'consistent between raw data '
                                 f'and template (tag={tag} '
-                                f'for channel {chan_tags}, '
-                                f'algorithm {algo_name}!'
+                                f'for channel {chan_tag}, '
+                                f'algorithm {algo}!'
                             )
 
                         nb_pretrigger_template = None
@@ -374,23 +359,49 @@ class ProcessingData:
                         else:
                             nb_pretrigger_template = nb_pretrigger_samples
                             
-                        if (nb_pretrigger_template != nb_pretrigger_samples):
-                            print(f'WARNING: Number of pretrigger samples '
-                                  f'is different between raw data and '
-                                  f'template for channel {chan_tags}, '
-                                  f'algorithm {algo_name}!')
-                                                    
                         #  add
                         self._OF_base_objs[key_tuple]['OF'].add_template(
-                            chan_tags,
+                            chan_tag,
                             template,
                             template_tag=tag,
                             pretrigger_samples=nb_pretrigger_template,
-                            integralnorm=integralnorm
+                            integralnorm=integralnorm,
+                            overwrite=True,
                         )
 
+                # case matrix
+                if matrix_tag is not None:
 
-                        
+                    # get template matrix from filter file
+                    template, template_time, template_metadata = (
+                        self._filter_data.get_template(
+                            chan, tag=matrix_tag,
+                            return_metadata=True)
+                    )
+            
+                    # pretrigger
+                    nb_pretrigger_template = None
+                    if 'nb_pretrigger_samples' in template_metadata.keys():
+                        nb_pretrigger_template = (
+                            int(template_metadata['nb_pretrigger_samples'])
+                        )
+                    else:
+                        nb_pretrigger_template = nb_pretrigger_samples
+
+                    # add
+                    self._OF_base_objs[key_tuple]['OF'].add_template_many_channels(
+                        chan, template, template_tag,
+                        pretrigger_samples=nb_pretrigger_template,
+                        maxnorm=True,
+                        integralnorm=integralnorm,
+                        overwrite=True)
+
+                # build matrix
+                if nb_channels > 1:
+                    self._OF_base_objs[key_tuple]['OF'].build_template_matrix(
+                        chan, template_tag)
+                                    
+                    
             # check psd / csd tags
             for tag in psd_tags.keys():
                 psd_tags[tag] = (
@@ -413,16 +424,29 @@ class ProcessingData:
                     )
 
                 
-            # calculate phi
-            if '|' not in chan:
-                for key in self._OF_base_objs.keys():
-                    self._OF_base_objs[key]['OF'].calc_phi(chan)
+            # calculate phi for each OF base
+            for key in self._OF_base_objs.keys():
 
+                if chan not in self._OF_base_objs[key]['channels']:
+                    continue
+                
+                if nb_channels == 1:
+                    self._OF_base_objs[key]['OF'].calc_phi(chan)
+                else:
+                    self._OF_base_objs[key]['OF'].calc_phi_mat(chan)
+                    self._OF_base_objs[key]['OF'].calc_weight_mat(chan)
+
+                    
         # remove duplicated
         for key in self._OF_base_objs:
             self._OF_base_objs[key]['channels'] = list(
                 set(self._OF_base_objs[key]['channels'])
             )
+            
+            self._OF_base_objs[key]['channels_split'] = list(
+                set(self._OF_base_objs[key]['channels_split'])
+            )
+                    
             self._OF_base_objs[key]['algorithms'] = list(
                 set(self._OF_base_objs[key]['algorithms'])
             )
@@ -475,7 +499,6 @@ class ProcessingData:
         None
 
         """
-
 
         # open/set files
 
@@ -640,11 +663,12 @@ class ProcessingData:
             
             nb_samples = int(key_tuple[0])
             nb_pretrigger_samples = int(key_tuple[1])
-            channels = key_dict['channels']
-                   
-            # loop channels
-            for chan in channels:
-
+            channels_trace = key_dict['channels_split']
+            channels_algorithm = key_dict['channels']
+            
+            # loop channels and update traces
+            for chan in channels_trace:
+                
                 weights_chan = None
                 if (weights is not None
                     and chan in weights):
@@ -657,12 +681,34 @@ class ProcessingData:
                     nb_pretrigger_samples=nb_pretrigger_samples,
                     weights=weights_chan
                 )
-
+                
                 # add to OF base if not yet added
                 self._OF_base_objs[key_tuple]['OF'].update_signal(
-                    chan, trace
+                    chan, trace,
+                    calc_signal_filt=False,
+                    calc_q_vector= False,
+                    calc_signal_filt_td=False,
+                    calc_chisq_amp=False,
                 )
-         
+
+            # OF calculations
+            for chan in channels_algorithm:
+
+                # channel list
+                chan_list, _ = utils.split_channel_name(
+                    chan,
+                    self._available_channels,
+                    separator='|'
+                )
+
+                if len(chan_list) == 1:
+                    self._OF_base_objs[key_tuple]['OF'].calc_signal_filt(chan)
+                    self._OF_base_objs[key_tuple]['OF'].calc_chisq_amp(chan)
+                else:
+                    self._OF_base_objs[key_tuple]['OF'].calc_signal_filt_mat(chan)
+                    self._OF_base_objs[key_tuple]['OF'].calc_signal_filt_mat_td(chan)
+                    
+                    
     def get_event_admin(self, return_all=False):
         """
         Get event admin info
@@ -1128,3 +1174,183 @@ class ProcessingData:
             raise ValueError('ERROR: No ADC info in file. Something wrong...')
 
         return data_info
+
+    def check_filter_data_tags(self, processing_config,
+                               default_tag='default'):
+        """
+        Filter data tags for OF 
+        """
+
+        # loop channels
+        config = copy.deepcopy(processing_config)
+        for chan, chan_config in config.items():
+                   
+            # skip if filter file
+            if (chan == 'filter_file'
+                or not isinstance(chan_config, dict)):
+                continue
+
+            # channel list
+            chan_list, _ = utils.split_channel_name(
+                chan,
+                self._available_channels,
+                separator='|'
+            )
+
+            nb_channels = len(chan_list)
+            
+            # loop configuration
+            for algo, algo_config in chan_config.items():
+
+                # skip if not dictionary
+                if not isinstance(algo_config, dict):
+                    continue
+                
+                # skip if disable
+                if not algo_config['run']:
+                    continue
+
+                # check if algorithm requires OF base
+                is_of_base_used = False
+                for prefix in self._OF_base_algorithms:
+                    algo_base = algo
+                    if 'base_algorithm' in algo_config:
+                        algo_base = algo_config['base_algorithm']
+                    if prefix in algo_base:
+                        is_of_base_used = True
+
+                if not is_of_base_used:
+                    continue
+
+
+                if nb_channels == 1:
+
+                    # single channel
+                    
+                    if 'psd_tag' not in algo_config:
+                        processing_config[chan][algo]['psd_tag'] = (
+                            default_tag
+                        )
+                        
+                    if 'template_tag' not in algo_config:
+                        processing_config[chan][algo]['template_tag'] = (
+                            default_tag
+                        )
+
+                        
+                else:
+
+                    # multi channels
+                    if 'csd_tag' not in algo_config:
+                        processing_config[chan][algo]['csd_tag'] = (
+                            default_tag
+                        )
+
+                    # initialize matrix tag
+                    processing_config[chan][algo]['template_matrix_tag'] = (
+                        None
+                    )
+                        
+                    if 'template_tag' not in algo_config.keys():
+
+                        template_array = None
+                        for ichan, chan_tag in enumerate(chan_list):
+                            
+                            param = f'template_tag_{chan_tag}'
+                            
+                            if param not in algo_config.keys():
+                                raise ValueError(
+                                    f'ERROR in the yaml config: Expecting '
+                                    f'"{param}" or "template_tag" parameter '
+                                    f'for channel {chan}, '
+                                    f'algorithm "{algo}"'
+                                )
+                        
+                            tags = algo_config[param]
+                            if isinstance(tags, str):
+                                tags = [tags]
+                                                      
+                            if template_array is None:
+                                template_array = np.zeros(
+                                    (nb_channels, len(tags)),
+                                    dtype='object'
+                                )
+                    
+                            template_array[ichan,:] = np.array(tags)
+                            
+                            # remove 
+                            processing_config[chan][algo].pop(
+                                param
+                            )
+
+                        processing_config[chan][algo]['template_tag'] = (
+                            template_array
+                        )
+                        
+                    else:
+                        
+                        template_tag = algo_config['template_tag']
+                    
+                        if isinstance(template_tag, list):
+                            
+                            template_tag = np.array(template_tag)
+                            if (template_tag.ndim != 2
+                                or template_tag.shape[0] != nb_channels):
+                                raise ValueError(
+                                    f'ERROR in the yaml config: Expecting '
+                                    f'"template_tag" for channel {chan} '
+                                    f'to be a (Nchan, Mtemplates) array, '
+                                    f'(algorithm "{algo}")'
+                                )
+
+                            processing_config[chan][algo]['template_tag'] = (
+                                template_tag
+                            )
+                        
+                        elif isinstance(template_tag, str):
+
+                            # get template matrix from filter file
+                            template, template_time = (
+                                self._filter_data.get_template(
+                                    chan, tag=template_tag,
+                                    return_metadata=False)
+                            )
+            
+                            if template.ndim != 3:
+                                raise ValueError(
+                                    f'ERROR: Expecting a 3D templates matrix '
+                                    f'for channel {chan}, matrix tag '
+                                    f'{template_tag}, '
+                                    f'algorithm {algo}!')
+                
+                            
+                            if nb_channels != template.shape[0]:
+                                raise ValueError(
+                                    f'ERROR: Expecting a templates matrix to have '
+                                    f'shape[0] = {nb_channels} '
+                                    f'for channel {chan}, '
+                                    f'matrix tag {template_tag}, '
+                                    f'algorithm {algo}!')
+                            
+                            nb_templates = template.shape[1]
+                            
+                            # build tag array
+                            tag_array = np.zeros(
+                                (nb_channels, nb_templates),
+                                dtype='object'
+                            )
+                                
+                            for ichan in range(nb_channels):
+                                for itemp in range(nb_templates):
+                                    mtag = f'{template_tag}_{algo}_{ichan}_{itemp}'
+                                    tag_array[ichan, itemp] = mtag
+
+                            # replace
+                            processing_config[chan][algo]['template_matrix_tag'] = (
+                                template_tag
+                            )
+                            processing_config[chan][algo]['template_tag'] = (
+                                tag_array
+                            )
+        
+        return processing_config

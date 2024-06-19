@@ -8,6 +8,8 @@ from yaml.loader import SafeLoader
 import re
 from pprint import pprint
 from pytesdaq.io import convert_length_msec_to_samples
+from qetpy.utils import convert_channel_name_to_list, convert_channel_list_to_name
+
 
 __all__ = ['split_channel_name', 'extract_window_indices',
            'find_linear_segment', 'read_config']
@@ -601,7 +603,6 @@ def read_config(yaml_file, available_channels, sample_rate=None):
                     convert_length_msec_to_samples(trace_length_msec,
                                                    sample_rate)
                 )
-
                 
             if 'pretrigger_length_samples' in processing_config['global']:
                 nb_pretrigger_samples = (
@@ -615,8 +616,6 @@ def read_config(yaml_file, available_channels, sample_rate=None):
                     convert_length_msec_to_samples(pretrigger_length_msec,
                                                    sample_rate)
                 )
-
-
                 
             # Get trace/pretrigger length at the channel level
             if 'trace_length_samples' in chan_config.keys():
@@ -710,17 +709,6 @@ def read_config(yaml_file, available_channels, sample_rate=None):
                     nb_pretrigger_samples_alg 
                 )   
                 
-                # templates (multi-channels)
-                if '|' in chan:
-
-                    if 'template_tag' in algo_config.keys():
-                        for chan_split in chan_list:
-                            param = f'template_tag_{chan_split}'
-                            processing_config['feature'][chan][algo][param] = (
-                                algo_config['template_tag']
-                            )
-                        processing_config['feature'][chan][algo].pop('template_tag')
-           
             # remove channel if no algorithm
             if not algorithm_list:
                 processing_config['feature'].pop(chan)
