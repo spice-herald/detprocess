@@ -392,7 +392,6 @@ class ProcessingData:
                     self._OF_base_objs[key_tuple]['OF'].add_template_many_channels(
                         chan, template, template_tag,
                         pretrigger_samples=nb_pretrigger_template,
-                        maxnorm=True,
                         integralnorm=integralnorm,
                         overwrite=True)
 
