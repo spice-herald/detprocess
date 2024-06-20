@@ -540,7 +540,7 @@ class FilterData:
         if metadata is None:
             metadata = dict()
         metadata['sample_rate'] =  sample_rate
-        metadata['nb_samples'] = template.shape[1]
+        metadata['nb_samples'] = template.shape[-1]
         metadata['nb_pretrigger_samples'] = pretrigger_length_samples    
 
         # store
