@@ -740,32 +740,46 @@ class FeatureExtractors:
 
         # get OF base data
         freqs = of_base.fft_freqs()
-        trace_psd = np.abs(of_base.signal_fft(channel))
+        trace_fft = of_base.signal_fft(channel)
 
-        # calc
-        i = 0
+        # sample rate
+        fs = 2*np.max(np.abs(freqs))
+        if 'sample_rate' in kwargs:
+            fs = kwargs['sample_rate']
+
+        # calculate psd
+        psd = (np.abs(trace_fft)**2.0) * fs
+
+        # fold
+        freqs_fold, psd_fold = qp.utils.fold_spectrum(psd, fs)
+
+        # remove DC
+        psd_fold =  psd_fold[1:]
+        freqs_fold = freqs_fold[1:]
+    
+        # index ranges
+        name_list, ind_range_list = utils.get_indices_from_freq_ranges(
+            freqs_fold, f_lims)
+        
         retdict = {}
-        while i < len(f_lims):
-            f_low = f_lims[i][0]
-            f_high = f_lims[i][1]
+        for it, ind_range in enumerate(ind_range_list):
 
-            #round the frequencies so we can more easily look up what
-            #frequencies to average between
-            freq_spacing = freqs[1] - freqs[0]
-            f_low_mod = freq_spacing * np.ceil(f_low/freq_spacing)
-            f_high_mod = freq_spacing * np.floor(f_high/freq_spacing)
-
-            #get the indices of where to average the psd
-            f_low_index = np.where(freqs == f_low_mod)[0][0]
-            f_high_index = np.where(freqs == f_high_mod)[0][0]
-
-            #calculate the average psd in that range
-            av_psd = np.average(trace_psd[f_low_index:f_high_index])
-
-            # store features
-            retdict[feature_base_name + '_'
-                    + str(round(f_low))
-                    + '_' + str(round(f_high))] = av_psd
-            i += 1
+            ind_low = ind_range[0]
+            ind_high = ind_range[1]
+                                             
+            # take median
+            psd_chunk = psd_fold[ind_low:ind_high]
+                
+            # smooth + max ?
+            # nb_samples = len(psd_chunk)
+            #psd_chunk_smooth  = np.convolve(psd_chunk, np.ones(3)/3,
+            #                                mode='valid')
+            # 
+            psd_avg = np.average(psd_chunk)
+            psd_avg = np.sqrt(psd_avg)
+                    
+            # parameter name
+            psd_amp_name = f'{feature_base_name}_{name_list[it]}'
+            retdict[psd_amp_name ] = psd_avg
 
         return retdict

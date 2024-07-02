@@ -722,7 +722,53 @@ def read_config(yaml_file, available_channels, sample_rate=None):
     # return
     return processing_config
 
+def get_indices_from_freq_ranges(freqs, freq_ranges):
+    """
+    convert frequency ranges to index ranges. Return 
+    also name freq[0]_freq[1]
+    """
 
+    name_list = list()
+    index_ranges = list()
+        
+    for it, freq_range in enumerate(freq_ranges):
+                        
+        # ignore if not a range
+        if len(freq_range) != 2:
+            continue
+            
+        # low/high frequency
+        f_low = abs(freq_range[0])
+        f_high = abs(freq_range[1])
+            
+        if f_low > f_high:
+            f_low = abs(freq_range[1])
+            f_high = abs(freq_range[0])
+                
+                    
+        # indices
+        ind_low = np.argmin(np.abs(freqs - f_low))
+        ind_high = np.argmin(np.abs(freqs - f_high))
+
+        # check if proper range
+        if ind_low == ind_high:
+            if ind_low < len(freqs)-2:
+                ind_high = ind_low + 1
+            else:
+                continue
+            
+                
+        # store
+        name = f'{round(f_low)}_{round(f_high)}'
+        
+        if name in name_list:
+            continue
+            
+        name_list.append(name)
+        index_ranges.append((ind_low, ind_high))
+
+            
+    return name_list, index_ranges
 
 class _UniqueKeyLoader(SafeLoader):
     def construct_mapping(self, node, deep=False):
@@ -761,3 +807,6 @@ def _rename_key_recursively(d, old_key, new_key):
         if key == old_key:
             d[new_key] = d.pop(old_key)
     return d
+
+
+
