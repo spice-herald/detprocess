@@ -744,8 +744,8 @@ class FeatureExtractors:
 
         # sample rate
         fs = 2*np.max(np.abs(freqs))
-        if 'sample_rate' in kwargs:
-            fs = kwargs['sample_rate']
+        if 'fs' in kwargs:
+            fs = kwargs['fs']
 
         # calculate psd
         psd = (np.abs(trace_fft)**2.0) * fs
