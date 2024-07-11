@@ -171,6 +171,7 @@ class Noise(FilterData):
                          random_rate=None,
                          nevents=None,
                          min_separation_msec=100,
+                         edge_exclusion_msec=50,
                          restricted=False,
                          ncores=1):
         """
@@ -205,6 +206,7 @@ class Noise(FilterData):
             random_rate=random_rate,
             nrandoms=nevents,
             min_separation_msec=min_separation_msec,
+            edge_exclusion_msec=edge_exclusion_msec,
             lgc_save=False,
             lgc_output=True,
             ncores=ncores
@@ -546,7 +548,7 @@ class Noise(FilterData):
         adc_info = metadata['groups'][adc_name]
         fs = adc_info['sample_rate']
         nb_samples_raw = adc_info['nb_samples']
-
+           
         self._detector_config = h5reader.get_detector_config(
             file_name=first_file)
         
@@ -598,16 +600,24 @@ class Noise(FilterData):
             
             event_list = list()
             dataframe = self._dataframe.copy()
-
+         
             # filter based on series
             if series_num is not None:
                 cut = dataframe.series_number == series_num
                 dataframe = dataframe.filter(cut)
-                                
-            # filter randoms
+
+            # filter randoms and edge 
             cut = dataframe.trigger_type == 3
+
+            # cut edge events
+            min_indices = dataframe.trigger_index - nb_pretrigger_samples
+            max_indices = min_indices + nb_samples -1
+            cut_edge = (min_indices >= 0) & (max_indices < nb_samples_raw)
+            
+            cut = cut & cut_edge
+            
             dataframe = dataframe.filter(cut)
-                        
+           
             # randomly pick randoms
             if len(dataframe)>nevents:
                 dataframe = dataframe.sample(n=nevents)
@@ -859,6 +869,10 @@ class Noise(FilterData):
             if 'didv_' in file_name:
                 continue
 
+            # skip iv
+            if 'iv_' in file_name:
+                continue
+                      
             if 'treshtrig_' in file_name:
                 continue
 
@@ -871,9 +885,7 @@ class Noise(FilterData):
             if (not restricted
                 and 'restricted' in file_name):
                 continue
-            
-
-            
+                      
             # append file if series already in dictionary
             if (series_name is not None
                 and series_name in afile
