@@ -1584,17 +1584,25 @@ class FilterData:
                 msg += ' List of channels in filter file: '
                 msg += str(list(self._filter_data.keys()))
                 
-            raise ValueError(msg)
-
-        
+            #print(msg)
+            if return_metadata:
+                return None, None, None
+            else:
+                return None, None
+                   
         # parameter name
         data_name = param_name + '_' + tag
         metadata_name = data_name + '_metadata'
         
         # check available tag
         if data_name not in self._filter_data[channel].keys():
-            raise ValueError(f'ERROR: Parameter {data_name} not found '
-                             f'for channel {channel}!')
+            #print(f'ERROR: Parameter {data_name} not found '
+            #      f'for channel {channel}! Returning None')
+            if return_metadata:
+                return None, None, None
+            else:
+                return None, None
+           
 
         data  = copy.deepcopy(self._filter_data[channel][data_name])
         vals_inds = None

@@ -655,6 +655,7 @@ class FeatureExtractors:
     @staticmethod
     def psd_amp(channel, of_base,
                 f_lims=[],
+                dpdi=None,
                 feature_base_name='psd_amp',
                 **kwargs):
         """
@@ -687,8 +688,25 @@ class FeatureExtractors:
 
         # get OF base data
         freqs = of_base.fft_freqs()
-        trace_psd = np.abs(of_base.signal_fft(channel))
 
+        # sample rate
+        fs = 2*np.max(np.abs(freqs))
+        if 'fs' in kwargs:
+            fs = kwargs['fs']
+        
+        trace_fft = of_base.signal_fft(channel)*fs
+
+        # calculate psd
+        norm = fs * trace_fft.shape[-1]
+        psd = (np.abs(trace_fft)**2.0)/norm
+
+
+        # convert to watts
+        if dpdi is not None:
+            psd = psd*np.abs(dpdi)**2
+
+        freqs_fold, psd_fold = qp.utils.fold_spectrum(psd, fs)
+              
         # calc
         i = 0
         retdict = {}
@@ -707,7 +725,7 @@ class FeatureExtractors:
             f_high_index = np.where(freqs == f_high_mod)[0][0]
 
             #calculate the average psd in that range
-            av_psd = np.average(trace_psd[f_low_index:f_high_index])
+            av_psd = np.sqrt(np.average(psd_fold[f_low_index:f_high_index]))
 
             # store features
             retdict[feature_base_name + '_'

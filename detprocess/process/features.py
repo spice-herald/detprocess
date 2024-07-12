@@ -610,7 +610,14 @@ class FeatureProcessing:
                     weights_chan = None
                     if channel in self._weights:
                         weights_chan = self._weights[channel]
-                                   
+
+
+                    # dpdi
+                    dpdi, dpdi_freqs = (
+                        self._processing_data._filter_data.get_dpdi(
+                            channel, poles=3)
+                    )
+                                       
                     # loop algorithms to extact features
                     for algorithm, algorithm_params in algorithms.items():
 
@@ -681,9 +688,13 @@ class FeatureProcessing:
                         
                         kwargs['window_min_index'] = window_min
                         kwargs['window_max_index'] = window_max
-                            
+                        
                         # base feature name = algorithm name
                         kwargs['feature_base_name'] = algorithm
+
+                        # dpdi
+                        kwargs['dpdi'] = dpdi
+
                         
                         # calculate features and get output dictionary 
                         extracted_features = dict()
