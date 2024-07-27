@@ -152,16 +152,17 @@ class DIDVAnalysis(FilterData):
 
     def get_bias_params_infinite_loop_gain(self, channel, poles=3):
         """
-        Get "bias" (I0, R0, P0) parameters
+        Get "bias" (I0, R0, P0) parameters with infinite loop gain
         (can be either "true" current or set by user)
         """
-        
-        fit_result = self.get_fit_results(channel, poles=poles)
-        if 'biasparams_infinite_lgain' in fit_result.keys():
-            return fit_result['biasparams_infinite_lgain']
+
+        if (channel in self._didv_data
+            and 'biasparams_ilg' in self._didv_data[channel]
+            and poles in self._didv_data[channel]['biasparams_ilg']):
+            return self._didv_data[channel]['biasparams_ilg'][poles]
         else:
-            raise ValueError(f'ERROR: No bias parameters available '
-                             f'for channel "{channel}"!')
+            raise ValueError(f'ERROR: No bias parameters with infinite '
+                             f'loop gain available for channel "{channel}"!')
 
 
         
@@ -467,8 +468,7 @@ class DIDVAnalysis(FilterData):
     
     def calc_smallsignal_params(self,
                                 channels=None,
-                                calc_true_current=True,
-                                inf_loop_gain_approx='auto',
+                                poles=None,
                                 priors_fit_method=False,
                                 lgc_diagnostics=False):
         """
@@ -494,46 +494,26 @@ class DIDVAnalysis(FilterData):
             if self._verbose:
                 print(f'INFO: Calculating small signal parameters '
                       f'uncertainties for channel {chan}')
-            
+
+            # data config
+            data_config = self._didv_data[chan]['data_config']
+            tes_bias = data_config['tes_bias']
+                
             # get didvobj
             didvobj = self._didv_data[chan]['didvobj']
             
             # IV sweep result
             ivsweep_results = self._didv_data[chan]['ivsweep_results']
-            if ivsweep_results is None:
-                raise ValueError(f'ERROR: No IV sweep result for channel '
-                                 f'{chan}. first set results using '
-                                 '"set_ivsweep_results" function!')
-
-            # check ivsweep results for case no true I0/R0 calculation
-            if not calc_true_current:
-                extra_pars = ['i0','i0_err', 'r0', 'r0_err']
-                for par in extra_pars:
-                    if par not in ivsweep_results:
-                        raise ValueError(
-                            'ERROR: parameters "i0", "i0_err", '
-                            '"r0", "r0_err" from IV sweep required if '
-                            'true current not calculated!'
-                        )
-            
-            # data config
-            data_config = self._didv_data[chan]['data_config']
-            tes_bias = data_config['tes_bias']
-            output_variable_offset = data_config['output_variable_offset']
-            close_loop_norm = data_config['close_loop_norm']
-            output_variable_gain = data_config['output_variable_gain']
-            
-
+            if (ivsweep_results is not None
+                and 'ibias' not in ivsweep_results):
+                ivsweep_results['ibias'] = tes_bias
+                        
             # calc small signal parameters
             didvobj.calc_smallsignal_params(
-                ivsweep_results,
-                calc_true_current=calc_true_current,
-                tes_bias=tes_bias,
-                close_loop_norm=close_loop_norm,
-                output_variable_gain=output_variable_gain,
-                output_variable_offset=output_variable_offset,
-                inf_loop_gain_approx=inf_loop_gain_approx,
-                lgc_diagnostics=lgc_diagnostics)
+                biasparams=ivsweep_results,
+                poles=poles,
+                lgc_diagnostics=lgc_diagnostics
+            )
 
             # replace
             self._didv_data[chan]['didvobj'] = didvobj
@@ -543,14 +523,14 @@ class DIDVAnalysis(FilterData):
         if self._save_hdf5:
             self.save_didv_data()
             
-            
+    
     def calc_bias_params_infinite_loop_gain(self, channels=None):
                                            
-        """
-        Calculate I0,R0, and P0 with infinite loop gain
-        approximation
-        """
-                    
+        #
+        #Calculate I0,R0, and P0 with infinite loop gain
+        #approximation
+        #
+
         # check channels
         if channels is None:
             channels = self._didv_data.keys()
@@ -559,6 +539,7 @@ class DIDVAnalysis(FilterData):
         nb_channels = len(channels)
 
 
+        # get list of fitted poles
         for chan in channels:
             if chan not in self._didv_data.keys():
                 raise ValueError(f'ERROR: channel {chan} not available!')
@@ -572,14 +553,16 @@ class DIDVAnalysis(FilterData):
             
         # loop channel
         for chan in channels:
-
+                   
             if self._verbose:
                 print(f'INFO: Calculating bias parameters with '
                       f'infinite loop gain approximation '
                       f'for channel {chan}')
+
+            biasparams_ilg = dict()
+                
             # get data config
             data_config = self._didv_data[chan]['data_config']
-
                 
             # get didvobj
             didvobj = self._didv_data[chan]['didvobj']
@@ -593,9 +576,16 @@ class DIDVAnalysis(FilterData):
                 
                 fitresult = didvobj.fitresult(poles)
 
+                # check if result available
+                if (fitresult is None
+                    or 'params' not in fitresult):
+                    continue
+                                
                 ibias = None
                 ibias_err = 0
                 rp = None
+                rshunt = None
+                rn = None
                 if ('biasparams' in fitresult.keys() and
                     fitresult['biasparams'] is not None):
                  
@@ -605,28 +595,33 @@ class DIDVAnalysis(FilterData):
                     else:
                         ibias_err = 0
                     rp = fitresult['biasparams']['rp']
+                    rshunt = fitresult['biasparams']['rshunt']
+                    if 'rn' in fitresult['biasparams']:
+                        rn = fitresult['biasparams']['rn']
                 else:
                     ibias = data_config['tes_bias']
                     if 'rp' not in data_config:
                         raise ValueError('ERROR: Unable to find rp!'
                                          'use "set_ivsweep_results()"  first')
                     rp =  data_config['rp']
-
-                didvobj.calc_bias_params_infinite_loop_gain(
-                    poles,
-                    tes_bias=ibias,
-                    tes_bias_err=ibias_err,
-                    rp=rp)
-
-                self._didv_data[chan]['didvobj'] = didvobj
-
-
-
+                    rshunt = data_config['rshunt']
+                    if 'rn' in data_config:
+                        rn = data_config['rn']
+                        
+                biasparams_ilg[poles] = qp.get_biasparams_ilg(
+                    fitresult['params'],
+                    fitresult['cov'],
+                    ibias,
+                    ibias_err,
+                    rshunt,
+                    rp,
+                    rn=rn)
                 
-        # save hdf5
+            self._didv_data[chan]['biasparams_ilg'] = biasparams_ilg
+        
         if self._save_hdf5:
             self.save_didv_data()
-                        
+                      
    
     def calc_dpdi(self, freqs, channels=None, list_of_poles=None,
                   lgc_plot=False):

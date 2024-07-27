@@ -1770,19 +1770,14 @@ class IVSweepAnalysis(FilterData):
                 results = None
                 if (data_type == 'normal' or data_type == 'sc'):
                     didvanalysis.dofit(1)
+                    didvanalysis.calc_smallsignal_params(poles=1)
                     results = {1: didvanalysis.get_fit_results(chan,1)}
                 else:
                     if self._verbose:
                         print('INFO: Fitting dIdV (2 and 3-poles)')
                     didvanalysis.dofit([2,3])
                     didvanalysis.set_ivsweep_results_from_data(chan, iv_results)
-                    didvanalysis.calc_smallsignal_params(
-                        calc_true_current=False,
-                        inf_loop_gain_approx=inf_loop_gain_approx,
-                    )
-                    if self._verbose:
-                        print('INFO: Calculating TES bias parameters with '
-                              'infinite loop gain approximation')
+                    didvanalysis.calc_smallsignal_params(poles=[2,3])
                     didvanalysis.calc_bias_params_infinite_loop_gain()
                                      
                     # calc dpdi
@@ -1813,9 +1808,13 @@ class IVSweepAnalysis(FilterData):
                     cov_matrix = np.abs(results[poles]['ssp_light']['cov'])
                     vals_vector = results[poles]['ssp_light']['vals']
                     sigmas_vector = results[poles]['ssp_light']['sigmas']
+
+                    biasparams_ilg = (
+                        didvanalysis.get_bias_params_infinite_loop_gain(
+                            chan, poles=poles)
+                    )
                     
                     if self._verbose:
-
 
                         print(f'\nResults from {poles}-poles dIdV fit')
                         print('---------------------------------')
@@ -1934,25 +1933,24 @@ class IVSweepAnalysis(FilterData):
 
 
                     # infinite loop gain bias
-                    bias_params_inf_lgain = results[poles]['biasparams_infinite_lgain']
                     df.loc[df_index, f'didv_{poles}poles_r0_infinite_lgain'] = (
-                        bias_params_inf_lgain['r0']
+                        biasparams_ilg['r0']
                     )
                     df.loc[df_index, f'didv_{poles}poles_r0_err_infinite_lgain'] = (
-                        bias_params_inf_lgain['r0_err']
+                        biasparams_ilg['r0_err']
                     )
                     df.loc[df_index, f'didv_{poles}poles_i0_infinite_lgain'] = (
-                        bias_params_inf_lgain['i0']
+                        biasparams_ilg['i0']
                     )
                     df.loc[df_index, f'didv_{poles}poles_i0_err_infinite_lgain'] = (
-                        bias_params_inf_lgain['i0_err']
+                        biasparams_ilg['i0_err']
                     )
 
                     df.loc[df_index, f'didv_{poles}poles_p0_infinite_lgain'] = (
-                        bias_params_inf_lgain['p0']
+                        biasparams_ilg['p0']
                     )
                     df.loc[df_index, f'didv_{poles}poles_p0_err_infinite_lgain'] = (
-                        bias_params_inf_lgain['p0_err']
+                        biasparams_ilg['p0_err']
                     )
 
                     
