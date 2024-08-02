@@ -242,8 +242,8 @@ class ProcessingData:
                     if nb_samples != csd.shape[-1]:
                         raise ValueError(
                             f'Number of samples is not '
-                            f'consistent between raw data '
-                            f'and csd for channel {chan}, '
+                            f'consistent between raw data (={nb_samples}) '
+                            f'and csd (={csd.shape[-1]})for channel {chan}, '
                             f'algorithm {algo}!'
                         )
                                                 
