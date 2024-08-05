@@ -242,8 +242,8 @@ class ProcessingData:
                     if nb_samples != csd.shape[-1]:
                         raise ValueError(
                             f'Number of samples is not '
-                            f'consistent between raw data '
-                            f'and csd for channel {chan}, '
+                            f'consistent between raw data (={nb_samples}) '
+                            f'and csd (={csd.shape[-1]})for channel {chan}, '
                             f'algorithm {algo}!'
                         )
                                                 
@@ -751,8 +751,8 @@ class ProcessingData:
         admin_dict['series_number'] = np.int64(self._current_admin_info['series_num'])
         admin_dict['event_id'] = np.int32(self._current_admin_info['event_id'])
         admin_dict['event_time'] = np.int64(self._current_admin_info['event_time'])
-        admin_dict['run_type'] = self._current_admin_info['run_type']
-        admin_dict['data_type'] = self._current_admin_info['run_type']
+        admin_dict['run_type'] = np.str(self._current_admin_info['run_type'])
+        admin_dict['data_type'] = np.str(self._current_admin_info['run_type'])
 
         # group name
         if self._group_name is not None:
@@ -813,7 +813,6 @@ class ProcessingData:
             )
         else:
             admin_dict['group_start_time'] = np.nan
-
 
         return admin_dict
 
