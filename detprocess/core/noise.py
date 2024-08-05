@@ -173,6 +173,7 @@ class Noise(FilterData):
                          min_separation_msec=100,
                          edge_exclusion_msec=50,
                          restricted=False,
+                         calib=False,
                          ncores=1):
         """
         Generate randoms from continuous data
@@ -185,7 +186,8 @@ class Noise(FilterData):
         raw_data, output_base_path, group_name = (
             self._get_file_list(raw_path,
                                 series=series,
-                                restricted=restricted)
+                                restricted=restricted,
+                                calib=calib)
         )
         
         if not raw_data:
@@ -199,9 +201,13 @@ class Noise(FilterData):
         self._series_list = list(raw_data.keys())
         self._detector_config = dict()
 
-        
+             
         # generate randoms
-        rand_inst = Randoms(raw_path, series=series, verbose=self._verbose)
+        rand_inst = Randoms(raw_path, series=series,
+                            verbose=self._verbose,
+                            restricted=restricted,
+                            calib=calib)
+        
         self._dataframe = rand_inst.process(
             random_rate=random_rate,
             nrandoms=nevents,
@@ -743,7 +749,8 @@ class Noise(FilterData):
     def _get_file_list(self, file_path,
                        series=None,
                        is_raw=True,
-                       restricted=False):
+                       restricted=False,
+                       calib=False):
         """
         Get file list from path. Return as a dictionary
         with key=series and value=list of files
@@ -866,25 +873,33 @@ class Noise(FilterData):
                 continue
 
             # skip didv
-            if 'didv_' in file_name:
-                continue
-
-            # skip iv
-            if 'iv_' in file_name:
+            if ('didv_' in file_name
+                or 'iv_' in file_name):
                 continue
                       
             if 'treshtrig_' in file_name:
                 continue
 
-            # restricted
-            if (restricted
-                and 'restricted' not in file_name):
+            # calibration
+            if (calib
+                and 'calib_' not in file_name):
                 continue
 
-            # not restricted
-            if (not restricted
-                and 'restricted' in file_name):
-                continue
+            # not calibration
+            if not calib:
+                
+                if 'calib_' in file_name:
+                    continue
+                            
+                # restricted
+                if (restricted
+                    and 'restricted' not in file_name):
+                    continue
+
+                # not restricted
+                if (not restricted
+                    and 'restricted' in file_name):
+                    continue
                       
             # append file if series already in dictionary
             if (series_name is not None

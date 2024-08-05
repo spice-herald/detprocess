@@ -32,6 +32,7 @@ class Randoms:
     def __init__(self, raw_path, series=None,
                  processing_id=None,
                  restricted=False,
+                 calib=False,
                  verbose=True):
         """
         Initialize randoms acquisition
@@ -47,10 +48,17 @@ class Randoms:
         series : str or list of str, optional
             series to be process, disregard other data from raw_path
 
+        processing_id :  str, optional
+          
+            
         restricted : boolean
             if True, use restricted data 
             if False (default), exclude restricted data
-       
+
+        calib : boolean
+           if True, use only "calib" files
+           if False, no calib files included
+               
         verbose : bool, optional
             if True, display info
 
@@ -69,12 +77,18 @@ class Randoms:
         # restricted
         self._restricted = restricted
 
+        # calibration
+        self._calib = calib
+        if calib:
+            self._restricted = False
+
         # extract input file list
         input_file_dict, input_base_path, input_group_name, facility = (
             self._get_file_list(raw_path, series=series,
-                                restricted=restricted)
+                                restricted=restricted,
+                                calib=calib)
         )
-
+        
         if not input_file_dict:
             raise ValueError('No files were found! Check configuration...')
         
@@ -82,8 +96,6 @@ class Randoms:
         self._input_group_name = input_group_name
         self._series_dict = input_file_dict
         self._facility = facility
-
-        
 
         # initialize output path
         self._output_group_path = None
@@ -208,7 +220,8 @@ class Randoms:
                     save_path,
                     self._facility,
                     output_group_name=output_group_name,
-                    restricted=self._restricted
+                    restricted=self._restricted,
+                    calib=self._calib
                 )
             )
             
@@ -324,6 +337,8 @@ class Randoms:
 
             if self._restricted:
                 file_prefix += '_restricted'
+            elif self._calib:
+                file_prefix += '_calib'
                 
             series_name = h5io.extract_series_name(
                 int(output_series_num+node_num)
@@ -530,7 +545,7 @@ class Randoms:
                         feature_dict['trigger_index'].append(int(trigger_index))
                         feature_dict['trigger_time'].append(trigger_time)
                         feature_dict['trigger_type'].append(3)
-                        feature_dict['data_type'].append((metadata['run_type']))
+                        feature_dict['data_type'].append(metadata['run_type'])
                         feature_dict['fridge_run_number'].append(int(metadata['fridge_run']))
                         feature_dict['trigger_prod_id'].append(trigger_id)
                         feature_dict['trigger_prod_group_name'].append(trigger_prod_group_name)
@@ -626,7 +641,7 @@ class Randoms:
     
     def _create_output_directory(self, base_path, facility,
                                  output_group_name=None,
-                                 restricted=False):
+                                 restricted=False, calib=False):
         """
         Create output directory 
 
@@ -642,6 +657,9 @@ class Randoms:
         restricted : boolean
           if True, create directory name that includes "restricted"
     
+        calib : boolean
+          if True,  create directory name that includes "calib"
+
         Return
         ------
           output_dir : str
@@ -665,6 +683,9 @@ class Randoms:
                 prefix = self._processing_id + '_trigger'
             if restricted:
                  prefix += '_restricted'
+            elif calib:
+                prefix += '_calib'
+                
             output_dir = base_path + '/' + prefix + '_' + series_name
         else:
             if output_group_name not in base_path:
@@ -684,7 +705,8 @@ class Randoms:
         
   
     def _get_file_list(self, file_path, series=None,
-                       restricted=False):
+                       restricted=False,
+                       calib=False):
         """
         Get file list from path. Return as a dictionary
         with key=series and value=list of files
@@ -704,6 +726,10 @@ class Randoms:
         restricted : boolean
             if True, use restricted data
             if False, exclude restricted data
+
+        calib : boolean
+           if True, use only "calib" files
+           if False, no calib files included
 
 
         Return
@@ -805,32 +831,42 @@ class Randoms:
             if 'filter' in file_name:
                 continue
 
-            # restricted
-            if (restricted
-                and 'restricted' not in file_name):
-                continue
-
-            # not restricted
-            if (not restricted
-                and 'restricted' in file_name):
-                continue
-            
-            # skip iv
-            if 'iv_' in file_name:
-                continue
-                
-            # skip didv / external trigger
+            # skip didv and iv
             if ('didv_' in file_name
+                or 'iv_' in file_name
                 or 'exttrig_' in file_name):
                 continue
-            
+
             # skip if trigger data already
             if ('thresh_' in file_name
                 or 'threshtrig_'  in file_name):
                 continue
 
+            # calibration
+            if (calib
+                and 'calib_' not in file_name):
+                continue
+
+            # not calibration
+            if not calib:
+                
+                if 'calib_' in file_name:
+                    continue
+                            
+                # restricted
+                if (restricted
+                    and 'restricted' not in file_name):
+                    continue
+
+                # not restricted
+                if (not restricted
+                    and 'restricted' in file_name):
+                    continue
+       
+            
             # case unrecognized
-            if ('cont_' not in  file_name
+            if ('calib_' not in  file_name
+                and 'cont_' not in  file_name
                 and 'rand_' not in  file_name):
 
                 # unknown file -> check trigger type

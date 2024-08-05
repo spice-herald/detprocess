@@ -32,7 +32,7 @@ if __name__ == "__main__":
                         action='store_true', help='Process IV sweep data')
     parser.add_argument('--enable-trig', '--enable-triggers', '--enable_trig',
                         dest='enable_trig',
-                        action='store_true', help='Acquire randoms')
+                        action='store_true', help='Acquire triggers')
     parser.add_argument('--trigger_dataframe_path', 
                         dest='trigger_dataframe_path', type=str,
                         help='Path to trigger dataframe (threshold and/or randoms)')
@@ -64,7 +64,12 @@ if __name__ == "__main__":
 
     parser.add_argument('--restricted',
                         action='store_true',
-                        help=('Processing restricted (blinded) data'))
+                        help=('Process restricted (blinded) data'))
+
+    parser.add_argument('--calib',
+                        action='store_true',
+                        help=('Processing calibration data'))
+
     
     args = parser.parse_args()
     
@@ -105,12 +110,14 @@ if __name__ == "__main__":
               'type of processing (trigger or feature processing)')
         exit()
 
-        
-
     restricted = False
     if args.restricted:
         restricted = True
 
+    calib = False
+    if args.calib:
+        calib = True 
+        restricted = False
         
     # processing id
     processing_id = None
@@ -145,8 +152,6 @@ if __name__ == "__main__":
     save_path = None
     if args.save_path:
         save_path = str(args.save_path)
-
-        
          
     # ------------------
     # check setup file
@@ -206,6 +211,7 @@ if __name__ == "__main__":
                          processing_id=processing_id,
                          series=series,
                          restricted=restricted,
+                         calib=calib,
                          verbose=True)
         
         myproc.process(random_rate=random_rate,
@@ -240,12 +246,13 @@ if __name__ == "__main__":
         if args.ntriggers:
             ntriggers = int(args.ntriggers)
             
-            
+        print(calib)
         myproc = TriggerProcessing(args.input_group_path,
                                    processing_setup,
                                    series=series,
                                    processing_id=processing_id,
                                    restricted=restricted,
+                                   calib=calib,
                                    verbose=True)
           
         myproc.process(ntriggers=ntriggers,
@@ -276,7 +283,8 @@ if __name__ == "__main__":
                                    trigger_dataframe_path=dataframe_path,
                                    external_file=None, 
                                    processing_id=processing_id,
-                                   restricted=restricted)
+                                   restricted=restricted,
+                                   calib=calib)
         
         myproc.process(nevents=-1,
                        lgc_save=True,
