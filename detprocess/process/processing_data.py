@@ -432,8 +432,8 @@ class ProcessingData:
                 if nb_channels == 1:
                     self._OF_base_objs[key]['OF'].calc_phi(chan)
                 else:
-                    self._OF_base_objs[key]['OF'].calc_phi_mat(chan)
-                    self._OF_base_objs[key]['OF'].calc_weight_mat(chan)
+                    self._OF_base_objs[key]['OF'].calc_phi_matrix(chan)
+                    self._OF_base_objs[key]['OF'].calc_weight_matrix(chan)
 
                     
         # remove duplicated
@@ -685,7 +685,6 @@ class ProcessingData:
                 self._OF_base_objs[key_tuple]['OF'].update_signal(
                     chan, trace,
                     calc_signal_filt=False,
-                    calc_q_vector= False,
                     calc_signal_filt_td=False,
                     calc_chisq_amp=False,
                 )
@@ -704,8 +703,8 @@ class ProcessingData:
                     self._OF_base_objs[key_tuple]['OF'].calc_signal_filt(chan)
                     self._OF_base_objs[key_tuple]['OF'].calc_chisq_amp(chan)
                 else:
-                    self._OF_base_objs[key_tuple]['OF'].calc_signal_filt_mat(chan)
-                    self._OF_base_objs[key_tuple]['OF'].calc_signal_filt_mat_td(chan)
+                    self._OF_base_objs[key_tuple]['OF'].calc_signal_filt_matrix(chan)
+                    self._OF_base_objs[key_tuple]['OF'].calc_signal_filt_matrix_td(chan)
                     
                     
     def get_event_admin(self, return_all=False):
