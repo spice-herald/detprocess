@@ -35,3 +35,9 @@ class Salting:
         
     def autocorrelate():
       asdf
+    def inject_salt():
+      asdfa
+    def guassian_smear():
+       asdf
+    def dm_distribution():
+       asf
