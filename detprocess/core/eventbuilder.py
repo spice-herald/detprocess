@@ -254,15 +254,17 @@ class EventBuilder:
                 [event_metadata['event_num']]*nb_triggers).astype(int)    
         if 'dump_num' in event_metadata.keys():
             metadata_dict['dump_number'] = np.array(
-                [event_metadata['dump_num']]*nb_triggers) .astype(int)   
+                [event_metadata['dump_num']]*nb_triggers).astype(int)   
         if 'run_type' in event_metadata.keys():
             metadata_dict['data_type'] = np.array(
-                [event_metadata['run_type']]*nb_triggers)  
+                [event_metadata['run_type']]*nb_triggers).astype(str)
+        elif 'data_type' in event_metadata.keys():
+            metadata_dict['data_type'] = np.array(
+                [event_metadata['data_type']]*nb_triggers).astype(str)
         if 'fridge_run' in event_metadata.keys():
             metadata_dict['fridge_run_number'] = np.array(
-                [event_metadata['fridge_run']]*nb_triggers).astype(int)   
-
-                
+                [event_metadata['fridge_run']]*nb_triggers).astype(int)
+            
         # event times
         trigger_times = self._event_df['trigger_time'].values
         event_times = trigger_times + event_time_start
@@ -282,19 +284,14 @@ class EventBuilder:
             np.array(range(nb_triggers))
             + int(self._current_trigger_id)
             + 1)
-        
-        
+          
         self._current_trigger_id = metadata_dict['trigger_prod_id'][-1]
-        
-        
-        # add to dataframe
-        for key,val in metadata_dict.items():
-            self._event_df[key] = val
-            
-            
-        
 
-                
+        # add to dataframe
+        for key, val in metadata_dict.items():
+            self._event_df[key] = val
+
+            
     def _merge_coincident_triggers(self, fs=None,
                                   coincident_window_msec=None,
                                   coincident_window_samples=None):
@@ -323,21 +320,18 @@ class EventBuilder:
         # let's convert vaex dataframe to pandas so we can modify it
         # more easily
         df_pandas = self._event_df.to_pandas_df()
-        
-            
+                 
         # get trigger index and amplitude
         trigger_indices =  np.array(df_pandas['trigger_index'].values)
         trigger_amplitudes =  np.array(df_pandas['trigger_amplitude'].values)
         trigger_names = np.array(df_pandas['trigger_channel'].values)
-    
-  
+      
         # find list of indices within merge_window
         # then store in list of index ranges
         lgc_coincident = np.diff(trigger_indices) < merge_window
         lgc_coincident = np.concatenate(([0], lgc_coincident, [0]))
         lgc_coincident_diff = np.abs(np.diff(lgc_coincident))
         coincident_ranges = np.where(lgc_coincident_diff == 1)[0].reshape(-1, 2)
-
       
         # let's first loop through ranges
         # then

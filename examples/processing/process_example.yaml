@@ -1,118 +1,100 @@
-# ##############################################################
-# Processing configuration example using UCB R20 data
-# version: development
-#
-#
-# Available window parameters:
-#
-#   window_min_from_start_usec
-#   window_max_from_start_usec
-#   window_min_to_end_usec
-#   window_max_to_end_usec
-#   window_min_from_trig_usec
-#   window_max_from_trig_usec
+# ==============================================================
+# Trigger and  Feature Processing configuration 
 # 
 # 
-# Syntax tip: NO TAB ALLOWED.... If tab you will get an error:
+# Syntax tip: NO TAB ALLOWED....
+#   
+#      If there is a tab you will get an error:
 #      ScannerError: while scanning for the next token
 #      found character '\t' that cannot start any token
 #      in "./process_example.yaml", line 133, column 1
-# ##############################################################
+# 
+#  VALIDATE with https://codebeautify.org/yaml-validator
+# ==============================================================
+
+# Filter file
+filter_file: /data/users/serfass/run32/ofnxm_test/run32_test_filter.hdf5
 
 
-
-# Full path to filter file
-# It is used for both trigger and feature processing
-
-filter_file: ./filter_example.hdf5
-
-# ================================================
-# Trigger processing
-# ================================================
-
+# -------------------------------------------------
+# TRIGGER PROCESSING
+# -------------------------------------------------
 trigger:
 
    coincident_window_msec: 0.01
-   #coincident_window_samples: 12
-
-
-   CPDv21Ge:
-       run: False
-       template_tag: default
-       psd_tag: default
-       pileup_window_msec: 10
-       threshold_sigma: 10
-       #positive_pulses: True	
-       
-   IrPtTESSmall,IrPtTESBig:
+        
+   Melange025pcLeft,Melange025pcRight:
        run: True
        template_tag: default
        psd_tag: default
        pileup_window_msec: 10
-       threshold_sigma: 10
+       threshold_sigma: 15
 
 
-   IrPtTESSmall+IrPtTESBig:
-       run: False
+   Melange025pcLeft+Melange025pcRight:
+       run: True
        trigger_name: TotIrPt
        template_tag: default
        psd_tag: default
        pileup_window_msec: 10
-       threshold_sigma: 10
+       threshold_sigma: 15
 
 
 
 
-# ================================================
-# Feature processing
-# ================================================
+# -------------------------------------------------
+# FEATURE PROCESSING 
+# -------------------------------------------------
+
+global:
+    
+    # trace/pretriggger length (continuous data)
+    # (can be overwritten for each channel and
+    # each channel's algorithms)
+    #
+    # use samples or msec ("_samples" or "_msec")
+    
+    trace_length_msec: 20
+    pretrigger_length_msec: 10
+  
+
+# -------------------------------------------------
+# Feature processing confuration for
+# INDIVIDUAL channels
+# -------------------------------------------------
+
+# channels with fields are automatically enabled
+# "all" field refer to all channels (settings can
+# then overwritten in channel specific field)
 
 
-# ---------------------------------------
-# Feature configuration for ALL
-# INDIVIDUAL channels (does not include
-# sum of channels for example)
-#
-# 
-# Each channel/algorithm can be modified/disable
-# separately using channel name as field
-#
-# This section enable all channels. If
-# processing not done on a specific
-# channel, it can then be disabled (example
-# further below)
-# ---------------------------------------
+# Settings for specific channels
 
-all:
-    nb_samples: 25000
-    nb_pretrigger_samples: 12500
+Melange1pc1ch:
+  
+    of1x1_nodelay:
+        run: True
+        lowchi2_fcutoff: 50000
+        template_tag: default
 
+ 
     of1x1_constrained:
-        run: False
-        window_min_from_trig_usec: -400
-        window_max_from_trig_usec: 400
+        run: True
+        window_min_from_trig_usec: -100
+        window_max_from_trig_usec: 100
+        lowchi2_fcutoff: 50000
+        template_tag: default
 
     baseline:
         run: True
         window_min_from_start_usec: 0
-        window_max_from_trig_usec: -1000
-
-    baseline_start:
-        run: True
-        base_algorithm: baseline
-        window_min_from_start_usec: 0
-        window_max_from_start_usec: 1000
+        window_max_from_trig_usec: -2000
 
     baseline_end:   
         run: True
         base_algorithm: baseline
-        window_min_to_end_usec: 1000
+        window_min_from_trig_usec: 2000
         window_max_to_end_usec: 0
-
-    integral:
-        run: True
-        window_min_from_trig_usec: -500
-        window_max_from_trig_usec: 500
 
     maximum:
         run: True
@@ -123,91 +105,215 @@ all:
         run: True
         window_min_from_trig_usec: -500
         window_max_from_trig_usec: 500
-
-
-
-
-# ---------------------------------------
-# Feature configuration for specific
-# channels
-#
-# Channels can be grouped using a comma
-#  for example: chan1,chan2,chan3
-#
-# overwrite algorithm configuration from
-# ALL
-# ---------------------------------------
-
-
-CPDv21Ge:
-    disable: True
-  
-    of1x1_unconstrained_glitch:
+    
+    energyabsorbed:
+        run: False
+        i0: 88e-9
+        rl: 8.8e-3
+        vb: 190.6e-9
+        window_min_from_trig_usec: -100
+        window_max_from_trig_usec: 1000
+    
+    integral:
         run: True
-        base_algorithm: of1x1_unconstrained
-        template_tag: glitch
-        lowchi2_fcutoff: 1000
-      
+        window_min_from_trig_usec: -10
+        window_max_from_trig_usec: 500
+                
+    psd_amp:
+        run: True
+        f_lims: [[45.0, 75.0], [300.0, 500.0], [350.0, 450.0], [150, 250], [250, 350]]
 
+
+Melange025pcLeft,Melange025pcRight:
+    
     of1x1_nodelay:
         run: True
-     
-
-    of1x1_constrained:
-        run: True
-        window_min_from_trig_usec: -400
-        window_max_from_trig_usec: 400
-        lowchi2_fcutoff: 1000
-
-    energyabsorbed:
-        run: True
-        window_min_from_trig_usec: -100
-        window_max_from_trig_usec: 1500
-        vb: -9.25e-7
-        i0: -11.132e-6
-        rl: 9.4e-3
-
-    minmax:
-        run: True
-        window_min_from_trig_usec: -500
-        window_max_from_trig_usec: 500
-    
-
-# example of disabling channels
-# by default, if at least 1 algorithm
-# channels are enabled
-
-IrPtTESSmall,IrPtTESBig:
-    disable: False
-
-    of1x1_nodelay: 
-        run: True
-
-    of1x1_constrained:
-        run: True
-        template_tag: 3poles
-        window_min_from_trig_usec: -500
-        window_max_from_trig_usec: 500
-     
-
-# ---------------------------------------
-# Other types of "channel" such as
-# sum of pulses
-# ---------------------------------------
-
-IrPtTESSmall+IrPtTESBig:
-    feature_channel: TotIrPt
-    
-    nb_samples: 25000
-    nb_pretrigger_samples: 12500
-    
-    of1x1_nodelay: 
-        run: True
+        lowchi2_fcutoff: 50000
+        template_tag: default
 
     of1x1_unconstrained:
         run: True
+        template_tag: default
 
     of1x1_constrained:
         run: True
-        window_min_from_trig_usec: -300
-        window_max_from_trig_usec: 300
+        window_min_from_trig_usec: -100
+        window_max_from_trig_usec: 100
+        lowchi2_fcutoff: 50000
+        template_tag: default
+
+    baseline:
+        run: True
+        window_min_from_start_usec: 0
+        window_max_from_trig_usec: -2000
+
+    baseline_end:   
+        run: True
+        base_algorithm: baseline
+        window_min_from_trig_usec: 2000
+        window_max_to_end_usec: 0
+
+    maximum:
+        run: True
+        window_min_from_trig_usec: -500
+        window_max_from_trig_usec: 500
+
+    minimum:
+        run: True
+        window_min_from_trig_usec: -500
+        window_max_from_trig_usec: 500
+    
+    energyabsorbed:
+        run: False
+        i0: 88e-9
+        rl: 8.8e-3
+        vb: 190.6e-9
+        window_min_from_trig_usec: -100
+        window_max_from_trig_usec: 1000
+    
+    integral:
+        run: True
+        window_min_from_trig_usec: -10
+        window_max_from_trig_usec: 500
+                
+    psd_amp:
+        run: True
+        f_lims: [[45.0, 75.0], [300.0, 500.0], [350.0, 450.0], [150, 250], [250, 350]]
+
+
+
+# -------------------------------------------------
+# Feature processing channel combination
+# (separator: +,-,|)
+# -------------------------------------------------
+
+Melange025pcLeft+Melange025pcRight:
+    # feature channel
+    feature_channel: Melange025pcSumLeftRight
+   
+    # weight (default = 1)
+    weight_Melange025pcLeft: 0.9
+    weight_Melange025pcRight: 1.1
+    
+    of1x1_constrained:
+        run: True
+        window_min_from_trig_usec: -100
+        window_max_from_trig_usec: 100
+        lowchi2_fcutoff: 50000
+        template_tag: default
+
+    baseline:
+        run: True
+        window_min_from_start_usec: 0
+        window_max_from_trig_usec: -2000
+
+
+Melange025pcLeft|Melange025pcRight:
+
+     # channel rename
+     feature_channel: Melange025pcLR
+
+     of2x2_test1:
+        run: True
+        base_algorithm: ofnxm
+
+        # amplitude names (default: amp1,amp2, amp3...)
+        # need to match the number of templates
+        amplitude_names: [amptest1, amptest2]
+
+        # OF window
+        window_min_from_trig_usec: -100
+        window_max_from_trig_usec: 100
+
+        # csd
+        csd_tag: default
+
+        # templates can be either
+        # 
+        #  1: templates for each channels
+        #       Example 2x2:  template_tag_Melange1pc1ch: [default, None]
+        # 
+        #  2: array of tags (Nchans, Mtemps)
+        #       Examples 2x2:   template_tag: [[default, None],[None, default]]	 
+        #
+        #  3: single tag if stored as (Nchan, Mtemps, samples) in filter file
+        #       Example: template_tag: default
+        #       
+        # Use None if zeros
+
+        template_tag_Melange025pcLeft: [single_025L, None]
+        template_tag_Melange025pcRight: [None, single_025R]
+
+        # cutoff NOT IMPLEMENTED IN QETpy
+        lowchi2_fcutoff: 50000
+
+     of2x2_test2:
+        run: True
+        base_algorithm: ofnxm
+
+        # amplitude names
+        #amplitude_names: [amp1, amp2]
+
+        # OF window
+        window_min_from_trig_usec: -100
+        window_max_from_trig_usec: 100
+
+        # csd
+        csd_tag: default
+
+        # template tags
+        template_tag: [[default, None], [None, default]]
+
+        # cutoff NOT IMPLEMENTED IN QETpy
+        lowchi2_fcutoff: 50000
+
+
+Melange4pc1ch|Melange025pcLeft|Melange025pcRight:
+
+     # channel rename
+     feature_channel: Melange4pc025pcLR
+
+     of3x1_test1:
+        run: True
+        base_algorithm: ofnxm
+
+        # amplitude names (default: amp1,amp2,...)
+        # need to match the number of templates
+        amplitude_names: amptest
+
+        # OF window
+        window_min_from_trig_usec: -100
+        window_max_from_trig_usec: 100
+
+        # csd tag (if not "default")
+        csd_tag: default
+
+        # template tags
+        template_tag: demo
+
+        # cutoff NOT IMPLEMENTED IN QETpy
+        lowchi2_fcutoff: 50000
+
+     of3x1_test3:
+        run: True
+        base_algorithm: ofnxm
+
+        # amplitude names (default: amp1,amp2,...)
+        #amplitude_names: amptest
+
+        # OF window
+        window_min_from_trig_usec: -100
+        window_max_from_trig_usec: 100
+
+        # csd tag (if not "default")
+        csd_tag: default
+
+        # template tags (Nchan, Mtemps) -> (3,1)
+        template_tag: [[None],[shared],[shared]]
+
+        # cutoff NOT IMPLEMENTED IN QETpy
+        lowchi2_fcutoff: 50000
+
+   
+       
+      

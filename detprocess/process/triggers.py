@@ -45,6 +45,7 @@ class TriggerProcessing:
                  series=None,
                  processing_id=None,
                  restricted=False,
+                 calib=False,
                  verbose=True):
         """
         Intialize data processing 
@@ -63,9 +64,6 @@ class TriggerProcessing:
 
         series : str or list of str, optional
             series to be process, disregard other data from raw_path
-
-        output_path : str, optional (default=No saved file)
-           base directory where output feature file will be saved
     
         processing_id : str, optional
             an optional processing name. This is used to be build 
@@ -77,6 +75,10 @@ class TriggerProcessing:
         restricted : boolean
             if True, use restricted data 
             if False (default), exclude restricted data
+
+        calib : boolean
+           if True, use only "calib" files
+           if False, no calib files included
 
         verbose : bool, optional
             if True, display info
@@ -96,13 +98,19 @@ class TriggerProcessing:
 
         # restricted
         self._restricted = restricted
+
+        # calibration data
+        self._calib = calib
+        if calib:
+            self._restricted = False
         
         # extract input file list
         input_data_dict, input_base_path, group_name = (
             self._get_file_list(raw_path, series=series,
-                                restricted=restricted)
+                                restricted=restricted,
+                                calib=calib)
         )
-
+           
         if not input_data_dict:
             raise ValueError('No files were found! Check configuration...')
 
@@ -223,7 +231,8 @@ class TriggerProcessing:
                     save_path,
                     self._processing_data_inst.get_facility(),
                     output_group_name=output_group_name,
-                    restricted=self._restricted
+                    restricted=self._restricted,
+                    calib=self._calib
                 )
             )
             if self._verbose:
@@ -432,6 +441,8 @@ class TriggerProcessing:
 
             if self._restricted:
                 file_prefix += '_restricted'
+            elif self._calib:
+                file_prefix += '_calib'
                 
             series_name = h5io.extract_series_name(
                 int(output_series_num+node_num)
@@ -684,7 +695,7 @@ class TriggerProcessing:
         
         
     def _get_file_list(self, file_path, series=None,
-                       restricted=False):
+                       restricted=False, calib=False):
         """
         Get file list from path. Return as a dictionary
         with key=series and value=list of files
@@ -704,7 +715,9 @@ class TriggerProcessing:
             if True, use restricted data
             if False, exclude restricted data
 
-
+        calib : boolean
+           if True, use only "calib" files
+           if False, no calib files included
 
         Return
         -------
@@ -790,7 +803,7 @@ class TriggerProcessing:
         # sort
         file_list.sort()
 
-        # get list of series
+        # get list of files
         series_dict = dict()
         h5reader = h5io.H5Reader()
         series_name = None
@@ -804,24 +817,34 @@ class TriggerProcessing:
                 continue
 
             # skip didv and iv
-            if 'didv_' in file_name:
-                continue
-            
-            if 'iv_' in file_name:
-                continue
-            # restricted
-            if (restricted
-                and 'restricted' not in file_name):
+            if ('didv_' in file_name
+                or  'iv_' in file_name):
                 continue
 
-            # not restricted
-            if (not restricted
-                and 'restricted' in file_name):
+            # calibration
+            if (calib
+                and 'calib_' not in file_name):
                 continue
 
-            # now check if continuous data
+            # not calibration
+            if not calib:
+                
+                if 'calib_' in file_name:
+                    continue
+                            
+                # restricted
+                if (restricted
+                    and 'restricted' not in file_name):
+                    continue
+
+                # not restricted
+                if (not restricted
+                    and 'restricted' in file_name):
+                    continue
+                
             # case unrecognized
-            if 'cont_' not in  file_name:
+            if ('calib_' not  in  file_name
+                and 'cont_' not in  file_name):
                 
                 # unknown file -> check trigger type
                  # check trigger type of first event
@@ -1005,7 +1028,8 @@ class TriggerProcessing:
 
     def _create_output_directory(self, base_path, facility,
                                  output_group_name=None,
-                                 restricted=False):
+                                 restricted=False,
+                                 calib=False):
         """
         Create output directory 
 
@@ -1046,6 +1070,9 @@ class TriggerProcessing:
                 prefix = self._processing_id + '_trigger'
             if restricted:
                 prefix += '_restricted'
+            elif calib:
+                prefix += '_calib'
+                
             output_dir = base_path + '/' + prefix + '_' + series_name
         else:
             if output_group_name not in base_path:

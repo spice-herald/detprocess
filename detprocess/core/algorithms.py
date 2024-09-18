@@ -19,9 +19,17 @@ class FeatureExtractors:
     """
     @staticmethod
     def ofnxm(channel, of_base,
-              lowchi2_fcutoff=10000,
               available_channels=None,
               feature_base_name='ofnxm',
+              template_tag=None,
+              amplitude_names=None,
+              window_min_from_trig_usec=None,
+              window_max_from_trig_usec=None,
+              window_min_index=None,
+              window_max_index=None,
+              lgc_outside_window=False,
+              lowchi2_fcutoff=10000,
+              interpolate_t0=False,
               **kwargs):
         """
         Feature extraction for the no delay Optimum Filter.
@@ -54,7 +62,7 @@ class FeatureExtractors:
 
         """
         
-        debug = False
+        debug = True
 
         
         # split channel name into list (same order)
@@ -62,26 +70,71 @@ class FeatureExtractors:
             channel,
             available_channels=available_channels,
             separator='|')
-
-
-        # TEMP CHECK data in of_base
-        if debug:
-            print(f'csd shape for channel {channel} = '
-                  f'{of_base.csd(channel).shape}')
-       
-            for chan in channel_list:
-                print(f'Signal template fft for {chan} = '
-                      f'{of_base.template_fft(chan).shape}')
         
+        nchans = len(channel_list)
 
-        # DUMMY OUTPUT    
+        # check data
+        if  template_tag is None: 
+            raise ValueError(f'ERROR: Missing "template_tag" argument '
+                             f'for channel {channel}, '
+                             f'algorithm "{feature_base_name}"')
+        elif template_tag.ndim != 2:
+            raise ValueError(f'ERROR: Expecting a 2D "template_tag" '
+                             f'array  for channel {channel}, '
+                             f'algorithm "{feature_base_name}"')
+        
+        nchans_array = template_tag.shape[0]
+        ntmps =  template_tag.shape[1]
+        
+        if nchans != nchans_array:
+            raise ValueError(f'ERROR: Expecting a 2D "template_tag" '
+                             f'with shape[0] = {nchans} '
+                             f'for channel {channel}, '
+                             f'algorithm "{feature_base_name}"')
 
+        
+        if amplitude_names is None:
+            amplitude_names = []
+            for itmp in range(ntmps):
+                amplitude_names.append(f'amp{itmp+1}')
+        else:
+
+            if isinstance(amplitude_names, str):
+                amplitude_names = [amplitude_names]
+
+            if len(amplitude_names) != ntmps:
+                raise ValueError(
+                    f'ERROR: Wrong length for "amplitude_names" '
+                    f'argument. Expecting {ntmps} name '
+                    f'for  channel {channel}, '
+                    f'algorithm "{feature_base_name}"')
+                                
+        # instantiate OF NxM
+        OF = qp.OFnxm(of_base=of_base,
+                      channels=channel,
+                      template_tags=template_tag,
+                      verbose=False)
+
+        # calc
+        OF.calc()
+
+        # get data
+        amps, t0, chi2 = OF.get_fit_withdelay(
+            window_min_from_trig_usec=window_min_from_trig_usec,
+            window_max_from_trig_usec=window_max_from_trig_usec,
+            window_min_index=window_min_index,
+            window_max_index=window_max_index,
+            interpolate_t0=interpolate_t0,
+            lgc_outside_window=lgc_outside_window
+        )
+        
+        # store
         retdict = dict()
-        for ichan, chan in enumerate(channel_list):
-           retdict[f'amp_{feature_base_name}_{chan}'] = random.uniform(4, 10)
-           retdict[f'chi2_{feature_base_name}_{chan}'] = 1.0
-           retdict[f't0_{feature_base_name}_{chan}'] = 1e-6
-           
+        retdict[f'chi2_{feature_base_name}'] = chi2
+        retdict[f't0_{feature_base_name}'] = t0
+        for iamp, amp_name in enumerate(amplitude_names):
+            retdict[f'{amp_name}_{feature_base_name}'] = amps[iamp]
+
         return retdict
     
 
@@ -687,32 +740,46 @@ class FeatureExtractors:
 
         # get OF base data
         freqs = of_base.fft_freqs()
-        trace_psd = np.abs(of_base.signal_fft(channel))
+        trace_fft = of_base.signal_fft(channel)
 
-        # calc
-        i = 0
+        # sample rate
+        fs = 2*np.max(np.abs(freqs))
+        if 'fs' in kwargs:
+            fs = kwargs['fs']
+
+        # calculate psd
+        psd = (np.abs(trace_fft)**2.0) * fs
+
+        # fold
+        freqs_fold, psd_fold = qp.utils.fold_spectrum(psd, fs)
+
+        # remove DC
+        psd_fold =  psd_fold[1:]
+        freqs_fold = freqs_fold[1:]
+    
+        # index ranges
+        name_list, ind_range_list = utils.get_indices_from_freq_ranges(
+            freqs_fold, f_lims)
+        
         retdict = {}
-        while i < len(f_lims):
-            f_low = f_lims[i][0]
-            f_high = f_lims[i][1]
+        for it, ind_range in enumerate(ind_range_list):
 
-            #round the frequencies so we can more easily look up what
-            #frequencies to average between
-            freq_spacing = freqs[1] - freqs[0]
-            f_low_mod = freq_spacing * np.ceil(f_low/freq_spacing)
-            f_high_mod = freq_spacing * np.floor(f_high/freq_spacing)
-
-            #get the indices of where to average the psd
-            f_low_index = np.where(freqs == f_low_mod)[0][0]
-            f_high_index = np.where(freqs == f_high_mod)[0][0]
-
-            #calculate the average psd in that range
-            av_psd = np.average(trace_psd[f_low_index:f_high_index])
-
-            # store features
-            retdict[feature_base_name + '_'
-                    + str(round(f_low))
-                    + '_' + str(round(f_high))] = av_psd
-            i += 1
+            ind_low = ind_range[0]
+            ind_high = ind_range[1]
+                                             
+            # take median
+            psd_chunk = psd_fold[ind_low:ind_high]
+                
+            # smooth + max ?
+            # nb_samples = len(psd_chunk)
+            #psd_chunk_smooth  = np.convolve(psd_chunk, np.ones(3)/3,
+            #                                mode='valid')
+            # 
+            psd_avg = np.average(psd_chunk)
+            psd_avg = np.sqrt(psd_avg)
+                    
+            # parameter name
+            psd_amp_name = f'{feature_base_name}_{name_list[it]}'
+            retdict[psd_amp_name ] = psd_avg
 
         return retdict

@@ -48,6 +48,7 @@ class FeatureProcessing:
                  external_file=None,
                  processing_id=None,
                  restricted=False,
+                 calib=False,
                  verbose=True):
         """
         Intialize data processing 
@@ -89,6 +90,9 @@ class FeatureProcessing:
             if True, use restricted data 
             if False (default), exclude restricted data
 
+        calib : boolean
+           if True, use only "calib" files
+           if False, no calib files included
 
         verbose : bool, optional
             if True, display info
@@ -101,12 +105,16 @@ class FeatureProcessing:
         # feature processing data type
         self._feature_processing_type = ['cont','rand','thresh',
                                          'exttrig']
-        
         # processing id
         self._processing_id = processing_id
 
         # restricted data
         self._restricted = restricted
+
+        # calib
+        self._calib = calib
+        if calib:
+            self._restricted = False
         
         # display
         self._verbose = verbose
@@ -125,7 +133,8 @@ class FeatureProcessing:
         raw_files, raw_path, group_name = (
             self._get_file_list(raw_path,
                                 series=raw_series,
-                                restricted=restricted)
+                                restricted=restricted,
+                                calib=calib)
         )
 
         if not raw_files:
@@ -145,7 +154,8 @@ class FeatureProcessing:
                 self._get_file_list(trigger_dataframe_path,
                                     series=dataframe_series,
                                     is_raw=False,
-                                    restricted=restricted)
+                                    restricted=restricted,
+                                    calib=calib)
             )
             if not trigger_files:
                 raise ValueError(f'No dataframe files were found! '
@@ -204,7 +214,14 @@ class FeatureProcessing:
             filter_file=filter_file,
             available_channels=available_channels,
             verbose=verbose)
-   
+
+        # cleaup filter data tags cleanup
+        self._processing_config = (
+            self._processing_data.check_filter_data_tags(
+                self._processing_config,
+                default_tag='default'
+            )
+        )
         
     def process(self,
                 nevents=-1,
@@ -285,7 +302,8 @@ class FeatureProcessing:
                 self._create_output_directory(
                     save_path,
                     self._processing_data.get_facility(),
-                    restricted=self._restricted
+                    restricted=self._restricted,
+                    calib=self._calib
                 )
             )
             
@@ -297,9 +315,9 @@ class FeatureProcessing:
         # (-> calculate FFT template/noise, optimum filter)
         if self._verbose:
             print('INFO: Instantiate OF base for each channel!')
-        
+
         self._processing_data.instantiate_OF_base(self._processing_config)
-        
+            
         # convert memory usage in bytes
         if isinstance(memory_limit, str):
             memory_limit = parse_size(memory_limit)   
@@ -423,6 +441,8 @@ class FeatureProcessing:
                 file_prefix = self._processing_id + '_feature'
             if self._restricted:
                 file_prefix += '_restricted'
+            elif self._calib:
+                file_prefix += '_calib'
                 
             series_name = h5io.extract_series_name(
                 int(output_series_num+node_num)
@@ -713,14 +733,12 @@ class FeatureProcessing:
                                                         
                         # append channel name and save in data frame
                         for feature_base_name in extracted_features:
-                            feature_name = feature_base_name
-                            if ('|' not in feature_channel and
-                                feature_channel not in feature_name):
-                                feature_name = f'{feature_base_name}_{feature_channel}'
+                            feature_name = f'{feature_base_name}_{feature_channel}'
                             event_features.update(
                                 {feature_name: extracted_features[feature_base_name]}
                             )
 
+                            
                 # done processing event!
                 # append event dictionary to dataframe
                 event_df = pd.DataFrame([event_features])
@@ -734,7 +752,8 @@ class FeatureProcessing:
     def _get_file_list(self, file_path,
                        is_raw=True,
                        series=None,
-                       restricted=False):
+                       restricted=False,
+                       calib=False):
         """
         Get file list from path. Return as a dictionary
         with key=series and value=list of files
@@ -754,7 +773,9 @@ class FeatureProcessing:
             if True, use restricted data
             if False, exclude restricted data
 
-        
+        calib : boolean
+           if True, use only "calib" files
+           if False, no calib files included
 
         Return
         -------
@@ -871,23 +892,32 @@ class FeatureProcessing:
             if 'filter' in file_name:
                 continue
 
-            # skip iv or didv
-            if 'didv_' in file_name:
-                continue
-            if 'iv_' in file_name:
-                continue
-            
-            # restricted
-            if (restricted
-                and 'restricted' not in file_name):
+            # skip didv and iv
+            if ('didv_' in file_name
+                or  'iv_' in file_name):
                 continue
 
-            # not restricted
-            if (not restricted
-                and 'restricted' in file_name):
+            # calibration
+            if (calib
+                and 'calib_' not in file_name):
                 continue
-            
-            
+
+            # not calibration
+            if not calib:
+                
+                if 'calib_' in file_name:
+                    continue
+                            
+                # restricted
+                if (restricted
+                    and 'restricted' not in file_name):
+                    continue
+
+                # not restricted
+                if (not restricted
+                    and 'restricted' in file_name):
+                    continue
+
             # append file if series already in dictionary
             if (series_name is not None
                 and series_name in file_name
@@ -1059,7 +1089,6 @@ class FeatureProcessing:
                     traces_config[trace_tuple].extend(chan_list.copy())
                 else:
                     traces_config[trace_tuple] = chan_list.copy()
-                        
 
         # make unique
         selected_channels = list(set(selected_channels))
@@ -1080,7 +1109,8 @@ class FeatureProcessing:
 
 
     def _create_output_directory(self, base_path, facility,
-                                 restricted=False):
+                                 restricted=False,
+                                 calib=False):
         """
         Create output directory 
 
@@ -1114,6 +1144,9 @@ class FeatureProcessing:
             prefix = self._processing_id + '_feature'
         if restricted:
             prefix += '_restricted'
+        elif calib:
+            prefix += '_calib'
+            
         output_dir = base_path + '/' + prefix + '_' + series_name
         
         
