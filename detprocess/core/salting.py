@@ -521,6 +521,10 @@ class Salting(FilterData):
             if ('biasparams' in didv_results.keys()
                 and didv_results['biasparams'] is not None):
                 self._ivdidv_data[channel]['biasparams'] = didv_results['biasparams']
+                
+            if('dpdi_3poles' in didv_results.keys()
+               and didv_results['dpdi_3poles'] is not None):
+               self._ivdidv_data[channel]['dpdi_3poles'] = didv_results['dpdi_3poles']
 
 
         # IV results
@@ -556,18 +560,6 @@ class Salting(FilterData):
                     ivsweep_results['rshunt']
                 )
                 
-            # inductance
-            if 'normal_didv_fit_L' in ivsweep_results.keys():
-                self.set_inductance(channel,
-                                    ivsweep_results['normal_didv_fit_L'],
-                                    'normal')
-
-            if 'sc_didv_fit_L' in ivsweep_results.keys():
-                self.set_inductance(channel,
-                                    ivsweep_results['sc_didv_fit_L'],
-                                    'sc')
-                
-
     def guassian_smear():
        asdf
     def dm_distribution():
