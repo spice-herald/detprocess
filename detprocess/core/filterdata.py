@@ -479,7 +479,7 @@ class FilterData:
         par_name = f'dpdi_{poles}poles'
         
         # return values
-        return self._get_param_array(par_name,cchannel,
+        return self._get_param_array(par_name,channel,
                                      tag=tag)
             
 
@@ -1210,6 +1210,10 @@ class FilterData:
                     ssp_light['vals'][par] = val
 
             output_data['ssp_light'].update(ssp_light)
+        
+        dpdipar = 'dpdi_' + str(poles) + 'poles_' + tag         
+        if dpdipar in self._filter_data[channel].keys():
+            output_data[dpdipar] = self._filter_data[channel][dpdipar].to_dict() 
                         
         return  output_data
 

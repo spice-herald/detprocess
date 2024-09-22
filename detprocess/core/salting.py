@@ -6,6 +6,7 @@ import qetpy as qp
 from math import log10, floor
 from glob import glob
 from pathlib import Path
+import types
 import pytesdaq.io as h5io
 import math
 import array
@@ -13,6 +14,7 @@ from detprocess.process.randoms import Randoms
 from detprocess.core.filterdata import FilterData
 from scipy.signal import correlate
 from scipy.fft import ifft, fft, next_fast_len
+from scipy import stats, signal, interpolate, special, integrate
 
 __all__ = [
     'Salting'
@@ -60,10 +62,11 @@ class Salting(FilterData):
 
         # sample rate stored for convenience
         self._fs = None
-    
-        # offset
-        self._offset = dict()
-
+        
+        # store the energies from the DM spectra that you have sampled
+        self._DMenergies = np.array([])
+        self._Channelenergies = np.array([])
+        
         self._verbose = verbose
 
         if yaml_path is not None:
@@ -371,7 +374,7 @@ class Salting(FilterData):
                 continue
 
             # not calibration
-            if not calib:
+            if not calib: 
                 
                 if 'calib_' in file_name:
                     continue
@@ -492,7 +495,6 @@ class Salting(FilterData):
    
         # dIdV results
         if didv_results is not None:
-
             if poles is None:
                 raise ValueError('ERROR: dIdV poles (2 or 3) required!')
 
@@ -512,6 +514,7 @@ class Salting(FilterData):
                 self._ivdidv_data[channel]['smallsignalparams'] = (
                     didv_results['smallsignalparams'].copy()
                 )
+
             else:
                 raise ValueError(f'ERROR: dIdV fit results '
                                  f'does not contain "smallsignalparams" '
@@ -521,15 +524,16 @@ class Salting(FilterData):
             if ('biasparams' in didv_results.keys()
                 and didv_results['biasparams'] is not None):
                 self._ivdidv_data[channel]['biasparams'] = didv_results['biasparams']
+
                 
-            if('dpdi_3poles' in didv_results.keys()
-               and didv_results['dpdi_3poles'] is not None):
-               self._ivdidv_data[channel]['dpdi_3poles'] = didv_results['dpdi_3poles']
+            if('dpdi_3poles_default' in didv_results.keys()
+               and didv_results['dpdi_3poles_default'] is not None):
+               self._ivdidv_data[channel]['dpdi_3poles_default'] = didv_results['dpdi_3poles_default']
 
 
         # IV results
         if ivsweep_results is not None:
-
+            print("IV results isn't none!")
             # add to filter data
             self.set_ivsweep_results(
                 channel,
@@ -560,11 +564,133 @@ class Salting(FilterData):
                     ivsweep_results['rshunt']
                 )
                 
-    def guassian_smear():
-       asdf
-    def dm_distribution():
-       asf
+    def sample_DMpdf(self,function, xrange, nsamples=1000, npoints=10000, normalize_cdf=True):
+        """
+        Produces randomly sampled values based on the arbitrary PDF defined
+        by `function`, done using inverse transform sampling.
+
+        Parameters
+        ----------
+        function : FunctionType
+            The 1D probability density function to be randomly sampled from.
+        xrange : array_like
+            A 1D array of length 2 that defines the range over which the PDF
+            in `function` is defined. Outside of this range, it is assumed that
+            the PDF is zero.
+        nsamples : int, optional
+            The number of random samples that we wish to create from the PDF
+            defined by `function`.
+        npoints : int, optional
+            The number of points to use in the numerical integration to evaluate
+            the CDF of `function`. This is also the number of points used in the
+            interpolation of the inverse of the CDF.
+        normalize_cdf : bool, optional
+            Boolean value to normalize the CDF or not. If True, the CDF is normalized
+            by the PDF area. If False, no normalization is done.
+
+        Returns
+        -------
+        rvs : ndarray
+            The random samples that were taken from the inputted PDF defined by
+            `function`. This is a 1D array of length `nsamples`.
+
+        Raises
+        ------
+        TypeError
+            If inputted `function` is not of FunctionType
+
+        Notes
+        -----
+        For a discussion of inverse transform sampling, see the Wikipedia page:
+            https://en.wikipedia.org/wiki/Inverse_transform_sampling
+
+        """
+        if not isinstance(function, types.FunctionType):
+            raise TypeError("Inputted variable function is not FunctionType.")
+
+        x = np.linspace(xrange[0], xrange[1], num=npoints)
+        pdf = function(x)
+
+        cdf = integrate.cumtrapz(pdf, x=x, initial=0.0)
+
+        if normalize_cdf:
+            cdf /= cdf[-1]
+
+        inv_cdf = interpolate.interp1d(cdf, x)
+
+        samples = np.random.rand(nsamples)
+        sampled_energies = inv_cdf(samples)
+
+        self._DMenergies = sampled_energies
+        return sampled_energies
+
+    def get_DMenergies(self):
+        return self._DMenergies
+        
+    def channel_energy_split(n =2, mean=0.5, std_dev=0.2, npairs=10):
+        #make n pairs which will be the same as the number of events to sim
+        listofsplits = []
+        for i in npairs:
+            # Generate random numbers from a Gaussian distribution
+            random_numbers = np.random.normal(loc=mean, scale=std_dev, size=n)
+            
+            # Clip values to be between 0 and 1
+            random_numbers = np.clip(random_numbers, 0, 1)
+            
+            # Check if the sum is positive (important for the normalization step)
+            if np.sum(random_numbers) > 0:
+                # Normalize to sum to 1
+                random_numbers = random_numbers / np.sum(random_numbers)
+            
+            listofsplits.extend(random_numbers)
+            self._Channelenergies = listofsplits
+        return listofsplits
+
+    def get_energy_perchannel(self):
+        return self._Channelenergies
+
+    def generate_raw_salt(self,nb_events,energies,channels,Usespectrum = True):
+        #get the energies 
+        if Usespectrum:
+            DM_energies = self.get_DMenergies
+            if nb_events > len(DM_energies):
+                raise ValueError('ERROR: nb_events to generate cannot be larger '
+                                 'than the number of sampled energies!')
+
+        else: DM_energies = energies
+
+        #get the scaling factors for the template
+        #this includes fraction of deposited energy in each channel and PCE
+        salts = []
+        print(channels)
+        print(len(channels))
+        if len(channels) > 1:
+            energiesplits = self.channel_energy_split(npairs=nb_events)     
+            #get the template to use for the salt
+            for i,chan in enumerate(channels):
+                template,time_array = self.get_template(channel = chan)
+                norm_energy = qp.get_energy_normalization(time_array, template, dpdi=self.get_dpdi(channel=chan,poles=3), lgc_ev=True)
+                scaled_template = template/norm_energy
+                for n in nb_events:
+                    fullyscaled_template = scaled_template * DM_energies[n]*energiesplits[n][i]
+                    salts.append(fullyscaled_template)
+        else: 
+            template,time_array = self.get_template(channel = channels)
+            ahh = self.get_dpdi(channel=channels,poles=3)
+            norm_energy = qp.get_energy_normalization(time_array, template, dpdi = ahh[0], lgc_ev=True)
+            template_amp_amplitude = max(template)
+            print(norm_energy)
+            scaled_template = template/norm_energy
+            #salts.append(scaled_template)
+            for n in range(nb_events):
+                fullyscaled_template = scaled_template * DM_energies[n]
+                salts.append(fullyscaled_template)
+        return salts
+
+    def generate_filtered_salt(nb_events,energies,tracelength):
+        asdfasdfad       
+    
     def autocorrelate():
       asdf
-    def inject_salt():
+    def inject_raw_salt():
       asdfa
