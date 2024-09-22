@@ -649,7 +649,9 @@ class Salting(FilterData):
     def get_energy_perchannel(self):
         return self._Channelenergies
 
-    def generate_raw_salt(self,nb_events,energies,channels,Usespectrum = True):
+    def generate_raw_salt(self,nb_events,energies,channels,Usespectrum = True,cont_data = None):
+        # generate the random selections in time to generate the salts
+        self.generate_randoms(cont_data, series=None, nevents=nb_events, min_separation_msec=100, ncores=1)
         #get the energies 
         if Usespectrum:
             DM_energies = self.get_DMenergies
@@ -658,33 +660,41 @@ class Salting(FilterData):
                                  'than the number of sampled energies!')
 
         else: DM_energies = energies
-
+        # get the values to put into dict
+        salt_var_dict = {'Salt_amplitude': list(),
+                        'Salt_energy': list(),
+                        'Channel': list()}
         #get the scaling factors for the template
         #this includes fraction of deposited energy in each channel and PCE
         salts = []
-        print(channels)
-        print(len(channels))
         if len(channels) > 1:
             energiesplits = self.channel_energy_split(npairs=nb_events)     
             #get the template to use for the salt
             for i,chan in enumerate(channels):
                 template,time_array = self.get_template(channel = chan)
-                norm_energy = qp.get_energy_normalization(time_array, template, dpdi=self.get_dpdi(channel=chan,poles=3), lgc_ev=True)
+                dpdi = self.get_dpdi(channel=chan,poles=3)
+                norm_energy = qp.get_energy_normalization(time_array, template, dpdi=dpdi[0], lgc_ev=True)
                 scaled_template = template/norm_energy
                 for n in nb_events:
                     fullyscaled_template = scaled_template * DM_energies[n]*energiesplits[n][i]
                     salts.append(fullyscaled_template)
         else: 
             template,time_array = self.get_template(channel = channels)
-            ahh = self.get_dpdi(channel=channels,poles=3)
-            norm_energy = qp.get_energy_normalization(time_array, template, dpdi = ahh[0], lgc_ev=True)
-            template_amp_amplitude = max(template)
-            print(norm_energy)
+            dpdi = self.get_dpdi(channel=channels,poles=3)
+            norm_energy = qp.get_energy_normalization(time_array, template, dpdi = dpdi[0], lgc_ev=True)
             scaled_template = template/norm_energy
-            #salts.append(scaled_template)
+            #have to ask Bruno about correct scaling from template
             for n in range(nb_events):
                 fullyscaled_template = scaled_template * DM_energies[n]
                 salts.append(fullyscaled_template)
+                salt_var_dict['Channel'].append(channels)
+                salt_var_dict['Salt_amplitude'].append(scaled_template)
+                salt_var_dict['Salt_energy'].append(fullyscaled_template)
+                
+        
+        df = vx.from_dict(salt_var_dict)
+        print(df)
+        self._dataframe = self._dataframe.join(df)
         return salts
 
     def generate_filtered_salt(nb_events,energies,tracelength):
