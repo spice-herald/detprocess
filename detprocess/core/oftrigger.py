@@ -3,9 +3,11 @@ import os
 from math import log10, floor
 import math
 import array
-from scipy.signal import correlate
+from scipy.signal import correlate, oaconvolve
 from scipy.fft import ifft, fft, next_fast_len
 import vaex as vx
+import qetpy as qp
+
 
 
 
@@ -93,7 +95,7 @@ class OptimumFilterTrigger:
     """
 
     def __init__(self, trigger_channel,
-                 fs, template, noisepsd,
+                 fs, template, noisecsd,
                  pretrigger_samples,
                  template_ttl=None):
         """
@@ -107,25 +109,78 @@ class OptimumFilterTrigger:
             The sample rate of the data (Hz)
         template : ndarray
             The pulse template(s) to be used when creating the optimum
-            filter (assumed to be normalized)
-            For single pulse trigger: 1D array or 2D array [1, samples]
-            For NxM trigger: 2D array [channel, samples] 
-        noisepsd : ndarray
-            The two-sided power spectral density in units of A^2/Hz
+            filter (assumed to be normalized). We will do an NxM trigger.
+            You can pass this in a few ways:
+            3D array [channels, amplitudes, samples]
+            1D array or 2D array with shape [1,S] or [S,1]
+                - Will be reshaped into 1 x 1 x S
+            2D array with two non-unity dimensions
+                - Will raise an error because we don't know whether
+                  to set N_chan = 1 or M_amp = 1
+        noisecsd : ndarray
+            The two-sided cross power spectral density in units of A^2/Hz
+            Same shape requirements as "template", though the number of
+            samples is replaced by the number of frequencies (which 
+            should be equal, anyway).
          template_ttl : NoneType, ndarray, optional
             The template for the trigger channel pulse. If left as
             None, then the trigger channel will not be analyzed.
         
         """
 
-        # save internal variable
+        # save internal variables
         self._fs = fs
-        self._template = template
-        self._noisepsd = noisepsd
-        self._trigger_channel = trigger_channel
         self._pretrigger_samples = pretrigger_samples
+
+        # trigger_channel might be a list of channels for the NxM trigger
+        if type(trigger_channel) == list:
+            self._trigger_channel = convert_channel_list_to_name(trigger_channel)
+        else:
+            self._trigger_channel = trigger_channel
+
+        # Reshape template if needed to [channels, amplitudes, samples]
+        n_dims_template = len(template.shape)
+        if n_dims_template == 1:
+            self._template = np.reshape(template, (1, 1, len(template)))
+        elif n_dims_template == 2:
+            if template.shape[0] == 1:
+                self._template = np.reshape(template, (1, 1, template.shape[1]))
+            elif template.shape[1] == 1:
+                self._template = np.reshape(template, (1, 1, template.shape[0]))
+            else:
+                raise ValueError(
+                    f'Template is shaped as {template.shape}. ' + 
+                    'It should be (N, M, samples) or (samples,) or ' + 
+                    '(1, samples) or (samples, 1).'
+                )
+        elif n_dims_template == 3:
+            self._template = template
+
         self._nb_samples = self._template.shape[-1]
         self._posttrigger_samples = self._nb_samples - self._pretrigger_samples
+
+
+        # Reshape CSD if needed to [channels, amplitudes, frequencies]
+        n_dims_csd = len(noisecsd.shape)
+        if n_dims_csd == 1:
+            self._noisecsd = np.reshape(noisecsd, (1, 1, len(noisecsd)))
+        elif n_dims_csd == 2:
+            if noisecsd.shape[0] == 1:
+                self._noisecsd = np.reshape(noisecsd, (1, 1, noisecsd.shape[1]))
+            elif noisecsd.shape[1] == 1:
+                self._noisecsd = np.reshape(noisecsd, (1, 1, noisecsd.shape[0]))
+            else:
+                raise ValueError(
+                    f'Noise CSD is shaped as {noisecsd.shape}. ' + 
+                    'Should be (N, M, frequencies) or (frequencies,) or ' + 
+                    '(1, frequencies) or (frequencies, 1).'
+                )
+        elif n_dims_template == 3:
+            self._noisecsd = noisecsd
+
+        # Save the number of channels, amplitudes, and frequencies/times
+        self._n_channels, self._m_amplitudes, self._f_frequencies = self._noisecsd.shape
+        self._t_times = self._f_frequencies
 
         # trigger index shift if pretrigger not midpoint
         self._trigger_index_shift = self._pretrigger_samples - self._nb_samples//2
@@ -138,19 +193,51 @@ class OptimumFilterTrigger:
         # dictionary 
         self._trigger_data = None
   
-        
-        # calculate the time-domain optimum filter
-        phi_freq = fft(self._template) / self._noisepsd
-        phi_freq[0] = 0 #ensure we do not use DC information
-        self._phi = ifft(phi_freq).real
+        # Create an OF Base object to run the OF pre-calculations
+        self._of_base = qp.OFBase(fs)
 
+        template_tags = np.full((self._n_channels, self._m_amplitudes), 'default_XX_XX')
+        for i in range(self._n_channels):
+            for j in range(self._m_amplitudes):
+                template_tags[i,j] = f'default_{i}_{j}'
+
+        self._template_tags = template_tags
+
+        self._of_base.add_template_many_channels(
+            self._trigger_channel,
+            self._template,
+            template_tags,
+            pretrigger_samples=self._pretrigger_samples
+        )
+
+        self._of_base.set_csd(self._trigger_channel, self._noisecsd)
+        self._of_base.calc_phi_matrix(self._trigger_channel, template_tags)
+        self._of_base.calc_weight_matrix(self._trigger_channel, template_tags)
+
+        self._iw_matrix = self._of_base.iw_matrix(self._trigger_channel, template_tags)
+        self._w_matrix = np.linalg.inv(self._iw_matrix)
+
+        print('Hi this is Vetri')
+        print('Phi Matrix:')
+        print(self._of_base.phi(self._trigger_channel, template_tags))
+        print('Inverted Weight Matrix:')
+        print(self._iw_matrix)
+        print('Done Vetri')
+
+        # By default, phi is in the order [f_frequencies, n_channels, m_amplitudes]
+        # so we transpose. Also we need to make a copy or we accidentally pass phi
+        # by reference
+        self._phi_fd = np.copy(self._of_base.phi(self._trigger_channel, template_tags))
+        self._phi_fd = self._phi_fd.transpose(1,2,0)
+
+        self._phi_fd[:,:,0] = 0 #ensure we do not use DC information
+        self._phi_td = ifft(self._phi_fd, axis=2).real
         
         # calculate the normalization of the optimum filter
-        self._norm = np.dot(self._phi, self._template)
+        self._norm = np.dot(self._phi_td[0,0], self._template[0,0])
         
         # calculate the expected energy resolution
-        self._resolution = 1/(np.dot(self._phi, self._template)/self._fs)**0.5
-
+        self._resolution = np.sqrt(self._iw_matrix[0,0])
                             
         # TTL template and norm
         self._template_ttl = template_ttl
@@ -158,6 +245,14 @@ class OptimumFilterTrigger:
         if template_ttl is not None:
             self._norm_ttl = np.dot(template_ttl, template_ttl)
     
+        print('\n\n')
+        print('Hi this is Vetri')
+        print('Phi Matrix:')
+        print(self._of_base.phi(self._trigger_channel, template_tags))
+        print('Inverted Weight Matrix:')
+        print(self._iw_matrix)
+        print('Done Vetri')
+
 
     def get_filtered_trace(self):
         """
@@ -201,7 +296,7 @@ class OptimumFilterTrigger:
         in time domain
         """
 
-        return self._phi
+        return self._phi_td
 
     
     def get_norm(self):
@@ -255,25 +350,44 @@ class OptimumFilterTrigger:
                 'ERROR: "trace" or "filtered_trace required!'
             )
 
-
-        # check dimension trace here
-        # FIXME
-
         # update the traces, times, and ttl attributes
-        self._raw_trace = trace
+        if trace.ndim == 1:
+            self._raw_trace = np.reshape(trace, (1, len(trace)))
+        else:
+            self._raw_trace = trace
+
+        # check dimension of trace here
+        if self._raw_trace.shape[0] != self._n_channels:
+            raise ValueError(
+                f'ERROR: "trace" has shape {trace.shape}, ' + 
+                f'but we have {self._n_channels} channels!'
+            )
+
+        # FIXME; if you want to give us the filtered trace,
+        # this will only works for the 1x1 filter
         self._filtered_trace = filtered_trace
                   
         # filter trace 
         if self._filtered_trace is None:
-            self._filtered_trace = correlate(trace,
-                                             self._phi,
-                                             mode='same',
-                                             method='fft')/self._norm
-            
-        
+
+            # V is the vector of convolutions;
+            # equivalently, the element in WA = V
+            V_td = np.zeros((self._m_amplitudes, self._raw_trace.shape[-1]))
+            for theta in range(self._m_amplitudes):
+                V_td_per_channel = oaconvolve(self._raw_trace, self._phi_td[theta,:], mode='same', axes=-1)
+                V_td[theta,:] = np.sum(V_td_per_channel, axis=0)
+
+            self._amplitude_traces = np.einsum('ij,jz->iz', self._iw_matrix, V_td).real
+            self._delta_chi2_trace = -2 * np.einsum('iz,ij,jz->z', self._amplitude_traces, self._w_matrix, self._amplitude_traces)
+
+            if self._n_channels == 1 and self._m_amplitudes == 1:
+                self._filtered_trace = self._amplitude_traces[0]
+            else:
+                self._filtered_trace = self._delta_chi2_trace
+
         # set the filtered values to zero near the edges,
         # so as not to use the padded values in the analysis
-        cut_len =  self._phi.shape[-1]
+        cut_len = self._m_amplitudes
         self._filtered_trace[:cut_len] = 0.0
         self._filtered_trace[-(cut_len)
                              +(cut_len+1)%2:] = 0.0
