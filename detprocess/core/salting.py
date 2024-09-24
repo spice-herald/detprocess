@@ -662,8 +662,7 @@ class Salting(FilterData):
         else: DM_energies = energies
         # get the values to put into dict
         salt_var_dict = {'Salt_amplitude': list(),
-                        'Salt_energy': list(),
-                        'Channel': list()}
+                        'Salt_energy': list()}
         #get the scaling factors for the template
         #this includes fraction of deposited energy in each channel and PCE
         salts = []
@@ -687,7 +686,6 @@ class Salting(FilterData):
             for n in range(nb_events):
                 fullyscaled_template = scaled_template * DM_energies[n]
                 salts.append(fullyscaled_template)
-                salt_var_dict['Channel'].append(channels)
                 salt_var_dict['Salt_amplitude'].append(scaled_template)
                 salt_var_dict['Salt_energy'].append(fullyscaled_template)
                 
@@ -701,6 +699,26 @@ class Salting(FilterData):
         asdfasdfad       
     
     def autocorrelate():
-      asdf
-    def inject_raw_salt():
-      asdfa
+        asdf
+    def inject_raw_salt(self,traces,metadata,channels):
+        for n, event in enumerate(traces):
+            print(event)
+            for chan,waveform in enumerate(event):
+                newtrace = np.array(waveform,copy=True)
+                salts_before_ADC=np.zeros(np.shape(waveform),dtype=float)
+                template = self.get_template(channel = channels)
+                nb_samples=len(template[0])
+                p = np.poly1d(metadata[n]['adc_conversion_factor'][0])
+                simtime = self._dataframe['trigger_time'].values[n] 
+                simtime = simtime.astype(int)
+                salt=self._dataframe['Salt_amplitude'].values[n]
+                salt_and_baseline = p(salt+newtrace[0])
+                salts_before_ADC[simtime:simtime+nb_samples] += salt_and_baseline
+                salts_after_ADC=np.floor(salts_before_ADC).astype(int)
+                newtrace += salts_after_ADC
+                newtrace += (salts_before_ADC-salts_after_ADC-np.random.random_sample(waveform.shape))>0
+
+        return newtrace , salt_and_baseline
+
+
+
