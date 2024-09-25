@@ -702,23 +702,24 @@ class Salting(FilterData):
         asdf
     def inject_raw_salt(self,traces,metadata,channels):
         for n, event in enumerate(traces):
-            print(event)
             for chan,waveform in enumerate(event):
                 newtrace = np.array(waveform,copy=True)
                 salts_before_ADC=np.zeros(np.shape(waveform),dtype=float)
-                template = self.get_template(channel = channels)
-                nb_samples=len(template[0])
+                template,times = self.get_template(channel = channels)
+                nb_samples=len(times)
                 p = np.poly1d(metadata[n]['adc_conversion_factor'][0])
                 simtime = self._dataframe['trigger_time'].values[n] 
                 simtime = simtime.astype(int)
+                simtime = simtime
                 salt=self._dataframe['Salt_amplitude'].values[n]
-                salt_and_baseline = p(salt+newtrace[0])
+                salt_and_baseline = salt+newtrace[0]
+                salt_and_baseline -= salt_and_baseline[0]
+                salt_and_baseline = salt_and_baseline*10
                 salts_before_ADC[simtime:simtime+nb_samples] += salt_and_baseline
-                salts_after_ADC=np.floor(salts_before_ADC).astype(int)
-                newtrace += salts_after_ADC
-                newtrace += (salts_before_ADC-salts_after_ADC-np.random.random_sample(waveform.shape))>0
-
-        return newtrace , salt_and_baseline
+                print(simtime)
+                print(simtime+nb_samples)
+                newtrace += salts_before_ADC
+        return newtrace , salt_and_baseline,salts_before_ADC
 
 
 
