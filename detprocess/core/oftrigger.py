@@ -217,13 +217,6 @@ class OptimumFilterTrigger:
         self._iw_matrix = self._of_base.iw_matrix(self._trigger_channel, template_tags)
         self._w_matrix = np.linalg.inv(self._iw_matrix)
 
-        print('Hi this is Vetri')
-        print('Phi Matrix:')
-        print(self._of_base.phi(self._trigger_channel, template_tags))
-        print('Inverted Weight Matrix:')
-        print(self._iw_matrix)
-        print('Done Vetri')
-
         # By default, phi is in the order [f_frequencies, n_channels, m_amplitudes]
         # so we transpose. Also we need to make a copy or we accidentally pass phi
         # by reference
@@ -245,13 +238,8 @@ class OptimumFilterTrigger:
         if template_ttl is not None:
             self._norm_ttl = np.dot(template_ttl, template_ttl)
     
-        print('\n\n')
-        print('Hi this is Vetri')
-        print('Phi Matrix:')
         print(self._of_base.phi(self._trigger_channel, template_tags))
-        print('Inverted Weight Matrix:')
         print(self._iw_matrix)
-        print('Done Vetri')
 
 
     def get_filtered_trace(self):
