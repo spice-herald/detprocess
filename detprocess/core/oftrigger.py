@@ -135,7 +135,7 @@ class OptimumFilterTrigger:
 
         # trigger_channel might be a list of channels for the NxM trigger
         if type(trigger_channel) == list:
-            self._trigger_channel = convert_channel_list_to_name(trigger_channel)
+            self._trigger_channel = qp.utils.convert_channel_list_to_name(trigger_channel)
         else:
             self._trigger_channel = trigger_channel
 
@@ -210,7 +210,7 @@ class OptimumFilterTrigger:
             template_tags,
             pretrigger_samples=self._pretrigger_samples
         )
-
+        
         self._of_base.set_csd(self._trigger_channel, self._noisecsd)
         self._of_base.calc_phi_matrix(self._trigger_channel, template_tags)
         self._of_base.calc_weight_matrix(self._trigger_channel, template_tags)
