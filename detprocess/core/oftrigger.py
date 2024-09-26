@@ -7,6 +7,7 @@ from scipy.signal import correlate, oaconvolve
 from scipy.fft import ifft, fft, next_fast_len
 import vaex as vx
 import qetpy as qp
+from scipy import special, stats
 
 
 
@@ -229,8 +230,8 @@ class OptimumFilterTrigger:
         # calculate the normalization of the optimum filter
         self._norm = np.dot(self._phi_td[0,0], self._template[0,0])
         
-        # calculate the expected energy resolution
-        self._resolution = np.sqrt(self._iw_matrix[0,0])
+        # calculate the expected energy resolution for each amplitude
+        self._resolution = np.sqrt(np.diag(self._iw_matrix))
                             
         # TTL template and norm
         self._template_ttl = template_ttl
@@ -238,9 +239,6 @@ class OptimumFilterTrigger:
         if template_ttl is not None:
             self._norm_ttl = np.dot(template_ttl, template_ttl)
     
-        print(self._of_base.phi(self._trigger_channel, template_tags))
-        print(self._iw_matrix)
-
 
     def get_filtered_trace(self):
         """
@@ -368,14 +366,13 @@ class OptimumFilterTrigger:
             self._amplitude_traces = np.einsum('ij,jz->iz', self._iw_matrix, V_td).real
             self._delta_chi2_trace = -2 * np.einsum('iz,ij,jz->z', self._amplitude_traces, self._w_matrix, self._amplitude_traces)
 
+            self._filtered_trace = self._delta_chi2_trace
             if self._n_channels == 1 and self._m_amplitudes == 1:
-                self._filtered_trace = self._amplitude_traces[0]
-            else:
-                self._filtered_trace = self._delta_chi2_trace
+                self._filtered_trace_legacy = self._amplitude_traces[0]
 
         # set the filtered values to zero near the edges,
         # so as not to use the padded values in the analysis
-        cut_len = self._m_amplitudes
+        cut_len = self._t_times
         self._filtered_trace[:cut_len] = 0.0
         self._filtered_trace[-(cut_len)
                              +(cut_len+1)%2:] = 0.0
@@ -399,7 +396,7 @@ class OptimumFilterTrigger:
             
     def find_triggers(self, thresh, thresh_ttl=None,
                       pileup_window_msec=None, pileup_window_samples=None,
-                      positive_pulses=True):
+                      positive_pulses=False):
         """
         Method to detect events in the traces with an optimum amplitude
         greater than the specified threshold. Note that this may return
@@ -428,7 +425,8 @@ class OptimumFilterTrigger:
             traces. If they go in the positive direction, then this
             should be set to True. If they go in the negative
             direction, then this should be set to False. Default is
-            True.
+            False for the chi2 trigger, since delta chi2 is negative
+            by definition.
 
         """
 
@@ -467,14 +465,20 @@ class OptimumFilterTrigger:
         elif pileup_window_samples is not None:
             pileup_window = pileup_window_samples
             
-                
-        # find where the filtered trace has an optimum amplitude
-        # greater than the specified amplitude
-        if positive_pulses:
-            triggers_mask = self._filtered_trace>thresh*self._resolution
-        else:
-            triggers_mask = self._filtered_trace<-thresh*self._resolution
-            
+        # Trigger on chi2, using "thresh" in sigma units as representing
+        # the two-sided survival fraction of a Gaussian. For example, if
+        # thresh = 1, we will trigger on 32% of samples by random chance;
+        # corresponding to the 32% of probability density outside the
+        # 1-sigma bands in a Gaussian. If thresh = 5, we will trigger on
+        # 5.733e-07 of samples by random chance; again, the integrated
+        # probability beyond +/- 5 sigma in a Gaussian.
+        # This is done so that the trigger behaves roughly as it used to,
+        # while accounting for the difference between a chi2 and Gaussian
+        # distribution.
+        survival_fraction = stats.norm.sf(thresh) * 2
+        chi2_threshold = -1 * special.gammainccinv(self._m_amplitudes / 2, survival_fraction) * 4
+        triggers_mask = self._filtered_trace < chi2_threshold
+
         triggers = np.where(triggers_mask)[0]
         
         # check if any left over detected triggers are within
