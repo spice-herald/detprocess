@@ -65,7 +65,7 @@ class Salting(FilterData):
         
         # store the energies from the DM spectra that you have sampled
         self._DMenergies = np.array([])
-        self._Channelenergies = np.array([])
+        #self._Channelenergies = np.array([])
         
         self._verbose = verbose
 
@@ -627,12 +627,13 @@ class Salting(FilterData):
     def get_DMenergies(self):
         return self._DMenergies
         
-    def channel_energy_split(n =2, mean=0.5, std_dev=0.2, npairs=10):
+    def channel_energy_split(self,mean=0.5, std_dev=0.2, npairs=10):
         #make n pairs which will be the same as the number of events to sim
         listofsplits = []
-        for i in npairs:
+        print(npairs)
+        for i in range(npairs):
             # Generate random numbers from a Gaussian distribution
-            random_numbers = np.random.normal(loc=mean, scale=std_dev, size=n)
+            random_numbers = np.random.normal(loc=mean, scale=std_dev, size=2)
             
             # Clip values to be between 0 and 1
             random_numbers = np.clip(random_numbers, 0, 1)
@@ -642,8 +643,8 @@ class Salting(FilterData):
                 # Normalize to sum to 1
                 random_numbers = random_numbers / np.sum(random_numbers)
             
-            listofsplits.extend(random_numbers)
-            self._Channelenergies = listofsplits
+            listofsplits.extend([random_numbers])
+            #self._Channelenergies = listofsplits
         return listofsplits
 
     def get_energy_perchannel(self):
@@ -661,23 +662,32 @@ class Salting(FilterData):
 
         else: DM_energies = energies
         # get the values to put into dict
-        salt_var_dict = {'Salt_amplitude': list(),
-                        'Salt_energy': list()}
+        salt_var_dict = {'salt_amplitude': list(),
+                        'salt_energy': list(),}
         #get the scaling factors for the template
         #this includes fraction of deposited energy in each channel and PCE
-        salts = []
         if len(channels) > 1:
+            #salts = np.zeros((nb_events,2))
             energiesplits = self.channel_energy_split(npairs=nb_events)     
             #get the template to use for the salt
+            salts = [[] for _ in range(nb_events)]
             for i,chan in enumerate(channels):
                 template,time_array = self.get_template(channel = chan)
                 dpdi = self.get_dpdi(channel=chan,poles=3)
                 norm_energy = qp.get_energy_normalization(time_array, template, dpdi=dpdi[0], lgc_ev=True)
                 scaled_template = template/norm_energy
-                for n in nb_events:
+                for n in range(nb_events):
                     fullyscaled_template = scaled_template * DM_energies[n]*energiesplits[n][i]
-                    salts.append(fullyscaled_template)
+                    print(DM_energies[n])
+                    print(energiesplits[n][i])
+                    salts[n].append([fullyscaled_template])    
+                    if len(salt_var_dict['salt_amplitude']) <= n:
+                        salt_var_dict['salt_amplitude'].append([])
+                        salt_var_dict['salt_energy'].append([])
+                    salt_var_dict['salt_amplitude'][n].append(fullyscaled_template)
+                    salt_var_dict['salt_energy'][n].append(fullyscaled_template)
         else: 
+            salts = []
             template,time_array = self.get_template(channel = channels)
             dpdi = self.get_dpdi(channel=channels,poles=3)
             norm_energy = qp.get_energy_normalization(time_array, template, dpdi = dpdi[0], lgc_ev=True)
@@ -686,12 +696,11 @@ class Salting(FilterData):
             for n in range(nb_events):
                 fullyscaled_template = scaled_template * DM_energies[n]
                 salts.append(fullyscaled_template)
-                salt_var_dict['Salt_amplitude'].append(scaled_template)
-                salt_var_dict['Salt_energy'].append(fullyscaled_template)
+                salt_var_dict['salt_amplitude'].append(fullyscaled_template)
+                salt_var_dict['salt_energy'].append(fullyscaled_template)
                 
         
         df = vx.from_dict(salt_var_dict)
-        print(df)
         self._dataframe = self._dataframe.join(df)
         return salts
 
@@ -701,25 +710,28 @@ class Salting(FilterData):
     def autocorrelate():
         asdf
     def inject_raw_salt(self,traces,metadata,channels):
+        newtraces = [[] for _ in range(len(traces))]
         for n, event in enumerate(traces):
             for chan,waveform in enumerate(event):
+                if len(event) > 1 and len(channels) > 1:
+                    salt=self._dataframe['salt_amplitude'].values[n][chan]
+                    template,times = self.get_template(channel = channels[chan])
+                else: 
+                    salt=self._dataframe['salt_amplitude'].values[n]
+                    template,times = self.get_template(channel = channels)
+                    
                 newtrace = np.array(waveform,copy=True)
                 salts_before_ADC=np.zeros(np.shape(waveform),dtype=float)
-                template,times = self.get_template(channel = channels)
                 nb_samples=len(times)
-                p = np.poly1d(metadata[n]['adc_conversion_factor'][0])
                 simtime = self._dataframe['trigger_time'].values[n] 
                 simtime = simtime.astype(int)
-                simtime = simtime
-                salt=self._dataframe['Salt_amplitude'].values[n]
                 salt_and_baseline = salt+newtrace[0]
                 salt_and_baseline -= salt_and_baseline[0]
                 salt_and_baseline = salt_and_baseline*10
                 salts_before_ADC[simtime:simtime+nb_samples] += salt_and_baseline
-                print(simtime)
-                print(simtime+nb_samples)
                 newtrace += salts_before_ADC
-        return newtrace , salt_and_baseline,salts_before_ADC
+                newtraces[n].append([newtrace])
+        return newtraces
 
 
 
