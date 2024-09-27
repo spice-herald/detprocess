@@ -651,12 +651,12 @@ class Salting(FilterData):
     def get_energy_perchannel(self):
         return self._Channelenergies
 
-    def generate_raw_salt(self,nb_events,energies,channels,Usespectrum = True,cont_data = None):
+    def generate_raw_salt(self,nb_events,energies,channels,PCE,Usespectrum = True,cont_data = None):
         # generate the random selections in time to generate the salts
         self.generate_randoms(cont_data, series=None, nevents=nb_events, min_separation_msec=100, ncores=1)
         #get the energies 
         if Usespectrum:
-            DM_energies = self.get_DMenergies
+            DM_energies = self.get_DMenergies() * 1e3 #this is hardcoded! This is because the dRdE spectrum I'm using is in keV!
             if nb_events > len(DM_energies):
                 raise ValueError('ERROR: nb_events to generate cannot be larger '
                                  'than the number of sampled energies!')
@@ -678,7 +678,7 @@ class Salting(FilterData):
                 norm_energy = qp.get_energy_normalization(time_array, template, dpdi=dpdi[0], lgc_ev=True)
                 scaled_template = template/norm_energy
                 for n in range(nb_events):
-                    fullyscaled_template = scaled_template * DM_energies[n]*energiesplits[n][i]
+                    fullyscaled_template = scaled_template * DM_energies[n]*energiesplits[n][i]*PCE[i]
                     salts[n].append([fullyscaled_template])   
                     if 'saltarray' not in self._saltarraydict:
                         self._saltarraydict['saltarray'] = []  
@@ -688,6 +688,7 @@ class Salting(FilterData):
                     if len(salt_var_dict['salt_amplitude']) <= n:
                         salt_var_dict['salt_amplitude'].append([])
                         salt_var_dict['salt_energy'].append([])
+
                     self._saltarraydict['saltarray'][n].append(fullyscaled_template)
                     salt_var_dict['salt_amplitude'][n].append(max(fullyscaled_template))
                     salt_var_dict['salt_energy'][n].append(DM_energies[n]*energiesplits[n][i])
@@ -699,7 +700,7 @@ class Salting(FilterData):
             scaled_template = template/norm_energy
             #have to ask Bruno about correct scaling from template
             for n in range(nb_events):
-                fullyscaled_template = scaled_template * DM_energies[n]
+                fullyscaled_template = scaled_template * DM_energies[n]*PCE
                 salts.append(fullyscaled_template)
                 salt_var_dict['salt_amplitude'].append(fullyscaled_template)
                 salt_var_dict['salt_energy'].append(fullyscaled_template)
