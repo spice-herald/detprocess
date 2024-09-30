@@ -3,9 +3,12 @@ import os
 from math import log10, floor
 import math
 import array
-from scipy.signal import correlate
+from scipy.signal import correlate, oaconvolve
 from scipy.fft import ifft, fft, next_fast_len
 import vaex as vx
+import qetpy as qp
+from scipy import special, stats
+
 
 
 
@@ -93,7 +96,7 @@ class OptimumFilterTrigger:
     """
 
     def __init__(self, trigger_channel,
-                 fs, template, noisepsd,
+                 fs, template, noisecsd,
                  pretrigger_samples,
                  template_ttl=None):
         """
@@ -107,25 +110,75 @@ class OptimumFilterTrigger:
             The sample rate of the data (Hz)
         template : ndarray
             The pulse template(s) to be used when creating the optimum
-            filter (assumed to be normalized)
-            For single pulse trigger: 1D array or 2D array [1, samples]
-            For NxM trigger: 2D array [channel, samples] 
-        noisepsd : ndarray
-            The two-sided power spectral density in units of A^2/Hz
+            filter (assumed to be normalized). We will do an NxM trigger.
+            You can pass this in a few ways:
+            3D array [channels, amplitudes, samples]
+            1D array or 2D array with shape [1,S] or [S,1]
+                - Will be reshaped into 1 x 1 x S
+            2D array with two non-unity dimensions
+                - Will raise an error because we don't know whether
+                  to set N_chan = 1 or M_amp = 1
+        noisecsd : ndarray
+            The two-sided cross power spectral density in units of A^2/Hz
+            Same shape requirements as "template", though the number of
+            samples is replaced by the number of frequencies (which 
+            should be equal, anyway).
          template_ttl : NoneType, ndarray, optional
             The template for the trigger channel pulse. If left as
             None, then the trigger channel will not be analyzed.
         
         """
 
-        # save internal variable
+        # save internal variables
         self._fs = fs
-        self._template = template
-        self._noisepsd = noisepsd
-        self._trigger_channel = trigger_channel
         self._pretrigger_samples = pretrigger_samples
+
+        # trigger_channel might be a list of channels for the NxM trigger
+        self._trigger_channel = qp.utils.convert_channel_list_to_name(trigger_channel)
+
+        # Reshape template if needed to [channels, amplitudes, samples]
+        n_dims_template = len(template.shape)
+        if n_dims_template == 1:
+            self._template = np.reshape(template, (1, 1, len(template)))
+        elif n_dims_template == 2:
+            if template.shape[0] == 1:
+                self._template = np.reshape(template, (1, 1, template.shape[1]))
+            elif template.shape[1] == 1:
+                self._template = np.reshape(template, (1, 1, template.shape[0]))
+            else:
+                raise ValueError(
+                    f'Template is shaped as {template.shape}. ' + 
+                    'It should be (N, M, samples) or (samples,) or ' + 
+                    '(1, samples) or (samples, 1).'
+                )
+        elif n_dims_template == 3:
+            self._template = template
+
         self._nb_samples = self._template.shape[-1]
         self._posttrigger_samples = self._nb_samples - self._pretrigger_samples
+
+
+        # Reshape CSD if needed to [channels, amplitudes, frequencies]
+        n_dims_csd = len(noisecsd.shape)
+        if n_dims_csd == 1:
+            self._noisecsd = np.reshape(noisecsd, (1, 1, len(noisecsd)))
+        elif n_dims_csd == 2:
+            if noisecsd.shape[0] == 1:
+                self._noisecsd = np.reshape(noisecsd, (1, 1, noisecsd.shape[1]))
+            elif noisecsd.shape[1] == 1:
+                self._noisecsd = np.reshape(noisecsd, (1, 1, noisecsd.shape[0]))
+            else:
+                raise ValueError(
+                    f'Noise CSD is shaped as {noisecsd.shape}. ' + 
+                    'Should be (N, M, frequencies) or (frequencies,) or ' + 
+                    '(1, frequencies) or (frequencies, 1).'
+                )
+        elif n_dims_template == 3:
+            self._noisecsd = noisecsd
+
+        # Save the number of channels, amplitudes, and frequencies/times
+        self._n_channels, self._m_amplitudes, self._f_frequencies = self._noisecsd.shape
+        self._t_times = self._f_frequencies
 
         # trigger index shift if pretrigger not midpoint
         self._trigger_index_shift = self._pretrigger_samples - self._nb_samples//2
@@ -138,19 +191,44 @@ class OptimumFilterTrigger:
         # dictionary 
         self._trigger_data = None
   
-        
-        # calculate the time-domain optimum filter
-        phi_freq = fft(self._template) / self._noisepsd
-        phi_freq[0] = 0 #ensure we do not use DC information
-        self._phi = ifft(phi_freq).real
+        # Create an OF Base object to run the OF pre-calculations
+        self._of_base = qp.OFBase(fs)
 
+        template_tags = np.full((self._n_channels, self._m_amplitudes), 'default_XX_XX')
+        for i in range(self._n_channels):
+            for j in range(self._m_amplitudes):
+                template_tags[i,j] = f'default_{i}_{j}'
+
+        self._template_tags = template_tags
+
+        self._of_base.add_template_many_channels(
+            self._trigger_channel,
+            self._template,
+            template_tags,
+            pretrigger_samples=self._pretrigger_samples
+        )
+        
+        self._of_base.set_csd(self._trigger_channel, self._noisecsd)
+        self._of_base.calc_phi_matrix(self._trigger_channel, template_tags)
+        self._of_base.calc_weight_matrix(self._trigger_channel, template_tags)
+
+        self._iw_matrix = self._of_base.iw_matrix(self._trigger_channel, template_tags)
+        self._w_matrix = np.linalg.inv(self._iw_matrix)
+
+        # By default, phi is in the order [f_frequencies, n_channels, m_amplitudes]
+        # so we transpose. Also we need to make a copy or we accidentally pass phi
+        # by reference
+        self._phi_fd = np.copy(self._of_base.phi(self._trigger_channel, template_tags))
+        self._phi_fd = self._phi_fd.transpose(1,2,0)
+
+        self._phi_fd[:,:,0] = 0 #ensure we do not use DC information
+        self._phi_td = ifft(self._phi_fd, axis=2).real
         
         # calculate the normalization of the optimum filter
-        self._norm = np.dot(self._phi, self._template)
+        self._norm = np.dot(self._phi_td[0,0], self._template[0,0])
         
-        # calculate the expected energy resolution
-        self._resolution = 1/(np.dot(self._phi, self._template)/self._fs)**0.5
-
+        # calculate the expected energy resolution for each amplitude
+        self._resolution = np.sqrt(np.diag(self._iw_matrix))
                             
         # TTL template and norm
         self._template_ttl = template_ttl
@@ -201,7 +279,7 @@ class OptimumFilterTrigger:
         in time domain
         """
 
-        return self._phi
+        return self._phi_td
 
     
     def get_norm(self):
@@ -231,16 +309,16 @@ class OptimumFilterTrigger:
 
         trace : ndarray, optional
             trigger channel trace(s) to be filtered
-            units: Amps, should be positive going
-            For single pulse trigger: 1D array or 2D array [1, samples]
-            For NxM trigger: 2D array [channel, samples] 
+            units: Amps
+                Pulses should be positive-going for consistency,
+                but this technically doesn't matter
+            Shape: 2D array [N_channels, samples] 
             Default: None (required "filtered_trace")
            
         filtered_trace : ndarray, optional
-            OF filtered trigger channel trace(s)
+            OF filtered channel trace(s)
             units: Amps
-            For single pulse trigger: 1D array or 2D array [1, samples]
-            For NxM trigger: 2D array [channel, samples] 
+            Shape: 2D array [M_amplitudes, samples] 
 
         filtered_trace_ttl: ndarray, optional
             OF filtered trigger channel trace(s) with TTL template
@@ -255,28 +333,49 @@ class OptimumFilterTrigger:
                 'ERROR: "trace" or "filtered_trace required!'
             )
 
-
-        # check dimension trace here
-        # FIXME
-
         # update the traces, times, and ttl attributes
-        self._raw_trace = trace
-        self._filtered_trace = filtered_trace
-                  
+        if (trace is not None) and (trace.ndim == 1):
+            self._raw_trace = np.reshape(trace, (1, len(trace)))
+        else:
+            self._raw_trace = trace
+
+        if (filtered_trace is not None) and (filtered_trace.ndim == 1):
+            self._filtered_trace = np.reshape(filtered_trace, (1, len(filtered_trace)))
+        else:
+            self._filtered_trace = filtered_trace
+
+        # check dimension of trace(s) here
+        if trace is not None and self._raw_trace.shape[0] != self._n_channels:
+            raise ValueError(
+                f'ERROR: "trace" has shape {trace.shape}, ' + 
+                f'but we have {self._n_channels} channels!'
+            )
+
+        if filtered_trace is not None and self._filtered_trace.shape[0] != self._m_amplitudes:
+            raise ValueError(
+                f'ERROR: "filtered_trace" has shape {filtered_trace.shape}, ' + 
+                f'but we have {self._m_amplitudes} channels!'
+            )
+
         # filter trace 
         if self._filtered_trace is None:
-            self._filtered_trace = correlate(trace,
-                                             self._phi,
-                                             mode='same',
-                                             method='fft')/self._norm
+
+            # V is the vector of convolutions; equivalently, the element in WA = V
+            V_td = np.zeros((self._m_amplitudes, self._raw_trace.shape[-1]))
+            for theta in range(self._m_amplitudes):
+                V_td_per_channel = oaconvolve(self._raw_trace, self._phi_td[theta,:], mode='same', axes=-1)
+                V_td[theta,:] = np.sum(V_td_per_channel, axis=0)
+
+            self._filtered_trace = np.einsum('ij,jz->iz', self._iw_matrix, V_td).real
             
+        # Calculate chi2 for the filtered trace(s)
+        self._delta_chi2_trace = -2 * np.einsum('iz,ij,jz->z', self._filtered_trace, self._w_matrix, self._filtered_trace)
         
         # set the filtered values to zero near the edges,
         # so as not to use the padded values in the analysis
-        cut_len =  self._phi.shape[-1]
-        self._filtered_trace[:cut_len] = 0.0
-        self._filtered_trace[-(cut_len)
-                             +(cut_len+1)%2:] = 0.0
+        cut_len = self._t_times
+        self._delta_chi2_trace[:cut_len] = 0.0
+        self._delta_chi2_trace[-(cut_len)+(cut_len+1)%2:] = 0.0
         
         # filtered with ttl template
         self._filtered_trace_ttl = filtered_trace_ttl
@@ -297,7 +396,7 @@ class OptimumFilterTrigger:
             
     def find_triggers(self, thresh, thresh_ttl=None,
                       pileup_window_msec=None, pileup_window_samples=None,
-                      positive_pulses=True):
+                      positive_pulses=False):
         """
         Method to detect events in the traces with an optimum amplitude
         greater than the specified threshold. Note that this may return
@@ -326,12 +425,13 @@ class OptimumFilterTrigger:
             traces. If they go in the positive direction, then this
             should be set to True. If they go in the negative
             direction, then this should be set to False. Default is
-            True.
+            False for the chi2 trigger, since delta chi2 is negative
+            by definition.
 
         """
 
         # check filtered trace
-        if self._filtered_trace is None:
+        if self._delta_chi2_trace is None:
             raise ValueError('ERROR: Filter trace not available. '
                              + ' Use "update_trace" first!')
         
@@ -365,14 +465,20 @@ class OptimumFilterTrigger:
         elif pileup_window_samples is not None:
             pileup_window = pileup_window_samples
             
-                
-        # find where the filtered trace has an optimum amplitude
-        # greater than the specified amplitude
-        if positive_pulses:
-            triggers_mask = self._filtered_trace>thresh*self._resolution
-        else:
-            triggers_mask = self._filtered_trace<-thresh*self._resolution
-            
+        # Trigger on chi2, using "thresh" in sigma units as representing
+        # the two-sided survival fraction of a Gaussian. For example, if
+        # thresh = 1, we will trigger on 32% of samples by random chance;
+        # corresponding to the 32% of probability density outside the
+        # 1-sigma bands in a Gaussian. If thresh = 5, we will trigger on
+        # 5.733e-07 of samples by random chance; again, the integrated
+        # probability beyond +/- 5 sigma in a Gaussian.
+        # This is done so that the trigger behaves roughly as it used to,
+        # while accounting for the difference between a chi2 and Gaussian
+        # distribution.
+        survival_fraction = stats.norm.sf(thresh) * 2
+        chi2_threshold = -1 * special.gammainccinv(self._m_amplitudes / 2, survival_fraction) * 4
+        triggers_mask = self._delta_chi2_trace < chi2_threshold
+
         triggers = np.where(triggers_mask)[0]
         
         # check if any left over detected triggers are within
@@ -435,9 +541,9 @@ class OptimumFilterTrigger:
                 # find index maximum amplitude
                 evt_ind = None
                 if positive_pulses:
-                    evt_ind = evt_inds[np.argmax(self._filtered_trace[evt_inds])]
+                    evt_ind = evt_inds[np.argmax(self._delta_chi2_trace[evt_inds])]
                 else:
-                    evt_ind = evt_inds[np.argmin(self._filtered_trace[evt_inds])]
+                    evt_ind = evt_inds[np.argmin(self._delta_chi2_trace[evt_inds])]
 
                 evt_ind_shift = evt_ind + self._trigger_index_shift
 
@@ -505,7 +611,7 @@ class OptimumFilterTrigger:
                 else:
                     trigger_data['trigger_index'].extend([evt_ind_shift])
                     trigger_data['trigger_time'].extend([evt_ind_shift/self._fs])
-                    trigger_data['trigger_amplitude'].extend([self._filtered_trace[evt_ind]])
+                    trigger_data['trigger_amplitude'].extend([self._delta_chi2_trace[evt_ind]])
                     trigger_data['trigger_type'].extend([4])
                     
                 # extra parameter both TTL and pulse threshold

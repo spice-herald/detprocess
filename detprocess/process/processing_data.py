@@ -750,8 +750,8 @@ class ProcessingData:
         admin_dict['series_number'] = np.int64(self._current_admin_info['series_num'])
         admin_dict['event_id'] = np.int32(self._current_admin_info['event_id'])
         admin_dict['event_time'] = np.int64(self._current_admin_info['event_time'])
-        admin_dict['run_type'] = np.str(self._current_admin_info['run_type'])
-        admin_dict['data_type'] = np.str(self._current_admin_info['run_type'])
+        admin_dict['run_type'] = str(self._current_admin_info['run_type'])
+        admin_dict['data_type'] = str(self._current_admin_info['run_type'])
 
         # group name
         if self._group_name is not None:
