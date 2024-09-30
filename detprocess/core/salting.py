@@ -733,7 +733,6 @@ class Salting(FilterData):
                 simtime = simtime.astype(int)
                 salt_and_baseline = salt+newtrace[0]
                 salt_and_baseline -= salt_and_baseline[0]
-                salt_and_baseline = salt_and_baseline
                 salts_before_ADC[simtime:simtime+nb_samples] += salt_and_baseline
                 newtrace += salts_before_ADC
                 newtraces[n].append([newtrace])
