@@ -98,6 +98,7 @@ class OptimumFilterTrigger:
     def __init__(self, trigger_channel,
                  fs, template, noisecsd,
                  pretrigger_samples,
+                 trigger_name=None,
                  template_ttl=None):
         """
         Initialization of the FIR filter.
@@ -136,6 +137,12 @@ class OptimumFilterTrigger:
         # trigger_channel might be a list of channels for the NxM trigger
         self._trigger_channel = qp.utils.convert_channel_list_to_name(trigger_channel)
 
+        # trigger name
+        self._trigger_name = trigger_name
+        if trigger_name is None:
+            self._trigger_name = self._trigger_channel
+            
+        
         # Reshape template if needed to [channels, amplitudes, samples]
         n_dims_template = len(template.shape)
         if n_dims_template == 1:
@@ -177,7 +184,8 @@ class OptimumFilterTrigger:
             self._noisecsd = noisecsd
 
         # Save the number of channels, amplitudes, and frequencies/times
-        self._n_channels, self._m_amplitudes, self._f_frequencies = self._noisecsd.shape
+        self._n_channels, _, self._f_frequencies = self._noisecsd.shape
+        self._m_amplitudes = self._template.shape[1]
         self._t_times = self._f_frequencies
 
         # trigger index shift if pretrigger not midpoint
@@ -268,7 +276,7 @@ class OptimumFilterTrigger:
         df = None
         if self._trigger_data is not None:
             df = vx.from_dict(
-                self._trigger_data[self._trigger_channel]
+                self._trigger_data[self._trigger_name]
             )
         return df
            
@@ -621,19 +629,18 @@ class OptimumFilterTrigger:
 
         # duplicate key channel name
         self._trigger_data = dict()
-        self._trigger_data[self._trigger_channel] = trigger_data.copy()
+        self._trigger_data[self._trigger_name] = trigger_data.copy()
         
         for key, val in trigger_data.items():
-            newkey = key + '_' + self._trigger_channel
-            self._trigger_data[self._trigger_channel][newkey] = val
+            newkey = key + '_' + self._trigger_name
+            self._trigger_data[self._trigger_name][newkey] = val
 
         #  add channels
         nb_events = len(trigger_data['trigger_index'])
         chan_list = list()
         if nb_events>0:
-            chan_list = [self._trigger_channel]*nb_events
-        self._trigger_data[self._trigger_channel]['trigger_channel'] = chan_list
-                        
+            chan_list = [self._trigger_name]*nb_events
+        self._trigger_data[self._trigger_name]['trigger_channel'] = chan_list
         
         
         

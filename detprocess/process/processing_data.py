@@ -999,7 +999,64 @@ class ProcessingData:
 
         return template, template_metadata
 
+    
+    def get_noise(self, channel, tag='default'):
+        """
+        Get noise psd/csd from filter file
 
+        Parameters
+        ----------
+
+        channel : str
+          channel name
+
+        tag : str
+          tag/ID of the template
+          Default: None
+
+        Return
+        ------
+
+        noise : ndarray
+          array with psd values
+
+        noise_freq : ndarray
+          array with psd frequencies
+
+        metadata : dict 
+          psd metadata
+
+        """
+
+        channel_list = qp.utils.convert_channel_name_to_list(channel)
+
+        noise = None
+        noise_freqs = None
+        noise_metadata = None
+
+        if len(channel_list) == 1:
+            noise, noise_freqs, noise_metadata = (
+                self._filter_data.get_psd(
+                    channel,
+                    tag=tag,
+                    fold=False,
+                    return_metadata=True)
+            )
+        else:
+            noise, noise_freqs, noise_metadata = (
+                self._filter_data.get_csd(
+                    channel,
+                    tag=tag,
+                    fold=False,
+                    return_metadata=True)
+            )
+            
+            
+        return noise, noise_freqs, noise_metadata
+
+
+
+    
     def get_psd(self, channel, tag='default'):
         """
         Get psd from filter file
