@@ -399,16 +399,21 @@ class TriggerProcessing:
             if nb_pretrigger_samples is None:
                 raise ValueError('ERROR: Template metadata needs to contain '
                                  '"nb_pretrigger_samples" value')
-                        
-            # get psd
-            psd_tag = 'default'
-            if 'psd_tag' in trig_data:
-                psd_tag = trig_data['psd_tag']
 
-            psd, psd_freqs, psd_metadata = (
-                self._processing_data_inst.get_psd(
+            # Get noise spectrum (CSD/PSD)
+            noise_tag = 'default'
+            if 'noise_tag' in trig_data:
+                noise_tag = trig_data['noise_tag']
+            elif 'csd_tag' in trig_data:
+                noise_tag = trig_data['csd_tag']
+            elif 'psd_tag' in trig_data:
+                noise_tag = trig_data['psd_tag']
+            
+
+            csd, csd_freqs, csd_metadata = (
+                self._processing_data_inst.get_noise(
                     trig_chan,
-                    tag=psd_tag)
+                    tag=noise_tag)
             )
 
                     
@@ -422,8 +427,9 @@ class TriggerProcessing:
             
             # instantiate optimal filter trigger
             oftrigger_inst = OptimumFilterTrigger(
-                trigger_name, fs, template, psd,
-                nb_pretrigger_samples
+                trig_chan, fs, template, csd,
+                nb_pretrigger_samples,
+                trigger_name=trigger_name
             )
 
             # add in EventBuilder
