@@ -246,7 +246,6 @@ if __name__ == "__main__":
         if args.ntriggers:
             ntriggers = int(args.ntriggers)
             
-        print(calib)
         myproc = TriggerProcessing(args.input_group_path,
                                    processing_setup,
                                    series=series,
