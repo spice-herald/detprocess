@@ -7,9 +7,11 @@ from math import log10, floor
 from glob import glob
 from pathlib import Path
 import types
+import itertools
 import pytesdaq.io as h5io
 import math
 import array
+from detprocess.core.oftrigger import OptimumFilterTrigger
 from detprocess.process.randoms import Randoms
 from detprocess.core.filterdata import FilterData
 from scipy.signal import correlate
@@ -32,7 +34,7 @@ class Salting(FilterData):
 
     """
 
-    def __init__(self, verbose=True,yaml_path=None):
+    def __init__(self,channels,filterfile, verbose=True,yaml_path=None):
         """
         Initialize class
 
@@ -51,8 +53,13 @@ class Salting(FilterData):
         self._raw_base_path = None
         self._series_list = None
         self._detector_config = None
+        self.channels = channels
         self._ivdidv_data = dict()
         self._saltarraydict = dict()
+        self.templatesdict = dict()
+        self.noisedict = dict()
+        self.filttemplatesdict = dict()
+        self.channelsdict = dict()
 
         
         # intialize randoms dataframe
@@ -79,9 +86,102 @@ class Salting(FilterData):
             else:
                 raise ValueError('ERROR: "yaml_path" should be a '
                                  'file or path!')
-        
+
         super().__init__(verbose=verbose)
 
+        separators = ['|', '+']
+        for r in range(1, len(channels) + 1):
+            # Generate all combinations of size r
+            for combo in itertools.combinations(channels, r):
+                # For each combination, generate all permutations
+                for perm in itertools.permutations(combo):
+                    for sep in separators:
+                        key = sep.join(perm)
+                        channels.append(key)    
+        channels = list(set(channels)) 
+
+        if filterfile is not None:
+            self.load_hdf5(filterfile)
+            #for chan in self.channelsdict:
+            #    if chan in self._filter_data:
+            #        
+            #        temp = self.get_template(chan)
+            #        self.channelsdict[chan].append(temp)
+
+
+            parameter_list = [
+                'psd', 'template',
+                'csd'
+            ]   
+            for chan, chan_dict in self._filter_data.items():
+                
+                if chan not in  self.channelsdict.keys():
+                    self.channelsdict[chan] = dict()
+    
+                for par_name, val in chan_dict.items():
+                    
+                    # check if metadata
+                    if '_metadata' in par_name:
+                        continue
+                    
+                    # check if metadata
+                    if '_inds' in par_name:
+                        continue
+
+                    # find tag
+                    par_split = par_name.split('_')
+                    tag = par_split[-1]
+                    base_par = par_name[:-len(tag)-1]
+                    if (base_par not in parameter_list
+                        and len(par_split)>=2):
+                        tag = '_'.join(par_split[-2:])
+                        base_par = par_name[:-len(tag)-1]
+                        if base_par not in parameter_list:
+                            tag = 'default'
+                            base_par = par_name
+                    if tag not in self.channelsdict[chan]:
+                        self.channelsdict[chan][tag] = list()
+                                
+                    msg = base_par
+                    if isinstance(val, pd.Series):
+                        msg += ': pandas.Series '
+                    elif  isinstance(val, pd.DataFrame):
+                        msg += ': pandas.DataFrame  '
+                    elif isinstance(val, np.ndarray):
+                        ndim = val.ndim
+                        msg += f': {ndim}D numpy.array  ' 
+                    else:
+                        msg += (str(type(val)) + ' ')
+                                
+                    msg += str(val.shape)
+                                                        
+                    self.channelsdict[chan][tag].append(msg)
+
+            for chan in channels:
+                if chan in self.channelsdict:
+                    self.templatesdict[chan] = {}
+                    self.noisedict[chan] = {}
+                    subkeyvals = self.channelsdict[chan]
+                    for subkey, vals in subkeyvals.items():
+                        if any('csd' in item for item in vals):
+                            csdarray, csdfreqs = self.get_csd(chan, fold=False, return_metadata=False, tag=subkey)
+                            self.noisedict[chan][subkey] = (csdarray,csdfreqs)
+                            continue
+                        templatearray,templatetime = self.get_template(chan,return_metadata=False, tag=subkey)
+                        self.templatesdict[chan][subkey] = (templatearray,templatetime)
+
+            #inst the OF class here with the correct CSD and template array
+            #oftrigger = OptimumFilterTrigger('Mv3025pcRegular|Mv3025pcBigFins', 1.25e6, templates_td, csd, pretrigger_samples=12500)
+            
+            #now for the relevant templates, make the filtered templates and store them
+            for chan in channels:
+                if chan in self.channelsdict:
+                    if any('|' or "+" in chan):
+                        continue
+                    self.filttemplatesdict[chan] = {}
+
+            print(self.templatesdict)
+            print(self.templatesdict[channels[1]])
     def get_detector_config(self, channel):
         """
         get detector config
