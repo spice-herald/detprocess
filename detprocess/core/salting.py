@@ -34,7 +34,7 @@ class Salting(FilterData):
 
     """
 
-    def __init__(self,channels,filterfile, verbose=True,yaml_path=None):
+    def __init__(self,channels,filterfile,templatekeys,noisekeys, verbose=True,yaml_path=None):
         """
         Initialize class
 
@@ -90,6 +90,7 @@ class Salting(FilterData):
         super().__init__(verbose=verbose)
 
         separators = ['|', '+']
+        channelsfull = []
         for r in range(1, len(channels) + 1):
             # Generate all combinations of size r
             for combo in itertools.combinations(channels, r):
@@ -97,8 +98,8 @@ class Salting(FilterData):
                 for perm in itertools.permutations(combo):
                     for sep in separators:
                         key = sep.join(perm)
-                        channels.append(key)    
-        channels = list(set(channels)) 
+                        channelsfull.append(key)    
+        channelsfull = list(set(channelsfull)) 
 
         if filterfile is not None:
             self.load_hdf5(filterfile)
@@ -157,7 +158,10 @@ class Salting(FilterData):
                                                         
                     self.channelsdict[chan][tag].append(msg)
 
-            for chan in channels:
+            for chan in channelsfull:
+                if chan in channels:
+                    self.filttemplatesdict[chan] = {}
+                    self.filttemplatesdict[chan] = {}
                 if chan in self.channelsdict:
                     self.templatesdict[chan] = {}
                     self.noisedict[chan] = {}
@@ -169,19 +173,37 @@ class Salting(FilterData):
                             continue
                         templatearray,templatetime = self.get_template(chan,return_metadata=False, tag=subkey)
                         self.templatesdict[chan][subkey] = (templatearray,templatetime)
+            
+            nnoise = 0
+            ntemps = 0
+            for chan in self.channelsdict:
+                if self.noisedict[chan] == {}:
+                    continue
+                for n in noisekeys:
+                    if n in self.noisedict[chan]:
+                        nnoise +=1
+                        csd = self.noisedict[chan][n][0]
+                if nnoise > len(noisekeys) : raise ValueError('ERROR: Same noise key found more than once! Noisekeys cannot be repeated in multiple channels!')
+                for t in templatekeys:
+                    if t in self.templatesdict[chan]:
+                        ntemps = 0
+                        templates_td = self.templatesdict[chan][t][0]
+                        tempinst = OptimumFilterTrigger(trigger_channel=chan, fs=1.25e6, template=templates_td, noisecsd=csd, pretrigger_samples=12500)
+                        templates_td = templates_td.squeeze(axis=1)
+                        tempinst.update_trace(templates_td)
+                        filttemp = tempinst.get_filtered_trace()
+                        if '|' in chan:
+                            originalchannel = t.split('_')[1]
+                        if originalchannel in self.filttemplatesdict:
+                            if "single" in t:
+                                self.filttemplatesdict[originalchannel]['singles'] = (filttemp)
+                            else: self.filttemplatesdict[originalchannel]['shared'] = (filttemp)
+                    if ntemps > len(templatekeys) : raise ValueError('ERROR: Same template key found more than once! Tempkeys cannot be repeated in multiple channels!')
+                    else:
+                        continue
+                                
 
             #inst the OF class here with the correct CSD and template array
-            #oftrigger = OptimumFilterTrigger('Mv3025pcRegular|Mv3025pcBigFins', 1.25e6, templates_td, csd, pretrigger_samples=12500)
-            
-            #now for the relevant templates, make the filtered templates and store them
-            for chan in channels:
-                if chan in self.channelsdict:
-                    if any('|' or "+" in chan):
-                        continue
-                    self.filttemplatesdict[chan] = {}
-
-            print(self.templatesdict)
-            print(self.templatesdict[channels[1]])
     def get_detector_config(self, channel):
         """
         get detector config
