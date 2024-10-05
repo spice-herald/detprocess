@@ -103,12 +103,6 @@ class Salting(FilterData):
 
         if filterfile is not None:
             self.load_hdf5(filterfile)
-            #for chan in self.channelsdict:
-            #    if chan in self._filter_data:
-            #        
-            #        temp = self.get_template(chan)
-            #        self.channelsdict[chan].append(temp)
-
 
             parameter_list = [
                 'psd', 'template',
@@ -202,8 +196,10 @@ class Salting(FilterData):
                     else:
                         continue
                                 
-
-            #inst the OF class here with the correct CSD and template array
+    def get_raw_template(self,channel,tag):
+            return self.templatesdict[channel][tag][0],self.templatesdict[channel][tag][1]
+    def get_filtered_template(self,channel,tag):
+            return self.filttemplatesdict[channel][tag][0]
     def get_detector_config(self, channel):
         """
         get detector config
