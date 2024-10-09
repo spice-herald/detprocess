@@ -778,14 +778,23 @@ class Salting(FilterData):
             if nb_events > len(DM_energies):
                 raise ValueError('ERROR: nb_events to generate cannot be larger '
                                  'than the number of sampled energies!')
+        else: DM_energies = energies
         if not isinstance(templatetag,str):
             raise ValueError('Error: Only one template type can be used at a time, and it must be a string!')
-        else: DM_energies = energies
         # get the values to put into dict
-        salt_var_dict = {'salt_amplitude': list(),
-                         'salt_filt_amplitude': list(), 
-                         'salt_template_tag': list(),
-                        'salt_energy': list()}
+        #salt_var_dict = {'salt_amplitude': list(),
+        #                 'salt_filt_amplitude': list(), 
+        #                 'salt_template_tag': list(),
+        #                'salt_energy': list()}
+        
+        salt_var_dict = {'salt_template_tag': list(),
+                         'salt_recoil_energy_eV': list()}
+        base_keys = ['salt_amplitude', 'salt_filt_amplitude',  'salt_energy_eV']
+        
+        # Create channel-specific keys
+        for key in base_keys:
+            for chan in channels:
+                salt_var_dict[f'{key}_{chan}'] = [[] for _ in range(nb_events)]
         #get the scaling factors for the template
         #this includes fraction of deposited energy in each channel and PCE
         if len(channels) > 1:
@@ -807,6 +816,7 @@ class Salting(FilterData):
                     else: 
                         fullyscaled_template = scaled_template * DM_energies[n]*energiesplits[n][i]*PCE[i]
                         scaledfilttemplate = filttemplate * DM_energies[n]*energiesplits[n][i]*PCE[i]
+                        
                     salts[n].append([fullyscaled_template])   
                     filtsalts[n].append([scaledfilttemplate]) 
                     if 'saltarray' not in self._saltarraydict:
@@ -817,19 +827,19 @@ class Salting(FilterData):
                         self._saltarraydict['saltarray'].append([])
                         self._saltarraydict['filtsaltarray'].append([])
                         self._saltarraydict['timearray'].append([])
-                    if len(salt_var_dict['salt_amplitude']) <= n:
-                        salt_var_dict['salt_amplitude'].append([])
-                        salt_var_dict['salt_energy'].append([])
-                        salt_var_dict['salt_filt_amplitude'].append([])
+                    if len(salt_var_dict['salt_template_tag']) <= n:
                         salt_var_dict['salt_template_tag'].append([])
-
+                        salt_var_dict['salt_recoil_energy_eV'].append([])
+                        
                     self._saltarraydict['saltarray'][n].append(fullyscaled_template)
                     self._saltarraydict['filtsaltarray'][n].append(scaledfilttemplate)
                     self._saltarraydict['timearray'][n].append(time_array)
-                    salt_var_dict['salt_amplitude'][n].append(max(fullyscaled_template))
-                    salt_var_dict['salt_energy'][n].append(DM_energies[n]*energiesplits[n][i])
-                    salt_var_dict['salt_filt_amplitude'][n].append(max(scaledfilttemplate))
-                    salt_var_dict['salt_template_tag'][n] = templatetag
+                    
+                    salt_var_dict[f'salt_amplitude_{chan}'][n] = max(fullyscaled_template)
+                    salt_var_dict[f'salt_energy_eV_{chan}'][n] = DM_energies[n]*energiesplits[n][i]
+                    salt_var_dict[f'salt_filt_amplitude_{chan}'][n] = max(scaledfilttemplate) 
+                    salt_var_dict[f'salt_template_tag'][n] = templatetag
+                    salt_var_dict[f'salt_recoil_energy_eV'][n] = DM_energies[n]
         else: 
             salts = []
             filtsalts = []
@@ -855,21 +865,21 @@ class Salting(FilterData):
                 self._saltarraydict['saltarray'].append(fullyscaled_template)
                 self._saltarraydict['filtsaltarray'].append(scaledfilttemplate)
                 self._saltarraydict['timearray'].append(time_array)
-                salt_var_dict['salt_amplitude'].append(max(fullyscaled_template))
-                salt_var_dict['salt_energy'].append(DM_energies[n])
-                salt_var_dict['salt_filt_amplitude'].append(max(filttemplate))
-                salt_var_dict['salt_template_tag'].append(templatetag)
+                salt_var_dict[f'salt_amplitude_{chan}'] = max(fullyscaled_template)
+                salt_var_dict[f'salt_energy_eV_{chan}'] = DM_energies[n]
+                salt_var_dict[f'salt_filt_amplitude_{chan}'] = max(filttemplate)
+                salt_var_dict[f'salt_template_tag'] = templatetag
                 
         
         df = vx.from_dict(salt_var_dict)
         self._dataframe = self._dataframe.join(df)
         return salts,filtsalts  
 
-    def inject_raw_salt(self,traces,metadata,channels,templatetag):
+    def inject_raw_salt(self,traces,metadata,channels):
         newtraces = [[] for _ in range(len(traces))]
-        templates_td = self.templatesdict[chan][templatetag][0]
-        tempinst = OptimumFilterTrigger(trigger_channel=chan, fs=1.25e6, template=templates_td, noisecsd=csd, pretrigger_samples=12500)
-        newfilttraces = [[] for _ in range(len(traces))]
+        #templates_td = self.templatesdict[chan][templatetag][0]
+        # = OptimumFilterTrigger(trigger_channel=chan, fs=1.25e6, template=templates_td, noisecsd=csd, pretrigger_samples=12500)
+        #newfilttraces = [[] for _ in range(len(traces))]
         for n, event in enumerate(traces):
             for chan,waveform in enumerate(event):
                 if len(event) > 1 and len(channels) > 1:
