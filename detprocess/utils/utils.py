@@ -318,7 +318,7 @@ def read_config(yaml_file, available_channels, sample_rate=None):
 
     # configuration types
     configuration_types = ['global', 'feature',
-                           'didv', 'noise',
+                           'salting', 'didv', 'noise',
                            'template', 'trigger']
     
     
