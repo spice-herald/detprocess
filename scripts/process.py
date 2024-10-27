@@ -1,7 +1,7 @@
 import warnings
 import argparse
 from pprint import pprint
-from detprocess import TriggerProcessing, IVSweepProcessing, FeatureProcessing, Randoms
+from detprocess import utils, TriggerProcessing, IVSweepProcessing, FeatureProcessing, Randoms
 import os
 from pathlib import Path
 from pytesdaq.utils import arg_utils
@@ -33,13 +33,17 @@ if __name__ == "__main__":
     parser.add_argument('--enable-trig', '--enable-triggers', '--enable_trig',
                         dest='enable_trig',
                         action='store_true', help='Acquire triggers')
+    parser.add_argument('--enable-salting', '--enable_salting',
+                        dest='enable_salting',
+                        action='store_true', help='Generate and inject salting')
     parser.add_argument('--trigger_dataframe_path', 
                         dest='trigger_dataframe_path', type=str,
                         help='Path to trigger dataframe (threshold and/or randoms)')
     parser.add_argument('--enable-feature', '--enable_feature',
                         dest='enable_feature',
                         action='store_true',
-                        help='Process features')   
+                        help='Process features')
+    
     parser.add_argument('-s', '--series', '--input_series',
                         dest='input_series', nargs='+', type=str, 
                         help=('Continous data series name(s) '
@@ -78,6 +82,7 @@ if __name__ == "__main__":
     # Processing type(s)
     # ---------------------------
     process_ivsweep = False
+    generate_salting = False
     acquire_rand = False
     acquire_trig = False
     calc_filter = False
@@ -91,6 +96,9 @@ if __name__ == "__main__":
         acquire_trig = True
     #if args.calc_filter:
     #    calc_filter = True
+    if args.enable_salting:
+        generate_salting = args.enable_salting
+
     if args.enable_feature:
         process_feature = True
     if not (process_ivsweep
@@ -230,7 +238,79 @@ if __name__ == "__main__":
     if calc_filter:
         print('CALC FILTER NOT AVAILABLE')
         
+
+
+
+    # ------------------
+    # SALTING
+    # ------------------
+
+    # YAML file and Raw Data metadata needs to be
+    # read before
+    
+    salting_dataframe_path = None
+    salting_dataframe = None
+    if generate_salting:
+
+        # load yaml file
+        yaml_dict = yaml.load(open(yaml_file, 'r'), Loader=utils._UniqueKeyLoader)
+        salting_dict = yaml_dict['salting']
+        filter_file = yaml_dict['filter_file']
+        didv_file = yaml_dict['didv_file']
         
+        # FIXME: raw data metadata, need to include
+        # number of events, trace length, 
+        metadata = {''}
+
+        # DM pdf
+        pdf_file = None
+        if 'dm_pdf_file' in salting_dict:
+            pdf_file = salting_dict['dm_pdf_file']
+            salting.pop('dm_pdf_file')
+
+        
+        # Instantiate salting
+        salting = Salting(filter_file, didv_file)
+
+        # Add either raw data metadata or raw path
+       
+        #salting.set_raw_data_metadata(...)
+        salting.set_raw_data_path(group_path=args.input_group_path,
+                                  series=series,
+                                  restricted=restricted)
+        
+        
+        # loop channels and generate salt
+        for chan, chan_config in salting_dict.items():
+            template_tag = chan_config['template_tag']
+            noise_tag = chan_config['noise_tag']
+            pce = chan_config['collection_efficiency']
+            dpdi_tag = chan_config['dpdi_tag']
+            dpdi_poles = chan_config['dpdi_poles']
+
+            # if "energies" provided, use instead of pdf
+            energies=None
+            if 'energies' in chan_config:
+                energies = chan_config['energies']
+
+                
+            # generate salt
+            salting.generate_salt(chan,
+                                  noise_tag=noise_tag,
+                                  template_tag=template_tag,
+                                  dpdi_tag=dpdi_tag,
+                                  dpdi_poles=dpdi_poles,
+                                  energies=energies,
+                                  pdf_file=pdf_file,
+                                  nevents=100)
+            
+                                  
+        # get either dataframe or dataframe path to hdf5 for usage
+        # in trigger / feature class
+        salting_dataframe = salting.get_dataframe()
+        # salting_dataframe_path =  salting.get_dataframe_path()
+            
+                
     # ------------------
     # Acquire trigger
     # ------------------
