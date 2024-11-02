@@ -7,14 +7,13 @@ from math import log10, floor
 from glob import glob
 from pathlib import Path
 import types
-import cloudpickle
+import itertools
 import pytesdaq.io as h5io
 import math
 import array
 from detprocess.core.oftrigger import OptimumFilterTrigger
 from detprocess.process.randoms import Randoms
 from detprocess.core.filterdata import FilterData
-from qetpy.utils import convert_channel_name_to_list,convert_channel_list_to_name
 from scipy.signal import correlate
 from scipy.fft import ifft, fft, next_fast_len
 from scipy import stats, signal, interpolate, special, integrate
@@ -24,7 +23,7 @@ __all__ = [
 ]
 
 
-class Salting(FilterData):
+#class Salting(FilterData):
     """
     Class for injecting salt into datasets for multiple channels. Can be used to
     understand cut efficiencies.
@@ -35,7 +34,7 @@ class Salting(FilterData):
 
     """
 
-    def __init__(self,filter_file,didv_file,verbose=True):
+    def __init__(self,channels,filterfile,templatekeys,noisekeys, verbose=True,yaml_path=None):
         """
         Initialize class
 
@@ -49,11 +48,12 @@ class Salting(FilterData):
         """
 
         # initialize raw data dictionary
-        self._series = None
+        self._raw_data = None
         self._group_name = None
         self._raw_base_path = None
         self._series_list = None
         self._detector_config = None
+        self.channels = channels
         self._ivdidv_data = dict()
         self._saltarraydict = dict()
         self.templatesdict = dict()
@@ -77,11 +77,129 @@ class Salting(FilterData):
         
         self._verbose = verbose
 
+        if yaml_path is not None:
+            if os.path.isfile(yaml_path):
+                self._save_path = os.path.dirname(yaml_path)
+                self._file_name = os.path.basename(yaml_path)
+            elif os.path.isdir(yaml_path):
+                self._save_path = yaml_path
+            else:
+                raise ValueError('ERROR: "yaml_path" should be a '
+                                 'file or path!')
+
         super().__init__(verbose=verbose)
 
-        filterfile = self.load_hdf5(filter_file)
-        didvfile = self.load_hdf5(didv_file)
+        separators = ['|', '+']
+        channelsfull = []
+        for r in range(1, len(channels) + 1):
+            # Generate all combinations of size r
+            for combo in itertools.combinations(channels, r):
+                # For each combination, generate all permutations
+                for perm in itertools.permutations(combo):
+                    for sep in separators:
+                        key = sep.join(perm)
+                        channelsfull.append(key)    
+        channelsfull = list(set(channelsfull)) 
+
+        if filterfile is not None:
+            self.load_hdf5(filterfile)
+
+            parameter_list = [
+                'psd', 'template',
+                'csd'
+            ]   
+            for chan, chan_dict in self._filter_data.items():
+                
+                if chan not in  self.channelsdict.keys():
+                    self.channelsdict[chan] = dict()
+    
+                for par_name, val in chan_dict.items():
+                    
+                    # check if metadata
+                    if '_metadata' in par_name:
+                        continue
+                    
+                    # check if metadata
+                    if '_inds' in par_name:
+                        continue
+
+                    # find tag
+                    par_split = par_name.split('_')
+                    tag = par_split[-1]
+                    base_par = par_name[:-len(tag)-1]
+                    if (base_par not in parameter_list
+                        and len(par_split)>=2):
+                        tag = '_'.join(par_split[-2:])
+                        base_par = par_name[:-len(tag)-1]
+                        if base_par not in parameter_list:
+                            tag = 'default'
+                            base_par = par_name
+                    if tag not in self.channelsdict[chan]:
+                        self.channelsdict[chan][tag] = list()
                                 
+                    msg = base_par
+                    if isinstance(val, pd.Series):
+                        msg += ': pandas.Series '
+                    elif  isinstance(val, pd.DataFrame):
+                        msg += ': pandas.DataFrame  '
+                    elif isinstance(val, np.ndarray):
+                        ndim = val.ndim
+                        msg += f': {ndim}D numpy.array  ' 
+                    else:
+                        msg += (str(type(val)) + ' ')
+                                
+                    msg += str(val.shape)
+                                                        
+                    self.channelsdict[chan][tag].append(msg)
+
+            for chan in channelsfull:
+                if chan in channels:
+                    self.filttemplatesdict[chan] = {}
+                    self.filttemplatesdict[chan] = {}
+                if chan in self.channelsdict:
+                    self.templatesdict[chan] = {}
+                    self.noisedict[chan] = {}
+                    subkeyvals = self.channelsdict[chan]
+                    for subkey, vals in subkeyvals.items():
+                        if any('csd' in item for item in vals):
+                            csdarray, csdfreqs = self.get_csd(chan, fold=False, return_metadata=False, tag=subkey)
+                            self.noisedict[chan][subkey] = (csdarray,csdfreqs)
+                            continue
+                        templatearray,templatetime = self.get_template(chan,return_metadata=False, tag=subkey)
+                        self.templatesdict[chan][subkey] = (templatearray,templatetime)
+            
+            nnoise = 0
+            ntemps = 0
+            for chan in self.channelsdict:
+                if self.noisedict[chan] == {}:
+                    continue
+                for n in noisekeys:
+                    if n in self.noisedict[chan]:
+                        nnoise +=1
+                        csd = self.noisedict[chan][n][0]
+                if nnoise > len(noisekeys) : raise ValueError('ERROR: Same noise key found more than once! Noisekeys cannot be repeated in multiple channels!')
+                for t in templatekeys:
+                    if t in self.templatesdict[chan]:
+                        ntemps = 0
+                        templates_td = self.templatesdict[chan][t][0]
+                        tempinst = OptimumFilterTrigger(trigger_channel=chan, fs=1.25e6, template=templates_td, noisecsd=csd, pretrigger_samples=12500)
+                        templates_td = templates_td.squeeze(axis=1)
+                        tempinst.update_trace(templates_td)
+                        filttemp = tempinst.get_filtered_trace()
+                        if '|' in chan:
+                            originalchannel = t.split('_')[1]
+                        if originalchannel in self.filttemplatesdict:
+                            if "single" in t:
+                                self.filttemplatesdict[originalchannel]['singles'] = (filttemp)
+                            else: self.filttemplatesdict[originalchannel]['default'] = (filttemp)
+                    if ntemps > len(templatekeys) : raise ValueError('ERROR: Same template key found more than once! Tempkeys cannot be repeated in multiple channels!')
+                    else:
+                        continue
+                                
+    def get_raw_template(self,channel,tag):
+            return self.templatesdict[channel][tag][0],self.templatesdict[channel][tag][1]
+    def get_filtered_template(self,channel,tag):
+            return self.filttemplatesdict[channel][tag][0]
     def get_detector_config(self, channel):
         """
         get detector config
@@ -103,7 +221,7 @@ class Salting(FilterData):
         """
 
         return self._fs
-        
+
     def clear_randoms(self):
         """
         Clear internal data, however
@@ -432,11 +550,6 @@ class Salting(FilterData):
       
         return series_dict, base_path, group_name
     
-    def set_raw_data_path(self,group_path,series,restricted):
-        
-        self._series = series
-        self._raw_base_path = group_path
-    
     def set_iv_didv_results_from_file(self, file_name,
                                       poles=2,
                                       channels=None):
@@ -627,7 +740,7 @@ class Salting(FilterData):
         samples = np.random.rand(nsamples)
         sampled_energies = inv_cdf(samples)
 
-        self._DMenergies = np.append(self._DMenergies,sampled_energies* 1e3) #this is hardcoded! This is because the dRdE spectrum I'm using is in keV!
+        self._DMenergies = sampled_energies
         return sampled_energies
 
     def get_DMenergies(self):
@@ -636,6 +749,7 @@ class Salting(FilterData):
     def channel_energy_split(self,mean=0.5, std_dev=0.2, npairs=10):
         #make n pairs which will be the same as the number of events to sim
         listofsplits = []
+        print(npairs)
         for i in range(npairs):
             # Generate random numbers from a Gaussian distribution
             random_numbers = np.random.normal(loc=mean, scale=std_dev, size=2)
@@ -655,69 +769,53 @@ class Salting(FilterData):
     def get_energy_perchannel(self):
         return self._Channelenergies
 
-    def generate_salt(self,channels,noise_tag, template_tag , dpdi_tag,dpdi_poles,energies,pdf_file,PCE,nevents = 100):
-        channel_list  = convert_channel_name_to_list(channels)
-        channel_name = convert_channel_list_to_name(channels)
-        nb_channels = len(channel_list)
-        # get template 1D or 2D array
-        template, time_array = self.get_template(channel_name, tag=template_tag)
-        nb_templates = template.shape[-1]
-         # get psd/csd:
-        csd, csd_freqs = self.get_csd(channel_name, tag=noise_tag)
-        tempinst = OptimumFilterTrigger(trigger_channel=channel_name, fs=1.25e6, template=template, noisecsd=csd, pretrigger_samples=12500)
-        templates_td = template.squeeze(axis=1)
-        tempinst.update_trace(templates_td)
-        filttemplate = tempinst.get_filtered_trace()
-         # get dpdi for each individual channels
-        dpdi_dict = {}
-        for chan in channel_list:
-            dpdi, _= self.get_dpdi(chan, poles = dpdi_poles, tag=dpdi_tag)
-            dpdi_dict[chan] = dpdi
-        # generate the random selections in time to generate the 
-        series = self._series
-        cont_data = self._raw_base_path
-        self.clear_randoms()
-        self.generate_randoms(cont_data, series=None, nevents=nevents, min_separation_msec=10, ncores=1)
+    def generate_salt(self,nb_events,energies,channels, templatetag, PCE,Usespectrum = True,cont_data = None):
+        # generate the random selections in time to generate the salts
+        self.generate_randoms(cont_data, series=None, nevents=nb_events, min_separation_msec=100, ncores=1)
         #get the energies 
-        if pdf_file:
-            with open(pdf_file, 'rb') as f:
-                dmdists = cloudpickle.load(f)
-            for mass, data in dmdists.items():
-                dmrate_function = data["dmrate"]
-                self.sample_DMpdf(dmrate_function,[1e-5,1],nsamples = nevents)
-            DM_energies = self.get_DMenergies()
-        if energies:
-            DM_energies = energies
+        if Usespectrum:
+            DM_energies = self.get_DMenergies() * 1e3 #this is hardcoded! This is because the dRdE spectrum I'm using is in keV!
+            if nb_events > len(DM_energies):
+                raise ValueError('ERROR: nb_events to generate cannot be larger '
+                                 'than the number of sampled energies!')
+        else: DM_energies = energies
+        if not isinstance(templatetag,str):
+            raise ValueError('Error: Only one template type can be used at a time, and it must be a string!')
+        # get the values to put into dict
+        #salt_var_dict = {'salt_amplitude': list(),
+        #                 'salt_filt_amplitude': list(), 
+        #                 'salt_template_tag': list(),
+        #                'salt_energy': list()}
         
         salt_var_dict = {'salt_template_tag': list(),
                          'salt_recoil_energy_eV': list()}
         base_keys = ['salt_amplitude', 'salt_filt_amplitude',  'salt_energy_eV']
-
-
+        
         # Create channel-specific keys
         for key in base_keys:
-            for chan in channel_list:
-                salt_var_dict[f'{key}_{chan}'] = [[] for _ in range(nevents)]
+            for chan in channels:
+                salt_var_dict[f'{key}_{chan}'] = [[] for _ in range(nb_events)]
         #get the scaling factors for the template
         #this includes fraction of deposited energy in each channel and PCE
-        if nb_channels > 1:
+        if len(channels) > 1:
             #salts = np.zeros((nb_events,2))
-            energiesplits = self.channel_energy_split(npairs=nevents)     
+            energiesplits = self.channel_energy_split(npairs=nb_events)     
             #get the template to use for the salt
-            salts = [[] for _ in range(nevents)]
-            filtsalts = [[] for _ in range(nevents)]
-            for i,chan in enumerate(channel_list):
-                dpdi = dpdi_dict[chan]
-                temp = template[i]
-                norm_energy = qp.get_energy_normalization(time_array, temp[0], dpdi=dpdi[0], lgc_ev=True)
-                scaled_template = temp[0]/norm_energy
-                for n in range(nevents):
-                    if 'single' in template_tag: 
+            salts = [[] for _ in range(nb_events)]
+            filtsalts = [[] for _ in range(nb_events)]
+            for i,chan in enumerate(channels):
+                template,time_array = self.get_raw_template(chan,templatetag)
+                filttemplate = self.get_filtered_template(chan,templatetag)
+                dpdi = self.get_dpdi(channel=chan,poles=3)
+                norm_energy = qp.get_energy_normalization(time_array, template, dpdi=dpdi[0], lgc_ev=True)
+                scaled_template = template/norm_energy
+                for n in range(nb_events):
+                    if 'single' in templatetag: 
                         fullyscaled_template = scaled_template * DM_energies[n]
                         scaledfilttemplate = filttemplate * DM_energies[n]
                     else: 
                         fullyscaled_template = scaled_template * DM_energies[n]*energiesplits[n][i]*PCE[i]
-                        scaledfilttemplate = filttemplate[0] * DM_energies[n]*energiesplits[n][i]*PCE[i]
+                        scaledfilttemplate = filttemplate * DM_energies[n]*energiesplits[n][i]*PCE[i]
                         
                     salts[n].append([fullyscaled_template])   
                     filtsalts[n].append([scaledfilttemplate]) 
@@ -736,21 +834,23 @@ class Salting(FilterData):
                     self._saltarraydict['saltarray'][n].append(fullyscaled_template)
                     self._saltarraydict['filtsaltarray'][n].append(scaledfilttemplate)
                     self._saltarraydict['timearray'][n].append(time_array)
-
+                    
                     salt_var_dict[f'salt_amplitude_{chan}'][n] = max(fullyscaled_template)
                     salt_var_dict[f'salt_energy_eV_{chan}'][n] = DM_energies[n]*energiesplits[n][i]
                     salt_var_dict[f'salt_filt_amplitude_{chan}'][n] = max(scaledfilttemplate) 
-                    salt_var_dict[f'salt_template_tag'][n] = template_tag
+                    salt_var_dict[f'salt_template_tag'][n] = templatetag
                     salt_var_dict[f'salt_recoil_energy_eV'][n] = DM_energies[n]
         else: 
             salts = []
             filtsalts = []
-            dpdi = dpdi_dict[chan]
+            template,time_array = self.get_raw_template(chan,templatetag)
+            filttemplate = self.get_filtered_template(chan,templatetag)
+            dpdi = self.get_dpdi(channel=channels,poles=3)
             norm_energy = qp.get_energy_normalization(time_array, template, dpdi = dpdi[0], lgc_ev=True)
             scaled_template = template/norm_energy
             #have to ask Bruno about correct scaling from template
-            for n in range(nevents):
-                if 'single' in template_tag: 
+            for n in range(nb_events):
+                if 'single' in templatetag: 
                     fullyscaled_template = scaled_template * DM_energies[n]
                     filttemplate = filttemplate * DM_energies[n]
                 else: 
@@ -768,16 +868,13 @@ class Salting(FilterData):
                 salt_var_dict[f'salt_amplitude_{chan}'] = max(fullyscaled_template)
                 salt_var_dict[f'salt_energy_eV_{chan}'] = DM_energies[n]
                 salt_var_dict[f'salt_filt_amplitude_{chan}'] = max(filttemplate)
-                salt_var_dict[f'salt_template_tag'] = template_tag
+                salt_var_dict[f'salt_template_tag'] = templatetag
                 
         
         df = vx.from_dict(salt_var_dict)
         self._dataframe = self._dataframe.join(df)
         return salts,filtsalts  
-    
-    def get_dataframe():
-        return self._dataframe
-    
+
     def inject_raw_salt(self,traces,metadata,channels):
         newtraces = [[] for _ in range(len(traces))]
         #templates_td = self.templatesdict[chan][templatetag][0]
