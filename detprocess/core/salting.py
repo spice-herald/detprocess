@@ -662,37 +662,45 @@ class Salting(FilterData):
         # get template 1D or 2D array
         template, time_array = self.get_template(channel_name, tag=template_tag)
         nb_templates = template.shape[-1]
-         # get psd/csd:
+        # get psd/csd:
         csd, csd_freqs = self.get_csd(channel_name, tag=noise_tag)
+        #get filt template
         tempinst = OptimumFilterTrigger(trigger_channel=channel_name, fs=1.25e6, template=template, noisecsd=csd, pretrigger_samples=12500)
         templates_td = template.squeeze(axis=1)
         tempinst.update_trace(templates_td)
         filttemplate = tempinst.get_filtered_trace()
-         # get dpdi for each individual channels
+        # get dpdi for each individual channels
         dpdi_dict = {}
         for chan in channel_list:
             dpdi, _= self.get_dpdi(chan, poles = dpdi_poles, tag=dpdi_tag)
             dpdi_dict[chan] = dpdi
-        # generate the random selections in time to generate the 
-        series = self._series
-        cont_data = self._raw_base_path
-        self.clear_randoms()
-        self.generate_randoms(cont_data, series=None, nevents=nevents, min_separation_msec=10, ncores=1)
+            
+        #setup the output dict  
+        salt_var_dict = {'salt_template_tag': list(),
+                         'salt_dm_mass_MeV':list(),
+                         'salt_recoil_energy_eV': list()}
+        base_keys = ['salt_amplitude', 'salt_filt_amplitude',  'salt_energy_eV']
+        
         #get the energies 
         if pdf_file:
+            masses = []
             with open(pdf_file, 'rb') as f:
                 dmdists = cloudpickle.load(f)
             for mass, data in dmdists.items():
                 dmrate_function = data["dmrate"]
+                masses.append(mass)
                 self.sample_DMpdf(dmrate_function,[1e-5,1],nsamples = nevents)
+                salt_var_dict['salt_dm_mass_MeV'].extend([mass] * nevents)
             DM_energies = self.get_DMenergies()
+            nevents = len(DM_energies)
         if energies:
             DM_energies = energies
         
-        salt_var_dict = {'salt_template_tag': list(),
-                         'salt_recoil_energy_eV': list()}
-        base_keys = ['salt_amplitude', 'salt_filt_amplitude',  'salt_energy_eV']
-
+        # generate the random selections in time 
+        series = self._series
+        cont_data = self._raw_base_path
+        self.clear_randoms()
+        self.generate_randoms(cont_data, series=None, nevents=nevents, min_separation_msec=1, ncores=4)
 
         # Create channel-specific keys
         for key in base_keys:
@@ -747,7 +755,7 @@ class Salting(FilterData):
             filtsalts = []
             dpdi = dpdi_dict[chan]
             norm_energy = qp.get_energy_normalization(time_array, template, dpdi = dpdi[0], lgc_ev=True)
-            scaled_template = template/norm_energy
+            scaled_template = temp[0]/norm_energy
             #have to ask Bruno about correct scaling from template
             for n in range(nevents):
                 if 'single' in template_tag: 
@@ -757,7 +765,7 @@ class Salting(FilterData):
                     fullyscaled_template = scaled_template * DM_energies[n]*PCE[i]
                     filttemplate = filttemplate * DM_energies[n]*PCE[i]
                 salts.append(fullyscaled_template)
-                filtsalts.append(filttemplate)
+                filtsalts.append(scaledfilttemplate)
                 if 'saltarray' not in self._saltarraydict:
                     self._saltarraydict['saltarray'] = [] 
                     self._saltarraydict['timearray'] = []
@@ -769,13 +777,16 @@ class Salting(FilterData):
                 salt_var_dict[f'salt_energy_eV_{chan}'] = DM_energies[n]
                 salt_var_dict[f'salt_filt_amplitude_{chan}'] = max(filttemplate)
                 salt_var_dict[f'salt_template_tag'] = template_tag
+                salt_var_dict[f'salt_recoil_energy_eV'] = DM_energies[n]
                 
-        
+        maxlen = len(self._dataframe) 
+        for key in salt_var_dict:
+            salt_var_dict[key] = salt_var_dict[key][:maxlen]    
         df = vx.from_dict(salt_var_dict)
         self._dataframe = self._dataframe.join(df)
         return salts,filtsalts  
     
-    def get_dataframe():
+    def get_dataframe(self):
         return self._dataframe
     
     def inject_raw_salt(self,traces,metadata,channels):
