@@ -56,14 +56,11 @@ class Salting(FilterData):
         self._detector_config = None
         self._ivdidv_data = dict()
         self._saltarraydict = dict()
-        self.templatesdict = dict()
-        self.noisedict = dict()
-        self.filttemplatesdict = dict()
-        self.channelsdict = dict()
 
         
         # intialize randoms dataframe
         self._dataframe = None
+        self._listofdfs = []
 
         # intialize event list
         self._event_list = None
@@ -79,8 +76,8 @@ class Salting(FilterData):
 
         super().__init__(verbose=verbose)
 
-        filterfile = self.load_hdf5(filter_file)
-        didvfile = self.load_hdf5(didv_file)
+        self.filterfile = filter_file
+        self.didvfile = didv_file
                                 
     def get_detector_config(self, channel):
         """
@@ -115,7 +112,7 @@ class Salting(FilterData):
         self._event_list = None
         self._raw_data = None
         self._group_name = None
-        self._raw_base_path = None
+        #self._raw_base_path = None
         self._series_list = None
         self._detector_config = None
         self._fs = None
@@ -151,11 +148,11 @@ class Salting(FilterData):
                              + 'Check configuration...')
         
         # store as internal data
-        self._raw_base_path = output_base_path
-        self._raw_data = raw_data
-        self._group_name = group_name
-        self._series_list = list(raw_data.keys())
-        self._detector_config = dict()
+        #self._raw_base_path = output_base_path
+        #self._raw_data = raw_data
+        #self._group_name = group_name
+        #self._series_list = list(raw_data.keys())
+        #self._detector_config = dict()
 
         # check dataframe
         if dataframe is not None:
@@ -181,7 +178,7 @@ class Salting(FilterData):
     def generate_randoms(self, raw_path, series=None,
                          random_rate=None,
                          nevents=None,
-                         min_separation_msec=100,
+                         min_separation_msec=20,
                          edge_exclusion_msec=50,
                          restricted=False,
                          calib=False,
@@ -206,11 +203,11 @@ class Salting(FilterData):
                              + 'Check configuration...')
         
         # store as internal data
-        self._raw_data = raw_data
-        self._group_name = group_name
-        self._raw_base_path = output_base_path
-        self._series_list = list(raw_data.keys())
-        self._detector_config = dict()
+        #self._raw_data = raw_data
+        #self._group_name = group_name
+        #self._raw_base_path = output_base_path
+        #self._series_list = list(raw_data.keys())
+        #self._detector_config = dict()
 
              
         # generate randoms
@@ -632,6 +629,9 @@ class Salting(FilterData):
 
     def get_DMenergies(self):
         return self._DMenergies
+    
+    def clear_DMenergies(self):
+        self._DMenergies = np.array([])
         
     def channel_energy_split(self,mean=0.5, std_dev=0.2, npairs=10):
         #make n pairs which will be the same as the number of events to sim
@@ -659,17 +659,22 @@ class Salting(FilterData):
         channel_list  = convert_channel_name_to_list(channels)
         channel_name = convert_channel_list_to_name(channels)
         nb_channels = len(channel_list)
+        self.clear_data()
+        self.load_hdf5(self.filterfile)
         # get template 1D or 2D array
         template, time_array = self.get_template(channel_name, tag=template_tag)
         nb_templates = template.shape[-1]
         # get psd/csd:
-        csd, csd_freqs = self.get_csd(channel_name, tag=noise_tag)
+        if len(channel_list)>1: csd, csd_freqs = self.get_csd(channel_name, tag=noise_tag)
+        else: csd, csd_freqs = self.get_psd(channel_name, tag=noise_tag)
         #get filt template
         tempinst = OptimumFilterTrigger(trigger_channel=channel_name, fs=1.25e6, template=template, noisecsd=csd, pretrigger_samples=12500)
-        templates_td = template.squeeze(axis=1)
+        if len(channel_list) > 1 :templates_td = template.squeeze(axis=1)
+        else: templates_td = template
         tempinst.update_trace(templates_td)
         filttemplate = tempinst.get_filtered_trace()
         # get dpdi for each individual channels
+        self.load_hdf5(self.didvfile)
         dpdi_dict = {}
         for chan in channel_list:
             dpdi, _= self.get_dpdi(chan, poles = dpdi_poles, tag=dpdi_tag)
@@ -684,6 +689,7 @@ class Salting(FilterData):
         #get the energies 
         if pdf_file:
             masses = []
+            self.clear_DMenergies()
             with open(pdf_file, 'rb') as f:
                 dmdists = cloudpickle.load(f)
             for mass, data in dmdists.items():
@@ -754,46 +760,74 @@ class Salting(FilterData):
             salts = []
             filtsalts = []
             dpdi = dpdi_dict[chan]
+            print(template)
             norm_energy = qp.get_energy_normalization(time_array, template, dpdi = dpdi[0], lgc_ev=True)
-            scaled_template = temp[0]/norm_energy
+            scaled_template = template/norm_energy
             #have to ask Bruno about correct scaling from template
             for n in range(nevents):
                 if 'single' in template_tag: 
                     fullyscaled_template = scaled_template * DM_energies[n]
-                    filttemplate = filttemplate * DM_energies[n]
+                    filttemplate = filttemplate[0] * DM_energies[n]
                 else: 
-                    fullyscaled_template = scaled_template * DM_energies[n]*PCE[i]
-                    filttemplate = filttemplate * DM_energies[n]*PCE[i]
+                    fullyscaled_template = scaled_template * DM_energies[n]*PCE
+                    scaledfilttemplate = filttemplate[0] * DM_energies[n]*PCE
                 salts.append(fullyscaled_template)
                 filtsalts.append(scaledfilttemplate)
                 if 'saltarray' not in self._saltarraydict:
                     self._saltarraydict['saltarray'] = [] 
                     self._saltarraydict['timearray'] = []
                     self._saltarraydict['filtsaltarray'] = []
+                if len(self._saltarraydict['saltarray']) <= n:
+                    self._saltarraydict['saltarray'].append([])
+                    self._saltarraydict['filtsaltarray'].append([])
+                    self._saltarraydict['timearray'].append([])
+                if len(salt_var_dict['salt_template_tag']) <= n:
+                    salt_var_dict['salt_template_tag'].append([])
+                    salt_var_dict['salt_recoil_energy_eV'].append([])               
+
                 self._saltarraydict['saltarray'].append(fullyscaled_template)
                 self._saltarraydict['filtsaltarray'].append(scaledfilttemplate)
                 self._saltarraydict['timearray'].append(time_array)
-                salt_var_dict[f'salt_amplitude_{chan}'] = max(fullyscaled_template)
-                salt_var_dict[f'salt_energy_eV_{chan}'] = DM_energies[n]
-                salt_var_dict[f'salt_filt_amplitude_{chan}'] = max(filttemplate)
-                salt_var_dict[f'salt_template_tag'] = template_tag
-                salt_var_dict[f'salt_recoil_energy_eV'] = DM_energies[n]
+
+                salt_var_dict[f'salt_amplitude_{chan}'][n] = max(fullyscaled_template)
+                salt_var_dict[f'salt_energy_eV_{chan}'][n] = DM_energies[n]
+                salt_var_dict[f'salt_filt_amplitude_{chan}'][n] = max(scaledfilttemplate)
+                salt_var_dict[f'salt_template_tag'][n] = template_tag
+                salt_var_dict[f'salt_recoil_energy_eV'][n] = DM_energies[n]
                 
         maxlen = len(self._dataframe) 
         for key in salt_var_dict:
-            salt_var_dict[key] = salt_var_dict[key][:maxlen]    
+            salt_var_dict[key] = salt_var_dict[key][:maxlen]   
         df = vx.from_dict(salt_var_dict)
         self._dataframe = self._dataframe.join(df)
+        self._listofdfs.append(self._dataframe)
         return salts,filtsalts  
     
     def get_dataframe(self):
-        return self._dataframe
+        if len(self._listofdfs) > 1:
+            pandas_dfs = []
+            
+            for df in self._listofdfs:
+                # Flatten any multi-dimensional columns to ensure compatibility with pandas
+                for col in df.get_column_names():
+                    if df[col].ndim > 1:
+                        # Convert multi-dimensional columns to a string representation or summary
+                        df[col] = df[col].apply(lambda x: str(x))
+                
+                # Convert the vaex DataFrame to pandas after flattening
+                pandas_dfs.append(df.to_pandas_df())
+            
+            # Concatenate using pandas to handle missing columns and fill NaNs with 0
+            combined_pandas_df = pd.concat(pandas_dfs, axis=0, join='outer').fillna(0)
+            
+            # Convert the result back to a vaex DataFrame
+            combined_df = vx.from_pandas(combined_pandas_df)
+            return combined_df
+        else: return self._dataframe
     
-    def inject_raw_salt(self,traces,metadata,channels):
+    def inject_raw_salt(self,traces,channel,template_tag):
         newtraces = [[] for _ in range(len(traces))]
-        #templates_td = self.templatesdict[chan][templatetag][0]
-        # = OptimumFilterTrigger(trigger_channel=chan, fs=1.25e6, template=templates_td, noisecsd=csd, pretrigger_samples=12500)
-        #newfilttraces = [[] for _ in range(len(traces))]
+        template, time_array = self.get_template(channel, tag=template_tag)
         for n, event in enumerate(traces):
             for chan,waveform in enumerate(event):
                 if len(event) > 1 and len(channels) > 1:

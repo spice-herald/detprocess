@@ -1557,7 +1557,7 @@ class FilterData:
         # check channel
         channel_list = convert_channel_name_to_list(channels)
         channel_name = convert_channel_list_to_name(channels)
-              
+        print(self._filter_data.keys())      
         if (channel_name not in self._filter_data.keys()):
             msg = f'ERROR: Channel "{channel_name}" not available!'
             
@@ -1574,6 +1574,7 @@ class FilterData:
         inds_name = data_name + '_inds'
         
         # check available tag
+        print(self._filter_data[channel_name].keys())
         if data_name not in self._filter_data[channel_name].keys():
             raise ValueError(f'ERROR: Parameter {data_name} not found '
                              f'for channel {channel_name}!')
