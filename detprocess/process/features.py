@@ -49,6 +49,7 @@ class FeatureProcessing:
                  processing_id=None,
                  restricted=False,
                  calib=False,
+                 salting_dataframe=None,
                  verbose=True):
         """
         Intialize data processing 
@@ -93,6 +94,10 @@ class FeatureProcessing:
         calib : boolean
            if True, use only "calib" files
            if False, no calib files included
+
+        salting_dataframe : str or vaex dataframe
+           str if path to vaex hdf5 file or directly a dataframe 
+        
 
         verbose : bool, optional
             if True, display info
@@ -213,6 +218,7 @@ class FeatureProcessing:
             trigger_group_name=trigger_group_name,
             filter_file=filter_file,
             available_channels=available_channels,
+            salting_dataframe=salting_dataframe,
             verbose=verbose)
 
         # cleaup filter data tags cleanup

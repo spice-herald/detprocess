@@ -364,7 +364,8 @@ if __name__ == "__main__":
                                    external_file=None, 
                                    processing_id=processing_id,
                                    restricted=restricted,
-                                   calib=calib)
+                                   calib=calib
+                                   salting_dataframe=salting_dataframe)
         
         myproc.process(nevents=-1,
                        lgc_save=True,

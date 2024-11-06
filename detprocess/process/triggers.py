@@ -144,7 +144,6 @@ class TriggerProcessing:
         
         # initialize output path
         self._output_group_path = None
-
                   
         # instantiate processing data
         self._processing_data_inst = ProcessingData(
