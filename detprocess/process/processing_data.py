@@ -7,7 +7,7 @@ import pytesdaq.io as h5io
 import vaex as vx
 from glob import glob
 from detprocess.utils import utils
-from detprocess.core import FilterData
+from detprocess.core import FilterData, Salting
 import copy
 
 
@@ -31,6 +31,7 @@ class ProcessingData:
                  trigger_group_name=None,
                  filter_file=None,
                  available_channels=None,
+                 salting_dataframe=None,
                  verbose=True):
         """
         Intialize data processing
@@ -106,6 +107,13 @@ class ProcessingData:
             
         # available channels
         self._available_channels =  available_channels
+
+        # salting
+        self._salting_inst = None
+        if salting_dataframe is not None:
+            self._salting_inst = Salting(filter_file, didv_file=None)
+            self._salting_inst.set_dataframe(salting_dataframe)
+
         
     @property
     def verbose(self):
@@ -525,6 +533,8 @@ class ProcessingData:
         Read next event
         """
 
+        # case no trigger dataframe -> read the entire raw data
+        # trace 
         if not self._is_dataframe:
 
             # read the entire trace
@@ -540,6 +550,20 @@ class ProcessingData:
             if self._current_traces.size == 0:
                 return False
 
+
+            # salting     
+            if self._salting_inst is not None:
+
+                # series/event numbers 
+                series_num = int(self._current_admin_info['series_num'])
+                event_num = int(self._current_admin_info['event_num'])
+
+                # inject salting pulses
+                self._current_traces = self._salting_inst.inject_raw_salt(
+                    self._current_traces, channels,
+                    series_num=series_num,
+                    event_num=event_num)
+                
         else:
 
             # require traces_info
