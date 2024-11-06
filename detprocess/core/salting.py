@@ -35,7 +35,7 @@ class Salting(FilterData):
 
     """
 
-    def __init__(self,filter_file,didv_file,verbose=True):
+    def __init__(self,filter_file,didv_file = None ,verbose=True):
         """
         Initialize class
 
@@ -76,9 +76,10 @@ class Salting(FilterData):
 
         super().__init__(verbose=verbose)
 
-        self.filterfile = filter_file
-        self.didvfile = didv_file
-                                
+        #self.filterfile = filter_file
+        #self.didvfile = didv_file
+        self.load_hdf5(filter_file,overwrite=False)
+        self.load_hdf5(didv_file,overwrite=False)
     def get_detector_config(self, channel):
         """
         get detector config
@@ -659,8 +660,8 @@ class Salting(FilterData):
         channel_list  = convert_channel_name_to_list(channels)
         channel_name = convert_channel_list_to_name(channels)
         nb_channels = len(channel_list)
-        self.clear_data()
-        self.load_hdf5(self.filterfile)
+        if self.didvfile is None:
+            raise ValueError('ERROR: didv file required')
         # get template 1D or 2D array
         template, time_array = self.get_template(channel_name, tag=template_tag)
         nb_templates = template.shape[-1]
@@ -674,17 +675,10 @@ class Salting(FilterData):
         tempinst.update_trace(templates_td)
         filttemplate = tempinst.get_filtered_trace()
         # get dpdi for each individual channels
-        self.load_hdf5(self.didvfile)
         dpdi_dict = {}
         for chan in channel_list:
             dpdi, _= self.get_dpdi(chan, poles = dpdi_poles, tag=dpdi_tag)
             dpdi_dict[chan] = dpdi
-            
-        #setup the output dict  
-        salt_var_dict = {'salt_template_tag': list(),
-                         'salt_dm_mass_MeV':list(),
-                         'salt_recoil_energy_eV': list()}
-        base_keys = ['salt_amplitude', 'salt_filt_amplitude',  'salt_energy_eV']
         
         #get the energies 
         if pdf_file:
@@ -708,11 +702,17 @@ class Salting(FilterData):
         self.clear_randoms()
         self.generate_randoms(cont_data, series=None, nevents=nevents, min_separation_msec=1, ncores=4)
 
+        #setup the output dict  
+        salt_var_dict = {'salt_template_tag': list(),
+                         'salt_dm_mass_MeV':list(),
+                         'salt_recoil_energy_eV': list()}
+        base_keys = ['salt_amplitude', 'salt_filt_amplitude',  'salt_energy_eV']
         # Create channel-specific keys
         for key in base_keys:
             for chan in channel_list:
                 salt_var_dict[f'{key}_{chan}'] = [[] for _ in range(nevents)]
         #get the scaling factors for the template
+
         #this includes fraction of deposited energy in each channel and PCE
         if nb_channels > 1:
             #salts = np.zeros((nb_events,2))
@@ -801,9 +801,6 @@ class Salting(FilterData):
         df = vx.from_dict(salt_var_dict)
         self._dataframe = self._dataframe.join(df)
         self._listofdfs.append(self._dataframe)
-        return salts,filtsalts  
-    
-    def get_dataframe(self):
         if len(self._listofdfs) > 1:
             pandas_dfs = []
             
@@ -821,33 +818,60 @@ class Salting(FilterData):
             combined_pandas_df = pd.concat(pandas_dfs, axis=0, join='outer').fillna(0)
             
             # Convert the result back to a vaex DataFrame
-            combined_df = vx.from_pandas(combined_pandas_df)
-            return combined_df
-        else: return self._dataframe
+            self._dataframe = vx.from_pandas(combined_pandas_df)        
+        
+        return salts,filtsalts  
     
-    def inject_raw_salt(self,traces,channel,template_tag):
-        newtraces = [[] for _ in range(len(traces))]
-        template, time_array = self.get_template(channel, tag=template_tag)
-        for n, event in enumerate(traces):
-            for chan,waveform in enumerate(event):
-                if len(event) > 1 and len(channels) > 1:
-                    salt=self._saltarraydict['saltarray'][n][chan]
-                    filtsalt=self._saltarraydict['filtsaltarray'][n][chan]
-                    times=self._saltarraydict['timearray'][n][chan]
-                else: 
-                    salt=self._saltarraydict['saltarray'][n]
-                    times=self._saltarraydict['timearray'][n]
-                    filtsalt=self._saltarraydict['filtsaltarray'][n]                    
-                newtrace = np.array(waveform,copy=True)
-                salts_before_ADC=np.zeros(np.shape(waveform),dtype=float)
+    def set_dataframe(self, dataframe=None):
+        """
+        Set raw data path and vaex dataframe 
+        with randoms events (either dataframe directly
+        or path to vaex hdf5 files)
+        """
+        
+        # initialize data
+        #self.clear_dataframe()
+        # check dataframe
+        # check filter data
+        if self._dataframe:
+            print('WARNING: Some salt have been previously generated.')
+        if dataframe is not None:
+            
+            if isinstance(dataframe, vx.dataframe.DataFrame):
+                if len(dataframe)<1:
+                    raise ValueError('ERROR: No event found in the datafame!')
+            else:
+                dataframe = self._load_dataframe(dataframe)
+
+            self._dataframe = dataframe
+
+    def get_dataframe(self):
+        return self._dataframe
+    
+    def inject_raw_salt(self,channels,trace,seriesID,eventID):
+        channel_list  = convert_channel_name_to_list(channels)
+        channel_name = convert_channel_list_to_name(channels)
+        newtraces = []
+        filtered_df = self._dataframe[(self._dataframe['eventID'] == eventID) & (self._dataframe['seriesID'] == seriesID)]
+        for i,waveform in enumerate(trace):
+            newtrace = np.array(waveform,copy=True)
+            salts_before_ADC=np.zeros(np.shape(waveform),dtype=float)
+            chan = channel_list[i]
+            columns_to_extract = ['salt_template_tag', f'salt_amplitude_{chan}']
+            for j in filtered_df[columns_to_extract].to_items():
+                template_tag = j['salt_template_tag']
+                template,times = self.get_template(channel_name, tag=template_tag)
                 nb_samples=len(times)
-                simtime = self._dataframe['trigger_time'].values[n] 
+                temp = template[i]
+                saltamp = j[f'salt_amplitude_{chan}']
+                saltpulse = temp* saltamp
+                simtime = j['trigger_index']
                 simtime = simtime.astype(int)
-                salt_and_baseline = salt+newtrace[0]
+                salt_and_baseline = saltpulse+newtrace[0]
                 salt_and_baseline -= salt_and_baseline[0]
                 salts_before_ADC[simtime:simtime+nb_samples] += salt_and_baseline
                 newtrace += salts_before_ADC
-                newtraces[n].append([newtrace])
+                newtraces.append(newtrace)
         return newtraces
 
 
