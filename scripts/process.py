@@ -332,6 +332,7 @@ if __name__ == "__main__":
                                    processing_id=processing_id,
                                    restricted=restricted,
                                    calib=calib,
+                                   salting_dataframe=salting_dataframe,
                                    verbose=True)
           
         myproc.process(ntriggers=ntriggers,
