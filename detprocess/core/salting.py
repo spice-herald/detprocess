@@ -76,8 +76,8 @@ class Salting(FilterData):
 
         super().__init__(verbose=verbose)
 
-        #self.filterfile = filter_file
-        #self.didvfile = didv_file
+        self.filterfile = filter_file
+        self.didvfile = didv_file
         self.load_hdf5(filter_file,overwrite=False)
         self.load_hdf5(didv_file,overwrite=False)
     def get_detector_config(self, channel):
@@ -674,15 +674,22 @@ class Salting(FilterData):
         else: templates_td = template
         tempinst.update_trace(templates_td)
         filttemplate = tempinst.get_filtered_trace()
+        #setup the output dict  
+        salt_var_dict = {'salt_template_tag': list(),
+                         'salt_recoil_energy_eV': list()}
+        base_keys = ['salt_amplitude', 'salt_filt_amplitude',  'salt_energy_eV']
         # get dpdi for each individual channels
+        
         dpdi_dict = {}
         for chan in channel_list:
             dpdi, _= self.get_dpdi(chan, poles = dpdi_poles, tag=dpdi_tag)
             dpdi_dict[chan] = dpdi
-        
+        if pdf_file and energies:
+            raise ValueError('Only pass either list of energies or DM PDFs, not both!')
         #get the energies 
         if pdf_file:
             masses = []
+            salt_var_dict['salt_dm_mass_MeV'] = []
             self.clear_DMenergies()
             with open(pdf_file, 'rb') as f:
                 dmdists = cloudpickle.load(f)
@@ -694,7 +701,8 @@ class Salting(FilterData):
             DM_energies = self.get_DMenergies()
             nevents = len(DM_energies)
         if energies:
-            DM_energies = energies
+            DM_energies = [energy for energy in energies for _ in range(nevents)]
+            nevents = len(DM_energies)
         
         # generate the random selections in time 
         series = self._series
@@ -702,11 +710,6 @@ class Salting(FilterData):
         self.clear_randoms()
         self.generate_randoms(cont_data, series=None, nevents=nevents, min_separation_msec=1, ncores=4)
 
-        #setup the output dict  
-        salt_var_dict = {'salt_template_tag': list(),
-                         'salt_dm_mass_MeV':list(),
-                         'salt_recoil_energy_eV': list()}
-        base_keys = ['salt_amplitude', 'salt_filt_amplitude',  'salt_energy_eV']
         # Create channel-specific keys
         for key in base_keys:
             for chan in channel_list:
@@ -852,26 +855,35 @@ class Salting(FilterData):
         channel_list  = convert_channel_name_to_list(channels)
         channel_name = convert_channel_list_to_name(channels)
         newtraces = []
-        filtered_df = self._dataframe[(self._dataframe['eventID'] == eventID) & (self._dataframe['seriesID'] == seriesID)]
-        for i,waveform in enumerate(trace):
+        if (self._dataframe['event_number'] == eventID).count() > 0 and (self._dataframe['series_number'] == seriesID).count() > 0:
+            filtered_df = self._dataframe[(self._dataframe['event_number'] == eventID) & (self._dataframe['series_number'] == seriesID)]
+        else: return
+        for i,waveform in enumerate(trace[0]):
             newtrace = np.array(waveform,copy=True)
             salts_before_ADC=np.zeros(np.shape(waveform),dtype=float)
             chan = channel_list[i]
-            columns_to_extract = ['salt_template_tag', f'salt_amplitude_{chan}']
-            for j in filtered_df[columns_to_extract].to_items():
+            columns_to_extract = ['salt_template_tag', f'salt_amplitude_{chan}','trigger_index']
+            #for j in filtered_df[columns_to_extract].to_dict(orient="records"):
+            n = 0
+            for _, j in filtered_df[columns_to_extract].to_pandas_df().iterrows():
                 template_tag = j['salt_template_tag']
-                template,times = self.get_template(channel_name, tag=template_tag)
+                try:
+                    template,times = self.get_template(channel_name, tag=template_tag)
+                    temp = template[i][0]
+                except Exception as e:
+                    template,times = self.get_template(chan, tag=template_tag)
+                    temp = template
                 nb_samples=len(times)
-                temp = template[i]
                 saltamp = j[f'salt_amplitude_{chan}']
                 saltpulse = temp* saltamp
                 simtime = j['trigger_index']
-                simtime = simtime.astype(int)
                 salt_and_baseline = saltpulse+newtrace[0]
                 salt_and_baseline -= salt_and_baseline[0]
                 salts_before_ADC[simtime:simtime+nb_samples] += salt_and_baseline
                 newtrace += salts_before_ADC
-                newtraces.append(newtrace)
+                n+=1
+                print(n)
+            newtraces.append(newtrace)
         return newtraces
 
 

@@ -672,7 +672,7 @@ class ProcessingData:
                     chans = self._current_admin_info['detector_chans']
                     
                     self._current_truncated_traces_data[key_tuple] = {
-                        'traces': truncated_traces
+                        'traces': truncated_traces,
                         'channels': chans
                     }
 
