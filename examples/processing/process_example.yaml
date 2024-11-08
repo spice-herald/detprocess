@@ -24,6 +24,7 @@ salting:
 
    # DM PDF 
    dm_pdf_file: /path/to/pdf_file
+   energies: [1,10,100]
    
    # 1x1
    Melange025pcRight:   
@@ -32,7 +33,6 @@ salting:
      collection_efficiency: 0.5
      dpdi_tag: default
      dpdi_poles: 2     
-     energies: ?
 
    # Using 2x2
    Melange025pcLeft|Melange025pcRight:

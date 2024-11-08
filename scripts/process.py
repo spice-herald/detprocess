@@ -266,8 +266,11 @@ if __name__ == "__main__":
         pdf_file = None
         if 'dm_pdf_file' in salting_dict:
             pdf_file = salting_dict['dm_pdf_file']
-            salting.pop('dm_pdf_file')
-
+            
+        # if "energies" provided, use instead of pdf
+        energies=None
+        if 'energies' in salting_dict:
+            energies = salting_dict['energies']
         
         # Instantiate salting
         salting = Salting(filter_file, didv_file)
@@ -279,37 +282,50 @@ if __name__ == "__main__":
                                   series=series,
                                   restricted=restricted)
         
-        
+        dataframelist = []
         # loop channels and generate salt
-        for chan, chan_config in salting_dict.items():
-            template_tag = chan_config['template_tag']
-            noise_tag = chan_config['noise_tag']
-            pce = chan_config['collection_efficiency']
-            dpdi_tag = chan_config['dpdi_tag']
-            dpdi_poles = chan_config['dpdi_poles']
-
-            # if "energies" provided, use instead of pdf
-            energies=None
-            if 'energies' in chan_config:
-                energies = chan_config['energies']
-
+        if energies:
+            for energy in energies:
+                for chan, chan_config in salting_dict.items():
+                    template_tag = chan_config['template_tag']
+                    noise_tag = chan_config['noise_tag']
+                    pce = chan_config['collection_efficiency']
+                    dpdi_tag = chan_config['dpdi_tag']
+                    dpdi_poles = chan_config['dpdi_poles']
+                    # generate salt
+                    salting.generate_salt(chan,
+                                        noise_tag=noise_tag,
+                                        template_tag=template_tag,
+                                        dpdi_tag=dpdi_tag,
+                                        dpdi_poles=dpdi_poles,
+                                        energies=energy,
+                                        pdf_file=pdf_file,
+                                        nevents=100)
+                    salting_dataframe = salting.get_dataframe()
+                    dataframelist.append(salting_dataframe)
+                # salting_dataframe_path =  salting.get_dataframe_path()
+        else:         
+            for chan, chan_config in salting_dict.items():
+                template_tag = chan_config['template_tag']
+                noise_tag = chan_config['noise_tag']
+                pce = chan_config['collection_efficiency']
+                dpdi_tag = chan_config['dpdi_tag']
+                dpdi_poles = chan_config['dpdi_poles']
+                # generate salt
+                salting.generate_salt(chan,
+                                    noise_tag=noise_tag,
+                                    template_tag=template_tag,
+                                    dpdi_tag=dpdi_tag,
+                                    dpdi_poles=dpdi_poles,
+                                    energies=energy,
+                                    pdf_file=pdf_file,
+                                    nevents=100)
                 
-            # generate salt
-            salting.generate_salt(chan,
-                                  noise_tag=noise_tag,
-                                  template_tag=template_tag,
-                                  dpdi_tag=dpdi_tag,
-                                  dpdi_poles=dpdi_poles,
-                                  energies=energies,
-                                  pdf_file=pdf_file,
-                                  nevents=100)
-            
-                                  
-        # get either dataframe or dataframe path to hdf5 for usage
-        # in trigger / feature class
-        salting_dataframe = salting.get_dataframe()
-        # salting_dataframe_path =  salting.get_dataframe_path()
-            
+                                    
+            # get either dataframe or dataframe path to hdf5 for usage
+            # in trigger / feature class
+            salting_dataframe = salting.get_dataframe()
+            # salting_dataframe_path =  salting.get_dataframe_path()
                 
     # ------------------
     # Acquire trigger

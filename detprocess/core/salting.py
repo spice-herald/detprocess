@@ -655,6 +655,12 @@ class Salting(FilterData):
 
     def get_energy_perchannel(self):
         return self._Channelenergies
+    
+    def set_energy_splits_to1(self,energysplits):
+        for sublist in energysplits:
+            for i in range(len(sublist)):
+                sublist[i] = 1
+        return energysplits
 
     def generate_salt(self,channels,noise_tag, template_tag , dpdi_tag,dpdi_poles,energies,pdf_file,PCE,nevents = 100):
         channel_list  = convert_channel_name_to_list(channels)
@@ -664,7 +670,7 @@ class Salting(FilterData):
             raise ValueError('ERROR: didv file required')
         # get template 1D or 2D array
         template, time_array = self.get_template(channel_name, tag=template_tag)
-        nb_templates = template.shape[-1]
+        nb_samples = template.shape[-1]
         # get psd/csd:
         if len(channel_list)>1: csd, csd_freqs = self.get_csd(channel_name, tag=noise_tag)
         else: csd, csd_freqs = self.get_psd(channel_name, tag=noise_tag)
@@ -676,7 +682,8 @@ class Salting(FilterData):
         filttemplate = tempinst.get_filtered_trace()
         #setup the output dict  
         salt_var_dict = {'salt_template_tag': list(),
-                         'salt_recoil_energy_eV': list()}
+                         'salt_recoil_energy_eV': list(),
+                         'saltchanname': list()}
         base_keys = ['salt_amplitude', 'salt_filt_amplitude',  'salt_energy_eV']
         # get dpdi for each individual channels
         
@@ -707,8 +714,9 @@ class Salting(FilterData):
         # generate the random selections in time 
         series = self._series
         cont_data = self._raw_base_path
+        sep_time = nb_samples/1.25e6
         self.clear_randoms()
-        self.generate_randoms(cont_data, series=None, nevents=nevents, min_separation_msec=1, ncores=4)
+        self.generate_randoms(cont_data, series=None, nevents=nevents, min_separation_msec=sep_time, ncores=4)
 
         # Create channel-specific keys
         for key in base_keys:
@@ -719,7 +727,10 @@ class Salting(FilterData):
         #this includes fraction of deposited energy in each channel and PCE
         if nb_channels > 1:
             #salts = np.zeros((nb_events,2))
-            energiesplits = self.channel_energy_split(npairs=nevents)     
+            energiesplits = self.channel_energy_split(npairs=nevents)    
+            unitysplits = True
+            if unitysplits is True:
+                 energiesplits = self.set_energy_splits_to1(energiesplits)
             #get the template to use for the salt
             salts = [[] for _ in range(nevents)]
             filtsalts = [[] for _ in range(nevents)]
@@ -749,6 +760,7 @@ class Salting(FilterData):
                     if len(salt_var_dict['salt_template_tag']) <= n:
                         salt_var_dict['salt_template_tag'].append([])
                         salt_var_dict['salt_recoil_energy_eV'].append([])
+                        salt_var_dict['saltchanname'].append([])
                         
                     self._saltarraydict['saltarray'][n].append(fullyscaled_template)
                     self._saltarraydict['filtsaltarray'][n].append(scaledfilttemplate)
@@ -759,14 +771,13 @@ class Salting(FilterData):
                     salt_var_dict[f'salt_filt_amplitude_{chan}'][n] = max(scaledfilttemplate) 
                     salt_var_dict[f'salt_template_tag'][n] = template_tag
                     salt_var_dict[f'salt_recoil_energy_eV'][n] = DM_energies[n]
+                    salt_var_dict[f'saltchanname'][n] = channel_name
         else: 
             salts = []
             filtsalts = []
             dpdi = dpdi_dict[chan]
-            print(template)
             norm_energy = qp.get_energy_normalization(time_array, template, dpdi = dpdi[0], lgc_ev=True)
             scaled_template = template/norm_energy
-            #have to ask Bruno about correct scaling from template
             for n in range(nevents):
                 if 'single' in template_tag: 
                     fullyscaled_template = scaled_template * DM_energies[n]
@@ -786,7 +797,8 @@ class Salting(FilterData):
                     self._saltarraydict['timearray'].append([])
                 if len(salt_var_dict['salt_template_tag']) <= n:
                     salt_var_dict['salt_template_tag'].append([])
-                    salt_var_dict['salt_recoil_energy_eV'].append([])               
+                    salt_var_dict['salt_recoil_energy_eV'].append([])     
+                    salt_var_dict['saltchanname'].append([])          
 
                 self._saltarraydict['saltarray'].append(fullyscaled_template)
                 self._saltarraydict['filtsaltarray'].append(scaledfilttemplate)
@@ -797,6 +809,7 @@ class Salting(FilterData):
                 salt_var_dict[f'salt_filt_amplitude_{chan}'][n] = max(scaledfilttemplate)
                 salt_var_dict[f'salt_template_tag'][n] = template_tag
                 salt_var_dict[f'salt_recoil_energy_eV'][n] = DM_energies[n]
+                salt_var_dict[f'saltchanname'][n] = channel_name
                 
         maxlen = len(self._dataframe) 
         for key in salt_var_dict:
@@ -852,6 +865,8 @@ class Salting(FilterData):
         return self._dataframe
     
     def inject_raw_salt(self,channels,trace,seriesID,eventID):
+        is_list_input = isinstance(trace, list)
+        trace_array = np.array(trace, copy=False) if is_list_input else trace
         channel_list  = convert_channel_name_to_list(channels)
         channel_name = convert_channel_list_to_name(channels)
         newtraces = []
@@ -862,17 +877,14 @@ class Salting(FilterData):
             newtrace = np.array(waveform,copy=True)
             salts_before_ADC=np.zeros(np.shape(waveform),dtype=float)
             chan = channel_list[i]
-            columns_to_extract = ['salt_template_tag', f'salt_amplitude_{chan}','trigger_index']
-            #for j in filtered_df[columns_to_extract].to_dict(orient="records"):
-            n = 0
+            columns_to_extract = ['salt_template_tag', f'salt_amplitude_{chan}','trigger_index','saltchanname']
             for _, j in filtered_df[columns_to_extract].to_pandas_df().iterrows():
                 template_tag = j['salt_template_tag']
-                try:
-                    template,times = self.get_template(channel_name, tag=template_tag)
+                tempchan = j['saltchanname']
+                template,times = self.get_template(tempchan, tag=template_tag)
+                if "|" in tempchan:
                     temp = template[i][0]
-                except Exception as e:
-                    template,times = self.get_template(chan, tag=template_tag)
-                    temp = template
+                else: temp = template
                 nb_samples=len(times)
                 saltamp = j[f'salt_amplitude_{chan}']
                 saltpulse = temp* saltamp
@@ -881,10 +893,12 @@ class Salting(FilterData):
                 salt_and_baseline -= salt_and_baseline[0]
                 salts_before_ADC[simtime:simtime+nb_samples] += salt_and_baseline
                 newtrace += salts_before_ADC
-                n+=1
-                print(n)
             newtraces.append(newtrace)
-        return newtraces
+        if is_list_input:
+            return [list(trace) for trace in newtraces]
+        else:
+            return np.array(newtraces)
+        #return newtraces
 
 
 
