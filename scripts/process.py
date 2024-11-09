@@ -145,11 +145,10 @@ if __name__ == "__main__":
               
         
     # threshold trigger dataframe path
-    dataframe_path = None
+    trigger_dataframe_path = None
     if args.trigger_dataframe_path:
-        dataframe_path = args.trigger_dataframe_path
-
-
+        trigger_dataframe_path = args.trigger_dataframe_path
+  
     # series
     series = None
     if args.input_series:
@@ -178,20 +177,116 @@ if __name__ == "__main__":
         exit()
         
     # Check some fields
-    if (dataframe_path is not None 
+    if (trigger_dataframe_path is not None 
         and  (acquire_trig or acquire_rand)):
         print('ERROR: A trigger dataframe has been provided.'
-              'Cannot acquire triggers. Change arguments!')
-
- 
+              'Cannot acquire triggers or randoms. Change arguments!')
+        exit()
         
-    # ------------------
+    if (generate_salting and process_feature
+        and not (acquire_trig and acquire_rand)):
+        print('ERROR: if salting enabled, trigger acquisition needs to be '
+              'done before feature processing!')
+        exit()
+        
+        
+    
+    # ====================================
+    # Calc Filter
+    # ====================================
+    if calc_filter:
+        print('CALC FILTER NOT AVAILABLE')
+        
+
+
+
+    # ====================================
+    # SALTING
+    # ====================================
+
+    salting_dataframe_list = [None]
+  
+    if generate_salting:
+
+        # initialize
+        salting_dataframe_list = []
+
+        # load yaml file
+        yaml_dict = yaml.load(open(yaml_file, 'r'), Loader=utils._UniqueKeyLoader)
+        salting_dict = yaml_dict['salting']
+        filter_file = yaml_dict['filter_file']
+        didv_file = yaml_dict['didv_file']
+        
+        # FIXME: raw data metadata, need to include
+        # number of events, trace length, 
+        metadata = {''}
+
+        # DM pdf
+        pdf_file = None
+        if 'dm_pdf_file' in salting_dict:
+            pdf_file = salting_dict['dm_pdf_file']
+            
+        # if "energies" provided, use instead of pdf
+        energies = [None]
+        if 'energies' in salting_dict:
+            energies = salting_dict['energies']
+            if not isinstance(energies, list):
+                energies = [energies]
+            if pdf_file is not None:
+                print('ERROR with salting parameters: Either energies or pdf '
+                      'should be provided. Not both!')
+                exit(0)
+                
+        
+        # Instantiate salting
+        salting = Salting(filter_file, didv_file)
+
+        # Add either raw data metadata or raw path
+       
+        #salting.set_raw_data_metadata(...)
+        salting.set_raw_data_path(group_path=args.input_group_path,
+                                  series=series,
+                                  restricted=restricted)        
+        # loop energies
+        for energy in energies:
+
+            if energy is None:
+                print(f'Salting with PDF {pdf_file}')
+            else:
+                print(f'Salting with energy {energy} eV')
+
+                
+            for chan, chan_config in salting_dict.items():
+                template_tag = chan_config['template_tag']
+                noise_tag = chan_config['noise_tag']
+                pce = chan_config['collection_efficiency']
+                dpdi_tag = chan_config['dpdi_tag']
+                dpdi_poles = chan_config['dpdi_poles']
+
+                # generate salt
+                salting.generate_salt(chan,
+                                      noise_tag=noise_tag,
+                                      template_tag=template_tag,
+                                      dpdi_tag=dpdi_tag,
+                                      dpdi_poles=dpdi_poles,
+                                      energies=energy,
+                                      pdf_file=pdf_file,
+                                      nevents=100)
+                salting_dataframe = salting.get_dataframe()
+                salting_dataframe_list.append(salting_dataframe)
+
+
+                
+    # ====================================
     # Acquire randoms
-    # ------------------
+    # ====================================
 
-    dataframe_group_name = None
+    # intialize ouput path list
+    trigger_group_path_list = []
+    
     if acquire_rand:
-        
+
+             
         print('\n\n================================')
         print('Randoms Acquisition')
         print('================================')
@@ -213,124 +308,34 @@ if __name__ == "__main__":
                   + '"nrandoms" argument required!')
             exit()
 
-        
-        # instantiate
-        myproc = Randoms(args.input_group_path,
-                         processing_id=processing_id,
-                         series=series,
-                         restricted=restricted,
-                         calib=calib,
-                         verbose=True)
-        
-        myproc.process(random_rate=random_rate,
-                       nrandoms=nrandoms,
-                       ncores=ncores,
-                       lgc_save=True,
-                       lgc_output=False,
-                       save_path=save_path)
 
-        dataframe_path = myproc.get_output_path()
-        dataframe_group_name = str(Path(dataframe_path).name)
-             
-    # ------------------
-    # Calc Filter
-    # ------------------
-    if calc_filter:
-        print('CALC FILTER NOT AVAILABLE')
-        
-
-
-
-    # ------------------
-    # SALTING
-    # ------------------
-
-    # YAML file and Raw Data metadata needs to be
-    # read before
-    
-    salting_dataframe_path = None
-    salting_dataframe = None
-    if generate_salting:
-
-        # load yaml file
-        yaml_dict = yaml.load(open(yaml_file, 'r'), Loader=utils._UniqueKeyLoader)
-        salting_dict = yaml_dict['salting']
-        filter_file = yaml_dict['filter_file']
-        didv_file = yaml_dict['didv_file']
-        
-        # FIXME: raw data metadata, need to include
-        # number of events, trace length, 
-        metadata = {''}
-
-        # DM pdf
-        pdf_file = None
-        if 'dm_pdf_file' in salting_dict:
-            pdf_file = salting_dict['dm_pdf_file']
+        # generate randoms for each salting
+        # FIXME: generate just once in the future
+        for salting_df in salting_dataframe_list:
             
-        # if "energies" provided, use instead of pdf
-        energies=None
-        if 'energies' in salting_dict:
-            energies = salting_dict['energies']
-        
-        # Instantiate salting
-        salting = Salting(filter_file, didv_file)
+            # instantiate
+            myproc = Randoms(args.input_group_path,
+                             processing_id=processing_id,
+                             series=series,
+                             restricted=restricted,
+                             calib=calib,
+                             verbose=True)
+            
+            myproc.process(random_rate=random_rate,
+                           nrandoms=nrandoms,
+                           ncores=ncores,
+                           lgc_save=True,
+                           lgc_output=False,
+                           save_path=save_path)
 
-        # Add either raw data metadata or raw path
-       
-        #salting.set_raw_data_metadata(...)
-        salting.set_raw_data_path(group_path=args.input_group_path,
-                                  series=series,
-                                  restricted=restricted)
-        
-        dataframelist = []
-        # loop channels and generate salt
-        if energies:
-            for energy in energies:
-                for chan, chan_config in salting_dict.items():
-                    template_tag = chan_config['template_tag']
-                    noise_tag = chan_config['noise_tag']
-                    pce = chan_config['collection_efficiency']
-                    dpdi_tag = chan_config['dpdi_tag']
-                    dpdi_poles = chan_config['dpdi_poles']
-                    # generate salt
-                    salting.generate_salt(chan,
-                                        noise_tag=noise_tag,
-                                        template_tag=template_tag,
-                                        dpdi_tag=dpdi_tag,
-                                        dpdi_poles=dpdi_poles,
-                                        energies=energy,
-                                        pdf_file=pdf_file,
-                                        nevents=100)
-                    salting_dataframe = salting.get_dataframe()
-                    dataframelist.append(salting_dataframe)
-                # salting_dataframe_path =  salting.get_dataframe_path()
-        else:         
-            for chan, chan_config in salting_dict.items():
-                template_tag = chan_config['template_tag']
-                noise_tag = chan_config['noise_tag']
-                pce = chan_config['collection_efficiency']
-                dpdi_tag = chan_config['dpdi_tag']
-                dpdi_poles = chan_config['dpdi_poles']
-                # generate salt
-                salting.generate_salt(chan,
-                                    noise_tag=noise_tag,
-                                    template_tag=template_tag,
-                                    dpdi_tag=dpdi_tag,
-                                    dpdi_poles=dpdi_poles,
-                                    energies=energy,
-                                    pdf_file=pdf_file,
-                                    nevents=100)
-                
-                                    
-            # get either dataframe or dataframe path to hdf5 for usage
-            # in trigger / feature class
-            salting_dataframe = salting.get_dataframe()
-            # salting_dataframe_path =  salting.get_dataframe_path()
-                
-    # ------------------
+            trigger_group_path_list.append(myproc.get_output_path())
+            
+                   
+    # ====================================
     # Acquire trigger
-    # ------------------
-    
+    # ====================================
+
+      
     if acquire_trig:
 
         print('\n\n================================')
@@ -341,27 +346,37 @@ if __name__ == "__main__":
         ntriggers = -1
         if args.ntriggers:
             ntriggers = int(args.ntriggers)
-            
-        myproc = TriggerProcessing(args.input_group_path,
-                                   processing_setup,
-                                   series=series,
-                                   processing_id=processing_id,
-                                   restricted=restricted,
-                                   calib=calib,
-                                   salting_dataframe=salting_dataframe,
-                                   verbose=True)
-          
-        myproc.process(ntriggers=ntriggers,
-                       lgc_output=False,
-                       lgc_save=True,
-                       output_group_name=dataframe_group_name,
-                       ncores=ncores,
-                       save_path=save_path)
-        
-        
-        dataframe_path = myproc.get_output_path()
 
+
+        for idx, salting_df in enumerate(salting_dataframe_list):
+
+            # output group name 
+            trigger_group_name = None
+            if trigger_group_path_list:
+                trigger_group_name = str(
+                    Path(trigger_group_path_list[idx]).name
+                )
+
+            # instantiate
+            myproc = TriggerProcessing(args.input_group_path,
+                                       processing_setup,
+                                       series=series,
+                                       processing_id=processing_id,
+                                       restricted=restricted,
+                                       calib=calib,
+                                       salting_dataframe=salting_df,
+                                       verbose=True)
+          
+            myproc.process(ntriggers=ntriggers,
+                           lgc_output=False,
+                           lgc_save=True,
+                           output_group_name=trigger_group_name,
+                           ncores=ncores,
+                           save_path=save_path)
         
+            if not trigger_group_path_list:
+                trigger_group_path_list.append(myproc.get_output_path())
+            
     # ------------------
     # Process feature
     # ------------------
@@ -371,24 +386,35 @@ if __name__ == "__main__":
         print('\n\n================================')
         print('Feature Processing')
         print('================================')
-        print(str(datetime.now()))
 
-        myproc = FeatureProcessing(args.input_group_path,
-                                   processing_setup,
-                                   series=series, 
-                                   trigger_dataframe_path=dataframe_path,
-                                   external_file=None, 
-                                   processing_id=processing_id,
-                                   restricted=restricted,
-                                   calib=calib
-                                   salting_dataframe=salting_dataframe)
+        # check if trigger path exist
+        if not trigger_group_path_list:
+            trigger_group_path_list = [trigger_dataframe_path]
+
         
-        myproc.process(nevents=-1,
-                       lgc_save=True,
-                       lgc_output=False,
-                       ncores=ncores,
-                       save_path=save_path)
+        # loop salting
+        for idx, salting_df in enumerate(salting_dataframe_list):
 
+            # trigger dataframes path
+            trigger_path = trigger_group_path_list[idx]
+
+            # instantiate
+            myproc = FeatureProcessing(args.input_group_path,
+                                       processing_setup,
+                                       series=series, 
+                                       trigger_dataframe_path=trigger_path,
+                                       external_file=None, 
+                                       processing_id=processing_id,
+                                       restricted=restricted,
+                                       calib=calib,
+                                       salting_dataframe=salting_df)
+        
+            myproc.process(nevents=-1,
+                           lgc_save=True,
+                           lgc_output=False,
+                           ncores=ncores,
+                           save_path=save_path)
+            
 
 
     # ------------------
