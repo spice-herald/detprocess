@@ -63,6 +63,75 @@ def _getchangeslessthanthresh(x, threshold):
     return ranges, vals
 
 
+
+def _getchangeslessthandynamicthresh(x, amplitudes, threshold_function):
+    """
+    Helper function that returns a list of the start and ending indices
+    of ranges in x where consecutive values are separated by less than
+    a dynamically determined threshold.
+
+    Parameters
+    ----------
+    x : ndarray
+        1-dimensional array of time values.
+    amplitudes : ndarray
+        1-dimensional array of values at each time point, same shape as x.
+    amplitudes_interp : ndarray
+        1-dimensional interpolation array that maps values from `vals` to `threshold` values.
+        Must be monotonically increasing!
+    threshold_interp : ndarray
+        1-dimensional interpolation array that maps values from `vals` to `threshold` values.
+    log_interp : bool
+        Whether to interpolate in log space (if False, then default to linear)
+
+    Returns
+    -------
+    ranges : ndarray
+        List of tuples that each store the start and ending index of each range.
+        For example, x[ranges[0][0]:ranges[0][1]] gives the first section of values
+        that change by less than the dynamically determined threshold.
+    vals : ndarray
+        The corresponding starting and ending values for each range in x.
+    """
+
+    # Initialize lists for storing start and end indices of each range
+    start_inds = []
+    end_inds = []
+    
+    # Initialize the first region starting at index 0
+    current_start = 0
+    
+    for i in range(1, len(x)):
+        # Calculate the dynamic threshold for the current range
+        max_amplitude = np.max(amplitudes[current_start:i+1])  # Maximum value in current region of `amplitudes`
+        dynamic_threshold = threshold_function(max_amplitude)  # Calculate dynamic threshold
+
+        # Check if the difference exceeds the dynamic threshold
+        if (x[i] - x[i - 1]) > dynamic_threshold:
+            # Mark the end of the current range
+            start_inds.append(current_start)
+            end_inds.append(i)
+            
+            # Start a new range
+            current_start = i
+
+    # Add the final range
+    start_inds.append(current_start)
+    end_inds.append(len(x))
+
+    # Combine start and end indices into ranges
+    ranges = np.array(list(zip(start_inds, end_inds)))
+
+    # Extract start and end values for each range
+    if len(x) != 0:
+        vals = np.array([(x[st], x[end - 1]) for (st, end) in ranges])
+    else:
+        vals = np.array([])
+
+    return ranges, vals
+
+
+
 class OptimumFilterTrigger:
     """
     Class for applying a time-domain optimum filter to a long trace,
@@ -377,7 +446,7 @@ class OptimumFilterTrigger:
             self._filtered_trace = np.einsum('ij,jz->iz', self._iw_matrix, V_td).real
             
         # Calculate chi2 for the filtered trace(s)
-        self._delta_chi2_trace = -2 * np.einsum('iz,ij,jz->z', self._filtered_trace, self._w_matrix, self._filtered_trace)
+        self._delta_chi2_trace = np.einsum('iz,ij,jz->z', self._filtered_trace, self._w_matrix, self._filtered_trace)
         
         # set the filtered values to zero near the edges,
         # so as not to use the padded values in the analysis
@@ -404,7 +473,8 @@ class OptimumFilterTrigger:
             
     def find_triggers(self, thresh, thresh_ttl=None,
                       pileup_window_msec=None, pileup_window_samples=None,
-                      positive_pulses=False):
+                      positive_pulses=True, dynamic=False,
+                      dynamic_threshold_function=None):
         """
         Method to detect events in the traces with an optimum amplitude
         greater than the specified threshold. Note that this may return
@@ -484,15 +554,21 @@ class OptimumFilterTrigger:
         # while accounting for the difference between a chi2 and Gaussian
         # distribution.
         survival_fraction = stats.norm.sf(thresh) * 2
-        chi2_threshold = -1 * special.gammainccinv(self._m_amplitudes / 2, survival_fraction) * 4
-        triggers_mask = self._delta_chi2_trace < chi2_threshold
+        chi2_threshold = special.gammainccinv(self._m_amplitudes / 2, survival_fraction) * 2
+        triggers_mask = self._delta_chi2_trace > chi2_threshold
 
         triggers = np.where(triggers_mask)[0]
         
         # check if any left over detected triggers are within
         # the specified pulse_range from each other
-        trigger_ranges, trigger_vals = _getchangeslessthanthresh(
-            triggers, pileup_window)
+        
+        if dynamic:
+            trigger_ranges, trigger_vals = _getchangeslessthandynamicthresh(
+                triggers, self._delta_chi2_trace[triggers_mask],
+                dynamic_threshold_function)
+        else:
+            trigger_ranges, trigger_vals = _getchangeslessthanthresh(
+                triggers, pileup_window)
         
         # set the trigger type to pulses
         rangetypes = np.zeros((len(trigger_ranges), 3), dtype=bool)
