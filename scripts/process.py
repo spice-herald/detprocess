@@ -1,11 +1,13 @@
 import warnings
 import argparse
 from pprint import pprint
-from detprocess import utils, TriggerProcessing, IVSweepProcessing, FeatureProcessing, Randoms
+from detprocess import utils, TriggerProcessing, IVSweepProcessing, FeatureProcessing, Randoms, Salting
 import os
 from pathlib import Path
 from pytesdaq.utils import arg_utils
 from datetime import datetime
+import yaml
+
 
 warnings.filterwarnings('ignore')
 
@@ -82,7 +84,7 @@ if __name__ == "__main__":
     # Processing type(s)
     # ---------------------------
     process_ivsweep = False
-    generate_salting = False
+    acquire_salting = False
     acquire_rand = False
     acquire_trig = False
     calc_filter = False
@@ -97,11 +99,12 @@ if __name__ == "__main__":
     #if args.calc_filter:
     #    calc_filter = True
     if args.enable_salting:
-        generate_salting = args.enable_salting
+        acquire_salting = args.enable_salting
 
     if args.enable_feature:
         process_feature = True
     if not (process_ivsweep
+            or acquire_salting
             or acquire_rand
             or acquire_trig
             or calc_filter
@@ -183,8 +186,8 @@ if __name__ == "__main__":
               'Cannot acquire triggers or randoms. Change arguments!')
         exit()
         
-    if (generate_salting and process_feature
-        and not (acquire_trig and acquire_rand)):
+    if (acquire_salting and process_feature
+        and not acquire_trig):
         print('ERROR: if salting enabled, trigger acquisition needs to be '
               'done before feature processing!')
         exit()
@@ -205,17 +208,20 @@ if __name__ == "__main__":
     # ====================================
 
     salting_dataframe_list = [None]
-  
-    if generate_salting:
+    salting_energy_list = []
+    
+    if acquire_salting:
 
         # initialize
         salting_dataframe_list = []
 
-        # load yaml file
-        yaml_dict = yaml.load(open(yaml_file, 'r'), Loader=utils._UniqueKeyLoader)
+        # FIXME: load yaml file
+        yaml_dict = yaml.load(open(processing_setup, 'r'), Loader=utils._UniqueKeyLoader)
         salting_dict = yaml_dict['salting']
         filter_file = yaml_dict['filter_file']
-        didv_file = yaml_dict['didv_file']
+        didv_file = None
+        if didv_file in yaml_dict:
+            didv_file = yaml_dict['didv_file']
         
         # FIXME: raw data metadata, need to include
         # number of events, trace length, 
@@ -225,11 +231,13 @@ if __name__ == "__main__":
         pdf_file = None
         if 'dm_pdf_file' in salting_dict:
             pdf_file = salting_dict['dm_pdf_file']
+            salting_dict.pop('dm_pdf_file')
             
         # if "energies" provided, use instead of pdf
         energies = [None]
         if 'energies' in salting_dict:
             energies = salting_dict['energies']
+            salting_dict.pop('energies')
             if not isinstance(energies, list):
                 energies = [energies]
             if pdf_file is not None:
@@ -239,7 +247,7 @@ if __name__ == "__main__":
                 
         
         # Instantiate salting
-        salting = Salting(filter_file, didv_file)
+        salting = Salting(filter_file, didv_file=didv_file)
 
         # Add either raw data metadata or raw path
        
@@ -251,10 +259,13 @@ if __name__ == "__main__":
         for energy in energies:
 
             if energy is None:
-                print(f'Salting with PDF {pdf_file}')
+                print(f'INFO: Generating salting with DM PDF {pdf_file}')
             else:
-                print(f'Salting with energy {energy} eV')
-
+                print(f'INFO: Generating salting with energy = {energy} eV')
+                energy = float(energy)
+                
+            # store for display
+            salting_energy_list.append(energy)
                 
             for chan, chan_config in salting_dict.items():
                 template_tag = chan_config['template_tag']
@@ -263,7 +274,7 @@ if __name__ == "__main__":
                 dpdi_tag = chan_config['dpdi_tag']
                 dpdi_poles = chan_config['dpdi_poles']
 
-                # generate salt
+                # generate salt            
                 salting.generate_salt(chan,
                                       noise_tag=noise_tag,
                                       template_tag=template_tag,
@@ -271,18 +282,20 @@ if __name__ == "__main__":
                                       dpdi_poles=dpdi_poles,
                                       energies=energy,
                                       pdf_file=pdf_file,
+                                      PCE=pce,
                                       nevents=100)
                 salting_dataframe = salting.get_dataframe()
                 salting_dataframe_list.append(salting_dataframe)
 
 
+    
                 
     # ====================================
     # Acquire randoms
     # ====================================
 
     # intialize ouput path list
-    trigger_group_path_list = []
+    randoms_group_path_list = []
     
     if acquire_rand:
 
@@ -328,13 +341,15 @@ if __name__ == "__main__":
                            lgc_output=False,
                            save_path=save_path)
 
-            trigger_group_path_list.append(myproc.get_output_path())
+            randoms_group_path_list.append(myproc.get_output_path())
             
                    
     # ====================================
     # Acquire trigger
     # ====================================
 
+    # initialize group list
+    trigger_group_path_list = []
       
     if acquire_trig:
 
@@ -350,11 +365,20 @@ if __name__ == "__main__":
 
         for idx, salting_df in enumerate(salting_dataframe_list):
 
-            # output group name 
+            # display salting energy 
+            if salting_energy_list:
+                energy = salting_energy_list[idx]
+                if energy is not None:
+                    print(f'INFO: Processing trigger for salting '
+                          f'energy = {energy} eV!')
+                    
+
+            # output group name, if randoms already use same group
+            # name
             trigger_group_name = None
-            if trigger_group_path_list:
+            if randoms_group_path_list:
                 trigger_group_name = str(
-                    Path(trigger_group_path_list[idx]).name
+                    Path(randoms_group_path_list[idx]).name
                 )
 
             # instantiate
@@ -373,9 +397,8 @@ if __name__ == "__main__":
                            output_group_name=trigger_group_name,
                            ncores=ncores,
                            save_path=save_path)
-        
-            if not trigger_group_path_list:
-                trigger_group_path_list.append(myproc.get_output_path())
+
+            trigger_group_path_list.append(myproc.get_output_path())
             
     # ------------------
     # Process feature
@@ -395,6 +418,13 @@ if __name__ == "__main__":
         # loop salting
         for idx, salting_df in enumerate(salting_dataframe_list):
 
+            # display salting energy 
+            if salting_energy_list:
+                energy = salting_energy_list[idx]
+                if energy is not None:
+                    print(f'INFO: Processing feature for salting '
+                          f'energy = {energy} eV!')
+                            
             # trigger dataframes path
             trigger_path = trigger_group_path_list[idx]
 

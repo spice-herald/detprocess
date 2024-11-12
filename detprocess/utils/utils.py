@@ -26,7 +26,7 @@ def split_channel_name(channel_name,
 
     # allowed separators
     separators = [',','+','-','|']
-
+    
     # case available_channels is None
     if  available_channels is None:
 
@@ -323,7 +323,7 @@ def read_config(yaml_file, available_channels, sample_rate=None):
     
     
     # available global config
-    global_parameters = ['filter_file']
+    global_parameters = ['filter_file','didv_file']
 
     # global trigger parameters
     global_trigger_parameters = ['coincident_window_msec',
@@ -402,6 +402,11 @@ def read_config(yaml_file, available_channels, sample_rate=None):
         # check if there is anything available
         if not config_dicts[config_name]:
             continue
+
+        # FIXME: remove salting
+        if config_name == 'salting':
+            continue
+
         
         # initialize  output
         processing_config[config_name] = dict()

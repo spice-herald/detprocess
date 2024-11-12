@@ -562,14 +562,14 @@ class ProcessingData:
 
                 # channels
                 chans = self._current_admin_info['detector_chans']
-                
+                           
                 # inject salting pulses
                 self._current_full_traces = self._salting_inst.inject_raw_salt(
-                    self._current_full_traces, chans,
-                    series_num=self._current_series_number,
-                    event_num=self._current_event_number
+                    chans, self._current_full_traces,
+                    seriesID=self._current_series_number,
+                    eventID=self._current_event_number
                 )
-                
+              
         else:
 
             # require traces_info
@@ -622,12 +622,11 @@ class ProcessingData:
                     raise ValueError('ERROR: Unable to get raw data file. '
                                      + 'Something went wrong...')
                 self._h5.set_files(file_list[0])
-
+                print(f'NEW file: {file_list[0]}')
     
             # intialize
-            self._current_admin_info = None
             self._current_truncated_traces_data = dict()
-
+            
             # case salting
             if self._salting_inst is not None:
 
@@ -640,18 +639,19 @@ class ProcessingData:
                     traces, admins = self._h5.read_many_events(
                         output_format=1,
                         detector_chans=channels,
-                        event_nums=event_number,
-                        series_nums=series_number,
-                        adctoamp=True)
+                        event_nums=[event_number],
+                        series_nums=[series_number],
+                        adctoamp=True,
+                        include_metadata=True)
 
                     self._current_full_traces = traces[0]
                     self._current_admin_info = admins[0]
-                    
+                                  
                     # inject salting pulses
                     self._current_full_traces = self._salting_inst.inject_raw_salt(
-                        self._current_full_traces, channels,
-                        series_num=self._current_series_number,
-                        event_num=self._current_event_number
+                        channels, self._current_full_traces, 
+                        seriesID=self._current_series_number,
+                        eventID=self._current_event_number
                     )
                     
 
@@ -662,13 +662,13 @@ class ProcessingData:
                     nb_samples = int(key_tuple[0])
                     nb_pretrigger_samples = int(key_tuple[1])
                     min_idx = int(trigger_index - nb_pretrigger_samples)
-                    max_idx = int(trace_min_index + nb_samples)
+                    max_idx = int(min_idx + nb_samples)
 
 
                     truncated_traces = (
-                        self._current_full_traces[:, min_idx:max_idx+1].copy()
+                        self._current_full_traces[:, min_idx:max_idx].copy()
                     )
-                    
+
                     chans = self._current_admin_info['detector_chans']
                     
                     self._current_truncated_traces_data[key_tuple] = {
