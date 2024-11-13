@@ -9,8 +9,8 @@
 #      in "./process_example.yaml", line 133, column 1
 # ==============================================================
 
-filter_file: /home/serfass/workspace/mw_salt/run46_filter.hdf5
-#didv_file: /home/serfass/workspace/mw_salt/didvBOTHCHAN.hdf5
+filter_file: /data/lbl/mw_salt/run46_filter.hdf5
+#didv_file: /home/michael/salting/run46tests/pylelab_run46_analysis/didvBOTHCHAN.hdf5
 
 # -------------------------------------------------
 # SALTING PROCESSING
@@ -20,7 +20,8 @@ salting:
 
    # DM PDF 
    #dm_pdf_file: /home/serfass/workspace/mw_salt/mass_dict.pkl
-   energies: [0.01,0.1,1,10,100,1000]
+   energies: [10,15]
+   nsalt: 5000
 
    # Using 2x1
    Mv3025pcRegular|Mv3025pcBigFins:

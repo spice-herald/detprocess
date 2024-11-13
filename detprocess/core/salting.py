@@ -322,9 +322,10 @@ class Salting(FilterData):
                         fullyscaled_template = scaled_template * DM_energies[n]
                         scaledfilttemplate = filttemplate * DM_energies[n]
                     else: 
-                        fullyscaled_template = scaled_template * DM_energies[n]*energiesplits[n][i]*PCE[i]
-                        scaledfilttemplate = filttemplate[0] * DM_energies[n]*energiesplits[n][i]*PCE[i]
-                        
+                        #fullyscaled_template = scaled_template * DM_energies[n]*energiesplits[n][i]*PCE[i]
+                        #scaledfilttemplate = filttemplate[0] * DM_energies[n]*energiesplits[n][i]*PCE[i]
+                        fullyscaled_template = scaled_template * DM_energies[n]*PCE[i]
+                        scaledfilttemplate = filttemplate[0] * DM_energies[n]*PCE[i]                        
                     salts[n].append([fullyscaled_template])   
                     filtsalts[n].append([scaledfilttemplate]) 
                     if 'saltarray' not in self._saltarraydict:

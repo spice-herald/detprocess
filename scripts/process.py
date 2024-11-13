@@ -227,11 +227,17 @@ if __name__ == "__main__":
         # number of events, trace length, 
         metadata = {''}
 
+        # Number of salt per energy/pdf
+        if 'nsalt' in salting_dict:
+            nsalt = salting_dict['nsalt']
+            salting_dict.pop('nsalt')
+
         # DM pdf
         pdf_file = None
         if 'dm_pdf_file' in salting_dict:
             pdf_file = salting_dict['dm_pdf_file']
             salting_dict.pop('dm_pdf_file')
+
             
         # if "energies" provided, use instead of pdf
         energies = [None]
@@ -283,7 +289,7 @@ if __name__ == "__main__":
                                       energies=energy,
                                       pdf_file=pdf_file,
                                       PCE=pce,
-                                      nevents=100)
+                                      nevents=nsalt)
                 salting_dataframe = salting.get_dataframe()
                 salting_dataframe_list.append(salting_dataframe)
 

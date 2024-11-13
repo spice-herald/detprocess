@@ -546,16 +546,16 @@ class ProcessingData:
                 )
             )
             
+            # check size
+            if self._current_full_traces.size == 0:
+                return False
+            
             self._current_event_number = int(
                 self._current_admin_info['event_num']
             )
             self._current_series_number = int(
                 self._current_admin_info['series_num']
             )
-            
-            # check size
-            if self._current_full_traces.size == 0:
-                return False
 
             # salting     
             if self._salting_inst is not None:
