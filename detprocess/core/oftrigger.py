@@ -517,12 +517,14 @@ class OptimumFilterTrigger:
         # intialize dictionary with list of
         # variables
         trigger_data = {
-            'trigger_amplitude':list(),
+            'trigger_delta_chi2':list(),
             'trigger_time': list(),
             'trigger_index': list(),
             'trigger_pileup_window': list(),
             'trigger_threshold_sigma': list(),
             'trigger_type': list()}
+        for iamp in range(self._m_amplitudes):
+            trigger_data[f'trigger_amplitude_{iamp}'] = list()
         
         # Extra parameters if TTL trigger used
         if (self._filtered_trace_ttl is not None
@@ -695,8 +697,10 @@ class OptimumFilterTrigger:
                 else:
                     trigger_data['trigger_index'].extend([evt_ind_shift])
                     trigger_data['trigger_time'].extend([evt_ind_shift/self._fs])
-                    trigger_data['trigger_amplitude'].extend([self._delta_chi2_trace[evt_ind]])
+                    trigger_data['trigger_delta_chi2'].extend([self._delta_chi2_trace[evt_ind]])
                     trigger_data['trigger_type'].extend([4])
+                    for iamp in range(self._m_amplitudes):
+                        trigger_data[f'trigger_amplitude_{iamp}'].extend([self._filtered_trace[iamp][evt_ind]])
                     
                 # extra parameter both TTL and pulse threshold
                 trigger_data['trigger_threshold_sigma'].extend([thresh])
