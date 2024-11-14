@@ -15,22 +15,20 @@ filter_file: /data/lbl/mw_salt/run46_filter.hdf5
 # -------------------------------------------------
 # SALTING PROCESSING
 # -------------------------------------------------
-
 salting:
 
    # DM PDF 
-   dm_pdf_file: /home/michael/salting/detprocess/examples/mass_dict.pkl
-   #energies: [10,15]
+   #dm_pdf_file: /home/michael/salting/detprocess/examples/mass_dict.pkl
+   energies: [60]
    nsalt: 5000
 
    # Using 2x1
-   Mv3025pcRegular|Mv3025pcBigFins:
-       template_tag: shared_Mv3025pcRegular
+   Mv3025pcRegular:
+       template_tag: default
        noise_tag: default     
-       collection_efficiency: [0.4, 0.3]
+       collection_efficiency: [0.4]
        dpdi_tag: default
        dpdi_poles: 3
-
 # -------------------------------------------------
 # TRIGGER PROCESSING
 # -------------------------------------------------
@@ -38,13 +36,13 @@ trigger:
 
    coincident_window_msec: 0.01
 
-   Mv3025pcRegular|Mv3025pcBigFins:
+   Mv3025pcRegular:
        run: True
        trigger_name: Mv3025pc
-       template_tag: shared_Mv3025pcRegular
+       template_tag: default
        noise_tag: default
        pileup_window_msec: 10
-       threshold_sigma: 15
+       threshold_sigma: 5
 
 # -------------------------------------------------
 # FEATURE PROCESSING 
@@ -120,79 +118,22 @@ Mv3025pcRegular:
         run: True
         f_lims: [[45.0, 75.0], [300.0, 500.0], [350.0, 450.0], [150, 250], [250, 350]]
 
-Mv3025pcBigFins:
-    of1x1_nodelay:
-        run: True
-        lowchi2_fcutoff: 50000
-        template_tag: default
-
-    of1x1_unconstrained:
-        run: True
-        lowchi2_fcutoff: 50000
-
-    of1x1_constrained:
-        run: True
-        window_min_from_trig_usec: -40
-        window_max_from_trig_usec: 40
-        lowchi2_fcutoff: 50000
-
-    baseline:
-        run: True
-        window_min_from_start_usec: 0
-        window_max_from_trig_usec: -2000
-
-    baseline_end:   
-        run: True
-        base_algorithm: baseline
-        window_min_from_trig_usec: 2000
-        window_max_to_end_usec: 0
-
-    maximum:
-        run: True
-        window_min_from_trig_usec: -500
-        window_max_from_trig_usec: 500
-
-    minimum:
-        run: True
-        window_min_from_trig_usec: -500
-        window_max_from_trig_usec: 500
-    
-    integral:
-        run: True
-        window_min_from_trig_usec: -10
-        window_max_from_trig_usec: 500
-        
-    energyabsorbed:
-        run: True
-        window_min_from_trig_usec: -400
-        window_max_from_trig_usec: 400
-        vb: 8.989619047619072e-06
-        i0: 3.986692004980754e-07
-        rl: 12.9e-03
-
-    psd_amp:
-        run: True
-        f_lims: [[45.0, 75.0], [300.0, 500.0], [350.0, 450.0], [150, 250], [250, 350]]
-
 # Settings for NxM channels
-Mv3025pcRegular|Mv3025pcBigFins:
-
-     # channel rename
-     feature_channel: Mv3025pc
-
-     of2x1_test:
-        run: False
-        base_algorithm: ofnxm
-
-        # OF window
-        window_min_from_trig_usec: -100
-        window_max_from_trig_usec: 100
-
-        # csd
-        noise_tag: default
-
-        # template tags
-        template_tag: shared_Mv3025pcRegular
-
-        # cutoff NOT IMPLEMENTED IN QETpy
-        lowchi2_fcutoff: 50000
+#Mv3025pcRegular|Mv3025pcBigFins:
+#
+#     # channel rename
+ #    feature_channel: Mv3025pc
+####     base_algorithm: ofnxm
+#
+ #       # OF window
+ #       window_min_from_trig_usec: -100
+  #      window_max_from_trig_usec: 100
+#
+#        # csd
+ #       noise_tag: default
+#
+#        # template tags
+ #       template_tag: shared_Mv3025pcRegular
+#
+ #       # cutoff NOT IMPLEMENTED IN QETpy
+  #      lowchi2_fcutoff: 50000

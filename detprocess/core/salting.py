@@ -447,6 +447,70 @@ class Salting(FilterData):
         """
         FIXME
         """
+        # initialize salted traces
+        newtraces = []
+        
+        # channels 
+        channel_list  = convert_channel_name_to_list(channels)
+        channel_name = convert_channel_list_to_name(channels)
+        nb_channels = len(channel_list)
+
+        # traces
+        is_list_input = isinstance(trace, list)
+        trace_array = np.array(trace[0], copy=False) if is_list_input else trace
+        if trace_array.ndim == 1:
+            trace_array = trace_array.reshape(1, trace_array.shape[-1])
+
+        # check dimensions
+        if nb_channels != trace_array.shape[0]:
+            raise ValueError('ERROR:  number of channels incompatible with array shape!')
+                    
+        # filter dataframe
+        filtered_df = None
+        if ((self._dataframe['event_number'] == eventID).count() > 0
+            and (self._dataframe['series_number'] == seriesID).count() > 0):
+            filtered_df = (
+                self._dataframe[(self._dataframe['event_number'] == eventID)
+                                & (self._dataframe['series_number'] == seriesID)]
+            )
+        else:
+            return []
+        
+        # loop channels
+        for i, waveform in enumerate(trace_array):
+
+            # channel name
+            chan = channel_list[i]
+            
+            # initialize
+            newtrace = np.array(waveform, copy=True)
+
+            # loop row of filter datafame and add salt
+            columns_to_extract = ['salt_template_tag', f'salt_amplitude_{chan}',
+                                  'trigger_index','saltchanname']
+            for _, j in filtered_df[columns_to_extract].to_pandas_df().iterrows():
+                template_tag = j['salt_template_tag']
+                tempchan = j['saltchanname']
+                template,times = self.get_template(tempchan, tag=template_tag)
+                if "|" in tempchan:
+                    temp = template[i][0]
+                else:
+                    temp = template
+                nb_samples=len(times)
+                saltamp = j[f'salt_amplitude_{chan}']
+                saltpulse = temp* saltamp
+                simtime = j['trigger_index']
+                newtrace[simtime:simtime+nb_samples] += saltpulse
+            newtraces.append(newtrace)
+        if is_list_input:
+            return [list(trace) for trace in newtraces]
+        else:
+            return np.array(newtraces)
+        #return newtraces
+        
+
+"""
+
 
         # initialize salted traces
         newtraces = []
@@ -476,8 +540,8 @@ class Salting(FilterData):
             )
         else:
             return []
-
-
+        
+           
         # loop channels
         for i, waveform in enumerate(trace_array):
 
@@ -512,7 +576,4 @@ class Salting(FilterData):
             return [list(trace) for trace in newtraces]
         else:
             return np.array(newtraces)
-        #return newtraces
-
-
-
+"""
