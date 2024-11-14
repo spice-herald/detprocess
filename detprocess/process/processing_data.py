@@ -561,8 +561,7 @@ class ProcessingData:
             if self._salting_inst is not None:
 
                 # channels
-                chans = self._current_admin_info['detector_chans']
-                           
+                chans = self._current_admin_info['detector_chans']        
                 # inject salting pulses
                 self._current_full_traces = self._salting_inst.inject_raw_salt(
                     chans, self._current_full_traces,
@@ -650,8 +649,8 @@ class ProcessingData:
                     # inject salting pulses
                     self._current_full_traces = self._salting_inst.inject_raw_salt(
                         channels, self._current_full_traces, 
-                        seriesID=self._current_series_number,
-                        eventID=self._current_event_number
+                        seriesID=series_number,
+                        eventID=event_number
                     )
                     
 

@@ -19,7 +19,7 @@ salting:
 
    # DM PDF 
    #dm_pdf_file: /home/michael/salting/detprocess/examples/mass_dict.pkl
-   energies: [60]
+   energies: [30]
    nsalt: 5000
 
    # Using 2x1
@@ -42,7 +42,7 @@ trigger:
        template_tag: default
        noise_tag: default
        pileup_window_msec: 10
-       threshold_sigma: 5
+       threshold_sigma: 15
 
 # -------------------------------------------------
 # FEATURE PROCESSING 

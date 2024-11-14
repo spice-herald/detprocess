@@ -243,7 +243,7 @@ class Salting(FilterData):
         channel_list  = convert_channel_name_to_list(channels)
         channel_name = convert_channel_list_to_name(channels)
         nb_channels = len(channel_list)
-       
+
         # get template 1D or 2D array
         template, time_array = self.get_template(channel_name, tag=template_tag)
         nb_samples = template.shape[-1]
@@ -292,7 +292,7 @@ class Salting(FilterData):
         # generate the random selections in time 
         series = self._series
         cont_data = self._raw_base_path
-        sep_time = nb_samples/1.25e6
+        sep_time = nb_samples/1.25e3
         self._generate_randoms(cont_data, series=None, nevents=nevents,
                                min_separation_msec=sep_time, ncores=4)
 
@@ -454,7 +454,6 @@ class Salting(FilterData):
         channel_list  = convert_channel_name_to_list(channels)
         channel_name = convert_channel_list_to_name(channels)
         nb_channels = len(channel_list)
-
         # traces
         is_list_input = isinstance(trace, list)
         trace_array = np.array(trace[0], copy=False) if is_list_input else trace
@@ -488,7 +487,9 @@ class Salting(FilterData):
             # loop row of filter datafame and add salt
             columns_to_extract = ['salt_template_tag', f'salt_amplitude_{chan}',
                                   'trigger_index','saltchanname']
+            n = 0
             for _, j in filtered_df[columns_to_extract].to_pandas_df().iterrows():
+                n +=1
                 template_tag = j['salt_template_tag']
                 tempchan = j['saltchanname']
                 template,times = self.get_template(tempchan, tag=template_tag)
