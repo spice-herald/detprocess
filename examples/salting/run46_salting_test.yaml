@@ -19,7 +19,7 @@ salting:
 
    # DM PDF 
    #dm_pdf_file: /home/michael/salting/detprocess/examples/mass_dict.pkl
-   energies: [30]
+   energies: [10]
    nsalt: 5000
 
    # Using 2x1
