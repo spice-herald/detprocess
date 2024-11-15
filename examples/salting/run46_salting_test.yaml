@@ -20,13 +20,20 @@ salting:
    # DM PDF 
    #dm_pdf_file: /home/michael/salting/detprocess/examples/mass_dict.pkl
    energies: [5,10,15]
-   nsalt: 5000
+   nsalt: 500
 
    # Using 2x1
    Mv3025pcRegular|Mv3025pcBigFins:
        template_tag: shared_Mv3025pcRegular
        noise_tag: default     
        collection_efficiency: [0.4,0.3]
+       dpdi_tag: default
+       dpdi_poles: 3
+
+   Mv3025pcRegular:
+       template_tag: default
+       noise_tag: default     
+       collection_efficiency: [0.8]
        dpdi_tag: default
        dpdi_poles: 3
 # -------------------------------------------------

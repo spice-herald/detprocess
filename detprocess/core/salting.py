@@ -239,7 +239,7 @@ class Salting(FilterData):
                 sublist[i] = 1
         return energysplits
 
-    def generate_salt(self,channels,noise_tag, template_tag , dpdi_tag,dpdi_poles,energies,pdf_file,PCE,nevents = 100):
+    def generate_salt(self,channels,noise_tag, template_tag , dpdi_tag,dpdi_poles,energies,ntypes,pdf_file,PCE,nevents = 100):
         channel_list  = convert_channel_name_to_list(channels)
         channel_name = convert_channel_list_to_name(channels)
         nb_channels = len(channel_list)
@@ -397,26 +397,32 @@ class Salting(FilterData):
         self._dataframe = self._dataframe.join(df)
         if pdf_file:
             self._listofdfs.append(self._dataframe)
-            if len(self._listofdfs) > 1:
-                pandas_dfs = []
-                
-                for df in self._listofdfs:
-                    # Flatten any multi-dimensional columns to ensure compatibility with pandas
-                    for col in df.get_column_names():
-                        if df[col].ndim > 1:
-                            # Convert multi-dimensional columns to a string representation or summary
-                            df[col] = df[col].apply(lambda x: str(x))
-                    
-                    # Convert the vaex DataFrame to pandas after flattening
-                    pandas_dfs.append(df.to_pandas_df())
-                
-                # Concatenate using pandas to handle missing columns and fill NaNs with 0
-                combined_pandas_df = pd.concat(pandas_dfs, axis=0, join='outer').fillna(0)
-                
-                # Convert the result back to a vaex DataFrame
-                self._dataframe = vx.from_pandas(combined_pandas_df)        
-        
+            self._dataframe = self.merge_dataframe(self._listofdfs)
+
         return salts,filtsalts  
+    
+    def merge_dataframe(self,inputdflist):
+        if len(inputdflist) > 1:
+            pandas_dfs = []
+            
+            for df in inputdflist:
+                # Flatten any multi-dimensional columns to ensure compatibility with pandas
+                for col in df.get_column_names():
+                    if df[col].ndim > 1:
+                        # Convert multi-dimensional columns to a string representation or summary
+                        df[col] = df[col].apply(lambda x: str(x))
+                
+                # Convert the vaex DataFrame to pandas after flattening
+                pandas_dfs.append(df.to_pandas_df())
+            
+            # Concatenate using pandas to handle missing columns and fill NaNs with 0
+            combined_pandas_df = pd.concat(pandas_dfs, axis=0, join='outer').fillna(0)
+            
+            # Convert the result back to a vaex DataFrame
+            mergeddf = vx.from_pandas(combined_pandas_df)
+        else:
+            mergeddf =  inputdflist[0]
+        return mergeddf
     
     def set_dataframe(self, dataframe=None):
         """
@@ -489,6 +495,10 @@ class Salting(FilterData):
             columns_to_extract = ['salt_template_tag', f'salt_amplitude_{chan}',
                                   'trigger_index','saltchanname']
             n = 0
+            if filtered_df[f'salt_amplitude_{chan}'] is False:
+                print(f'WARNING: No channel {chan}  found in salt df! '
+                      f'Assuming single channel salt and moving on!')
+                continue
             for _, j in filtered_df[columns_to_extract].to_pandas_df().iterrows():
                 n +=1
                 template_tag = j['salt_template_tag']

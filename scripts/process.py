@@ -208,6 +208,7 @@ if __name__ == "__main__":
     # ====================================
 
     salting_dataframe_list = [None]
+    temp_salting_dataframe_list = [None]
     salting_energy_list = []
     
     if acquire_salting:
@@ -263,7 +264,7 @@ if __name__ == "__main__":
                                   restricted=restricted)        
         # loop energies
         for energy in energies:
-
+            temp_salting_dataframe_list = []
             if energy is None:
                 print(f'INFO: Generating salting with DM PDF {pdf_file}')
             else:
@@ -272,7 +273,7 @@ if __name__ == "__main__":
                 
             # store for display
             salting_energy_list.append(energy)
-                
+            ntypes = len(salting_dict.items()) #if there are multiple injects for single energy
             for chan, chan_config in salting_dict.items():
                 template_tag = chan_config['template_tag']
                 noise_tag = chan_config['noise_tag']
@@ -289,9 +290,15 @@ if __name__ == "__main__":
                                       energies=energy,
                                       pdf_file=pdf_file,
                                       PCE=pce,
-                                      nevents=nsalt)
+                                      nevents=nsalt,
+                                      ntypes = ntypes)
                 salting_dataframe = salting.get_dataframe()
-                salting_dataframe_list.append(salting_dataframe)
+                temp_salting_dataframe_list.append(salting_dataframe)
+                if ntypes == 1:
+                    salting_dataframe_list.append(salting_dataframe)
+                if len(temp_salting_dataframe_list) == ntypes > 1: #to handle when multiple chans need same energy
+                    salting_dataframe = salting.merge_dataframe(temp_salting_dataframe_list)
+                    salting_dataframe_list.append(salting_dataframe)
 
 
     
