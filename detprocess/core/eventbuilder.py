@@ -321,9 +321,9 @@ class EventBuilder:
         # more easily
         df_pandas = self._event_df.to_pandas_df()
                  
-        # get trigger index and amplitude
+        # get trigger index and delta chi2
         trigger_indices =  np.array(df_pandas['trigger_index'].values)
-        trigger_amplitudes =  np.array(df_pandas['trigger_amplitude'].values)
+        trigger_delta_chi2s =  np.array(df_pandas['trigger_delta_chi2'].values)
         trigger_names = np.array(df_pandas['trigger_channel'].values)
       
         # find list of indices within merge_window
@@ -405,8 +405,8 @@ class EventBuilder:
         for inds in coincident_indices:
 
             # amplitudes
-            amps = trigger_amplitudes[inds]
-            max_index = amps.argmax()
+            delta_chi2s = trigger_delta_chi2s[inds]
+            max_index = delta_chi2s.argmax()
                      
             # primary trigger
             primary_index = int(inds[max_index])
