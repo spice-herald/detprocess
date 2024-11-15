@@ -395,25 +395,26 @@ class Salting(FilterData):
             salt_var_dict[key] = salt_var_dict[key][:maxlen]   
         df = vx.from_dict(salt_var_dict)
         self._dataframe = self._dataframe.join(df)
-        self._listofdfs.append(self._dataframe)
-        if len(self._listofdfs) > 1:
-            pandas_dfs = []
-            
-            for df in self._listofdfs:
-                # Flatten any multi-dimensional columns to ensure compatibility with pandas
-                for col in df.get_column_names():
-                    if df[col].ndim > 1:
-                        # Convert multi-dimensional columns to a string representation or summary
-                        df[col] = df[col].apply(lambda x: str(x))
+        if pdf_file:
+            self._listofdfs.append(self._dataframe)
+            if len(self._listofdfs) > 1:
+                pandas_dfs = []
                 
-                # Convert the vaex DataFrame to pandas after flattening
-                pandas_dfs.append(df.to_pandas_df())
-            
-            # Concatenate using pandas to handle missing columns and fill NaNs with 0
-            combined_pandas_df = pd.concat(pandas_dfs, axis=0, join='outer').fillna(0)
-            
-            # Convert the result back to a vaex DataFrame
-            self._dataframe = vx.from_pandas(combined_pandas_df)        
+                for df in self._listofdfs:
+                    # Flatten any multi-dimensional columns to ensure compatibility with pandas
+                    for col in df.get_column_names():
+                        if df[col].ndim > 1:
+                            # Convert multi-dimensional columns to a string representation or summary
+                            df[col] = df[col].apply(lambda x: str(x))
+                    
+                    # Convert the vaex DataFrame to pandas after flattening
+                    pandas_dfs.append(df.to_pandas_df())
+                
+                # Concatenate using pandas to handle missing columns and fill NaNs with 0
+                combined_pandas_df = pd.concat(pandas_dfs, axis=0, join='outer').fillna(0)
+                
+                # Convert the result back to a vaex DataFrame
+                self._dataframe = vx.from_pandas(combined_pandas_df)        
         
         return salts,filtsalts  
     
