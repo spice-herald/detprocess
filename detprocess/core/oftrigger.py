@@ -8,12 +8,14 @@ from scipy.fft import ifft, fft, next_fast_len
 import vaex as vx
 import qetpy as qp
 from scipy import special, stats
+import copy
 
 
 
 
 __all__ = ['OptimumFilterTrigger',
-           'shift_templates_to_match_chi2']
+           'shift_templates_to_match_chi2',
+           'combine_trigger_data']
 
 
 def _getchangeslessthanthresh(x, threshold):
@@ -249,7 +251,55 @@ def shift_templates_to_match_chi2(fs, primary_template, secondary_templates, noi
     return secondary_templates_shifted, time_shift_samples
 
     
+def combine_trigger_data(
+    original_trigger_data, new_trigger_data, original_triggers, new_triggers
+):
+    """
+    Combines the dictionaries `original_trigger_data` and `new_trigger_data`
+    without replicating entries, appending only values corresponding to entries
+    in `new_triggers` that are not in `original_triggers`.
+
+    Parameters
+    ----------
+    original_trigger_data : dict
+        Dictionary containing the original trigger data.
+    new_trigger_data : dict
+        Dictionary containing the new trigger data.
+    original_triggers : list
+        List of integers representing original triggers.
+    new_triggers : list
+        List of integers representing new triggers.
+
+    Returns
+    -------
+    dict
+        Combined dictionary with new non-duplicate entries appended.
+    """
     
+    # Find entries in `new_triggers` not in `original_triggers`
+    unique_new_triggers = set(new_triggers) - set(original_triggers)
+    trigger_name = list(original_trigger_data.keys())[0]
+
+    # Get the original and new trigger name keys
+    appended_inner_dict = copy.deepcopy(original_trigger_data[trigger_name])
+    new_inner_dict = copy.deepcopy(new_trigger_data[trigger_name])
+
+    # Loop through each key in the inner dictionaries
+    for key in new_inner_dict.keys():
+        # Keys that are named similarly are identical
+        # in reference, not just in value. I.e. trigger_index and
+        # trigger_index_ch1|ch2 are the same object.
+        if ('_' + trigger_name) in key:
+            continue
+        # Append values corresponding to unique triggers from new_trigger_data
+        for idx, trigger in enumerate(new_triggers):
+            if trigger in unique_new_triggers:
+                appended_inner_dict[key].append(new_inner_dict[key][idx])
+
+    return {trigger_name: appended_inner_dict}
+
+
+
 class OptimumFilterTrigger:
     """
     Class for applying a time-domain optimum filter to a long trace,
@@ -546,6 +596,10 @@ class OptimumFilterTrigger:
         else:
             self._raw_trace = trace
 
+        self._raw_trace_LPF_50kHz = np.copy(self._raw_trace)
+        for ich in range(self._n_channels):            
+            self._raw_trace_LPF_50kHz[ich] = qp.utils.lowpassfilter(self._raw_trace[ich], cut_off_freq=50e3, fs=self._fs)
+
         if (filtered_trace is not None) and (filtered_trace.ndim == 1):
             self._filtered_trace = np.reshape(filtered_trace, (1, len(filtered_trace)))
         else:
@@ -601,10 +655,86 @@ class OptimumFilterTrigger:
             
             
 
-            
     def find_triggers(self, thresh, thresh_ttl=None,
                       pileup_window_msec=None, pileup_window_samples=None,
                       positive_pulses=True, dynamic=False,
+                      dynamic_threshold_function=None, residual=False,
+                      saturation_amplitudes_LPF_50kHz=None,
+                      return_trigger_data=False):
+        
+        if residual:
+
+            self.find_triggers_once(thresh, thresh_ttl,
+                      pileup_window_msec, pileup_window_samples,
+                      dynamic, dynamic_threshold_function)
+
+            original_triggers = np.copy(self._trigger_data[self._trigger_name]['trigger_index'])
+            original_trigger_data = copy.deepcopy(self._trigger_data)
+            original_delta_chi2_trace = np.copy(self._delta_chi2_trace)
+            
+            for trigger_index in original_triggers:
+                
+                saturated = False
+                for ch_index in range(self._n_channels):
+                    pulse_amplitude_A = self._raw_trace_LPF_50kHz[ch_index][trigger_index - int(self._t_times / 2) : trigger_index + int(self._t_times / 2)]
+                    if positive_pulses:
+                        if sum(pulse_amplitude_A > saturation_amplitudes_LPF_50kHz[ch_index]) > 0:
+                            saturated = True
+                    else:
+                        if sum(pulse_amplitude_A < - 1 * saturation_amplitudes_LPF_50kHz[ch_index]) > 0:
+                            saturated = True
+
+                if saturated:
+                    continue
+
+                trigger_amplitudes = self._filtered_trace[:,trigger_index]
+                
+                trigger_trace = np.zeros((self._n_channels, self._t_times))
+                for iamp in range(self._m_amplitudes):
+                    trigger_trace += self._template[:, iamp, :] * trigger_amplitudes[iamp]
+
+                V_td = np.zeros((self._m_amplitudes, self._t_times))
+                for theta in range(self._m_amplitudes):
+                    V_td_per_channel = oaconvolve(trigger_trace, self._phi_td[theta,:], mode='same', axes=-1)
+                    V_td[theta,:] = np.sum(V_td_per_channel, axis=0)
+
+                filtered_trace = np.einsum('ij,jz->iz', self._iw_matrix, V_td).real
+            
+                delta_chi2_trace = np.einsum('iz,ij,jz->z', filtered_trace, self._w_matrix, filtered_trace)
+                j_samples = np.argmax(delta_chi2_trace)
+                self._delta_chi2_trace[trigger_index - j_samples : trigger_index - j_samples + self._t_times] -= delta_chi2_trace
+
+            self.find_triggers_once(thresh, thresh_ttl,
+                      pileup_window_msec, pileup_window_samples,
+                      dynamic, dynamic_threshold_function)
+
+            new_triggers = np.copy(self._trigger_data[self._trigger_name]['trigger_index'])
+            new_trigger_data = copy.deepcopy(self._trigger_data)
+            new_delta_chi2_trace = np.copy(self._delta_chi2_trace)
+            
+            combined_trigger_data = combine_trigger_data(
+                original_trigger_data, new_trigger_data, original_triggers, new_triggers)
+            
+            self._delta_chi2_trace = np.copy(original_delta_chi2_trace)
+            self._residual_delta_chi2_trace = np.copy(new_delta_chi2_trace)
+            self._trigger_data = copy.deepcopy(combined_trigger_data)
+            
+            if return_trigger_data:
+                return original_trigger_data, original_delta_chi2_trace, new_trigger_data, new_delta_chi2_trace
+
+
+        else:
+            
+            self.find_triggers_once(thresh, thresh_ttl,
+                      pileup_window_msec, pileup_window_samples,
+                      dynamic, dynamic_threshold_function)
+
+
+
+            
+    def find_triggers_once(self, thresh, thresh_ttl=None,
+                      pileup_window_msec=None, pileup_window_samples=None,
+                      dynamic=False,
                       dynamic_threshold_function=None):
         """
         Method to detect events in the traces with an optimum amplitude
@@ -629,14 +759,6 @@ class OptimumFilterTrigger:
 
         pileup_window_samples : int, optional
         
-        positive_pulses : boolean, optional
-            Boolean flag for which direction the pulses go in the
-            traces. If they go in the positive direction, then this
-            should be set to True. If they go in the negative
-            direction, then this should be set to False. Default is
-            False for the chi2 trigger, since delta chi2 is negative
-            by definition.
-
         """
 
         # check filtered trace
@@ -757,10 +879,7 @@ class OptimumFilterTrigger:
 
                 # find index maximum amplitude
                 evt_ind = None
-                if positive_pulses:
-                    evt_ind = evt_inds[np.argmax(self._delta_chi2_trace[evt_inds])]
-                else:
-                    evt_ind = evt_inds[np.argmin(self._delta_chi2_trace[evt_inds])]
+                evt_ind = evt_inds[np.argmax(self._delta_chi2_trace[evt_inds])]
 
                 evt_ind_shift = evt_ind + self._trigger_index_shift
 
