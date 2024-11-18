@@ -239,7 +239,8 @@ class Salting(FilterData):
                 sublist[i] = 1
         return energysplits
 
-    def generate_salt(self,channels,noise_tag, template_tag , dpdi_tag,dpdi_poles,energies,ntypes,pdf_file,PCE,nevents = 100):
+    def generate_salt(self,channels,noise_tag, template_tag, dpdi_tag, dpdi_poles,
+                      energies, pdf_file, PCE, nevents=100):
         channel_list  = convert_channel_name_to_list(channels)
         channel_name = convert_channel_list_to_name(channels)
         nb_channels = len(channel_list)

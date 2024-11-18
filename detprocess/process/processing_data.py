@@ -111,6 +111,13 @@ class ProcessingData:
         # salting
         self._salting_inst = None
         if salting_dataframe is not None:
+
+            if isinstance(salting_dataframe, str):
+                salting_dataframe = vx.open(salting_dataframe)
+            elif not isinstance(salting_dataframe, vx.dataframe.DataFrame):
+                raise ValueError(f'ERROR: unrecognized salting dataframe '
+                                 f'{salting_dataframe} argument!')
+            
             self._salting_inst = Salting(filter_file, didv_file=None)
             self._salting_inst.set_dataframe(salting_dataframe)
 
