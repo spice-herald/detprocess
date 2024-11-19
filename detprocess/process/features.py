@@ -488,7 +488,7 @@ class FeatureProcessing:
         
                 # display
                 if self._verbose:
-                    if (event_counter%500==0 and event_counter!=0):
+                    if (event_counter%100==0 and event_counter!=0):
                         print('INFO' + node_num_str
                               + ': Local number of events = '
                               + str(event_counter)

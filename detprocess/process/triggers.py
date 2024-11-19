@@ -496,10 +496,10 @@ class TriggerProcessing:
                                   
                 # display
                 if self._verbose:
-                    if (trigger_counter%500==0 and trigger_counter!=0):
+                    if (trigger_counter%100==0 and trigger_counter!=0):
                         print('INFO' + node_num_str
                               + ': Local number of events = '
-                              + str(trigger_counter)
+                              + str(trigger_counter) 
                               + ' (memory = ' + str(memory_usage/1e6) + 'MB)')
                         
                 # -----------------------
@@ -511,6 +511,10 @@ class TriggerProcessing:
 
                 # end of file or raw data issue
                 if not success:
+                    print('INFO' + node_num_str
+                          + ': '
+                          + str(trigger_counter) 
+                          + ' events counted, triggering done')
                     do_stop = True
                                            
                 # -----------------------
@@ -549,8 +553,14 @@ class TriggerProcessing:
                         # increment dump
                         dump_counter += 1
                         if self._verbose:
-                            print('INFO' + node_num_str
-                                  + ': Incrementing dump number')
+                            if trigger_counter > 1e5:
+                                print('INFO' + node_num_str
+                                      + ': Incrementing dump number, '
+                                      + f'{trigger_counter:.3e}' + ' total events triggered' ) 
+                            else:
+                                print('INFO' + node_num_str
+                                      + ': Incrementing dump number, '
+                                      + str(trigger_counter) + ' total events triggered' ) 
 
                         # initialize
                         del process_df
