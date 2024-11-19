@@ -347,9 +347,13 @@ if __name__ == "__main__":
                 file_name = f'{processing_id}_{file_name}'
             salting_file_path = f'{output_path}/{file_name}'
             final_dataframe.export_hdf5(salting_file_path, mode='w')
-            
+                      
             # append
             salting_dataframe_list.append(salting_file_path)
+
+
+            # cleanup
+            del final_dataframe
 
     # ====================================
     # Acquire randoms

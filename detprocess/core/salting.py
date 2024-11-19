@@ -118,7 +118,8 @@ class Salting(FilterData):
         """
         Generate randoms from continuous data
         """
-        
+        if self._dataframe is not None:
+            del self._dataframe
         self._dataframe = None
 
         # generate randoms
@@ -245,6 +246,11 @@ class Salting(FilterData):
         channel_name = convert_channel_list_to_name(channels)
         nb_channels = len(channel_list)
 
+        # clear
+        if self._saltarraydict:
+            del self._saltarraydict
+        self._saltarraydict = dict()
+        
         # get template 1D or 2D array
         template, time_array = self.get_template(channel_name, tag=template_tag)
         nb_samples = template.shape[-1]
@@ -252,7 +258,8 @@ class Salting(FilterData):
         if len(channel_list)>1: csd, csd_freqs = self.get_csd(channel_name, tag=noise_tag)
         else: csd, csd_freqs = self.get_psd(channel_name, tag=noise_tag)
         #get filt template
-        tempinst = OptimumFilterTrigger(trigger_channel=channel_name, fs=1.25e6, template=template, noisecsd=csd, pretrigger_samples=12500)
+        tempinst = OptimumFilterTrigger(trigger_channel=channel_name, fs=1.25e6,
+                                        template=template, noisecsd=csd, pretrigger_samples=12500)
         if len(channel_list) > 1 :templates_td = template.squeeze(axis=1)
         else: templates_td = template
         tempinst.update_trace(templates_td)
@@ -400,6 +407,9 @@ class Salting(FilterData):
             self._listofdfs.append(self._dataframe)
             self._dataframe = self.merge_dataframe(self._listofdfs)
 
+        # clear dictionary
+        salt_var_dict.clear();
+            
         return salts,filtsalts  
     
     def merge_dataframe(self,inputdflist):
