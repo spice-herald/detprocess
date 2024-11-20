@@ -8,11 +8,15 @@ from scipy.fft import ifft, fft, next_fast_len
 import vaex as vx
 import qetpy as qp
 from scipy import special, stats
+import copy
+import warnings
 
 
 
 
-__all__ = ['OptimumFilterTrigger']
+__all__ = ['OptimumFilterTrigger',
+           'shift_templates_to_match_chi2',
+           'combine_trigger_data']
 
 
 def _getchangeslessthanthresh(x, threshold):
@@ -129,6 +133,171 @@ def _getchangeslessthandynamicthresh(x, amplitudes, threshold_function):
         vals = np.array([])
 
     return ranges, vals
+
+
+
+def shift_templates_to_match_chi2(fs, primary_template, secondary_templates, noisecsd, relative_amplitudes=None):  
+    """
+    Shift "secondary_template" in time such that running a
+    "primary_template" trigger on both templates results in chi2 maximized
+    at the same time. Assumes noise is the same between templates.
+    
+    ----------
+    fs : float
+        The sample rate of the data (Hz)
+    primary_template : ndarray
+        The pulse template(s) to be used when creating the optimum
+        filter (assumed to be normalized). We will do an NxM trigger.
+        You can pass this in a few ways:
+        3D array [channels, amplitudes, samples]
+        1D array or 2D array with shape [1,S] or [S,1]
+            - Will be reshaped into 1 x 1 x S
+        2D array with two non-unity dimensions
+            - Will raise an error because we don't know whether
+                to set N_chan = 1 or M_amp = 1
+    secondary_templates : list of ndarrays
+        The pulse template(s) to shift in time such that a
+        primary_template NxM trigger running on this template will trigger
+        at the same time as the same trigger running on a primary_template
+        template. 
+        Shape requirements for each ndarray are the same as primary_template.
+        Note that the secondary templates must have the same N and M as the
+        primary template!
+    noisecsd : ndarray
+        The two-sided cross power spectral density in units of A^2/Hz
+        Same shape requirements as "primary_template", though the number of
+        samples is replaced by the number of frequencies (which 
+        should be equal, anyway).
+    relative_amplitudes : ndarray
+        The relative scaling factors between the amplitude degrees of freedom.
+        Must be 1D array of length M_amp.
+        Defaults to an array of ones if not provided.
+    ----------
+    Returns:
+    secondary_templates_shifted : list of 3D ndarrays
+        The shifted templates such that when the primary trigger is run on them,
+        delta chi2 is maximized at the same time.
+    time_shift_samples : ndarray
+        For each secondary template, the number of samples that we shifted
+    
+    """
+    
+    # Container to return objects
+    secondary_templates_shifted = [None for _ in range(len(secondary_templates))]
+    time_shift_samples = np.zeros(len(secondary_templates), dtype=int)
+    
+    # Loop over templates
+    for i, secondary_template in enumerate(secondary_templates):
+        
+        # Reshape secondary template if needed to [channels, amplitudes, samples]
+        # This is now renamed s_template after reshaping
+        n_dims_template = len(secondary_template.shape)
+        if n_dims_template == 1:
+            s_template = np.reshape(secondary_template, (1, 1, len(secondary_template)))
+        elif n_dims_template == 2:
+            if secondary_template.shape[0] == 1:
+                s_template = np.reshape(secondary_template, (1, 1, secondary_template.shape[1]))
+            elif template.shape[1] == 1:
+                s_template = np.reshape(secondary_template, (1, 1, secondary_template.shape[0]))
+            else:
+                raise ValueError(
+                    f'Primary template is shaped as {secondary_template.shape}. ' +
+                    'It should be (N, M, samples) or (samples,) or ' +
+                    '(1, samples) or (samples, 1).'
+                )
+        elif n_dims_template == 3:
+            s_template = np.copy(secondary_template)
+
+        n_channels, m_amplitudes, f_frequencies = s_template.shape
+        
+        # Set relative amplitudes if not given
+        if relative_amplitudes is None:
+            relative_amplitudes = np.ones(m_amplitudes)
+
+        # Create primary OF trigger
+        primary_oftrigger = OptimumFilterTrigger(
+            '|'.join([f'channel_{j}' for j in range(n_channels)]),
+            fs, primary_template, noisecsd, int(f_frequencies/2))
+         
+        # Convert primary template to a trace by summing amplitudes in
+        # the appropriate ratios
+        primary_trace = np.zeros((n_channels, f_frequencies))
+        for iamp in range(m_amplitudes):
+            primary_trace += primary_template[:,iamp,:] * relative_amplitudes[iamp]
+            
+        # Run the primary trigger on the primary template
+        primary_oftrigger.update_trace(primary_trace, padding=False)
+
+        # Determine what time the primary template delivers its max delta chi2        
+        primary_delta_chi2 = primary_oftrigger.get_filtered_delta_chi2()
+        time_max_amplitude_primary_samples = np.argmax(primary_delta_chi2)
+
+        # Convert secondary template to a trace by summing amplitudes in
+        # the appropriate ratios
+        secondary_trace = np.zeros((n_channels, f_frequencies))
+        for iamp in range(m_amplitudes):
+            secondary_trace += s_template[:,iamp,:] * relative_amplitudes[iamp]
+
+        # Run the primary trigger on the primary template
+        primary_oftrigger.update_trace(secondary_trace, padding=False)
+
+        # Determine what time the primary template delivers its max delta chi2        
+        secondary_delta_chi2 = primary_oftrigger.get_filtered_delta_chi2()
+        time_max_amplitude_secondary_samples = np.argmax(secondary_delta_chi2)
+        
+        # Determine the time shift and apply it to the secondary template
+        time_shift_samples[i] = time_max_amplitude_primary_samples - time_max_amplitude_secondary_samples
+        secondary_templates_shifted[i] = np.roll(s_template, time_shift_samples[i])
+    
+    return secondary_templates_shifted, time_shift_samples
+
+    
+def combine_trigger_data(
+    original_trigger_data, new_trigger_data, original_triggers, new_triggers
+):
+    """
+    Combines the dictionaries `original_trigger_data` and `new_trigger_data`
+    without replicating entries, appending only values corresponding to entries
+    in `new_triggers` that are not in `original_triggers`.
+
+    Parameters
+    ----------
+    original_trigger_data : dict
+        Dictionary containing the original trigger data.
+    new_trigger_data : dict
+        Dictionary containing the new trigger data.
+    original_triggers : list
+        List of integers representing original triggers.
+    new_triggers : list
+        List of integers representing new triggers.
+
+    Returns
+    -------
+    dict
+        Combined dictionary with new non-duplicate entries appended.
+    """
+    
+    # Find entries in `new_triggers` not in `original_triggers`
+    unique_new_triggers = set(new_triggers) - set(original_triggers)
+    trigger_name = list(original_trigger_data.keys())[0]
+
+    # Get the original and new trigger name keys
+    appended_inner_dict = copy.deepcopy(original_trigger_data[trigger_name])
+    new_inner_dict = copy.deepcopy(new_trigger_data[trigger_name])
+
+    # Loop through each key in the inner dictionaries
+    for key in new_inner_dict.keys():
+        # Keys that are named similarly are identical
+        # in reference, not just in value. I.e. trigger_index and
+        # trigger_index_ch1|ch2 are the same object.
+        if ('_' + trigger_name) in key:
+            continue
+        # Append values corresponding to unique triggers from new_trigger_data
+        for idx, trigger in enumerate(new_triggers):
+            if trigger in unique_new_triggers:
+                appended_inner_dict[key].append(new_inner_dict[key][idx])
+
+    return {trigger_name: appended_inner_dict}
 
 
 
@@ -322,6 +491,14 @@ class OptimumFilterTrigger:
         return self._filtered_trace
 
 
+    def get_filtered_delta_chi2(self):
+        """
+        Get current delta chi2 trace
+        """
+
+        return self._delta_chi2_trace
+    
+
     def get_filtered_trace_ttl(self):
         """
         Get current filtered trace
@@ -376,7 +553,7 @@ class OptimumFilterTrigger:
 
             
     def update_trace(self, trace=None, filtered_trace=None,
-                     filtered_trace_ttl=None):
+                     filtered_trace_ttl=None, padding=True):
         """
         Method to apply the FIR filter the inputted traces with
         specified times.
@@ -402,6 +579,10 @@ class OptimumFilterTrigger:
             units: Amps
             1D array or 2D array [#channels, #samples]
             For single pulse channel: #channels=1
+            
+        padding : bool
+            if True, set the filtered values to zero near the edges
+
         """
 
         # check input
@@ -415,6 +596,10 @@ class OptimumFilterTrigger:
             self._raw_trace = np.reshape(trace, (1, len(trace)))
         else:
             self._raw_trace = trace
+
+        self._raw_trace_LPF_50kHz = np.copy(self._raw_trace)
+        for ich in range(self._n_channels):            
+            self._raw_trace_LPF_50kHz[ich] = qp.utils.lowpassfilter(self._raw_trace[ich], cut_off_freq=50e3, fs=self._fs)
 
         if (filtered_trace is not None) and (filtered_trace.ndim == 1):
             self._filtered_trace = np.reshape(filtered_trace, (1, len(filtered_trace)))
@@ -436,7 +621,7 @@ class OptimumFilterTrigger:
 
         # filter trace 
         if self._filtered_trace is None:
-
+            
             # V is the vector of convolutions; equivalently, the element in WA = V
             V_td = np.zeros((self._m_amplitudes, self._raw_trace.shape[-1]))
             for theta in range(self._m_amplitudes):
@@ -450,9 +635,10 @@ class OptimumFilterTrigger:
         
         # set the filtered values to zero near the edges,
         # so as not to use the padded values in the analysis
-        cut_len = self._t_times
-        self._delta_chi2_trace[:cut_len] = 0.0
-        self._delta_chi2_trace[-(cut_len)+(cut_len+1)%2:] = 0.0
+        if padding:
+            cut_len = self._t_times
+            self._delta_chi2_trace[:cut_len] = 0.0
+            self._delta_chi2_trace[-(cut_len)+(cut_len+1)%2:] = 0.0
         
         # filtered with ttl template
         self._filtered_trace_ttl = filtered_trace_ttl
@@ -470,13 +656,175 @@ class OptimumFilterTrigger:
             
             
 
-            
     def find_triggers(self, thresh, thresh_ttl=None,
                       pileup_window_msec=None, pileup_window_samples=None,
                       positive_pulses=True, dynamic=False,
+                      dynamic_threshold_function=None, residual=False,
+                      saturation_amplitudes_LPF_50kHz=None,
+                      return_trigger_data=False):
+        """
+        Method to detect events in the traces with a delta chi2 amplitude
+        greater than the specified threshold. Note that this may return
+        duplicate events, so care should be taken in post-processing to
+        get rid of such events.
+        
+        Make sure to also read the documentation for find_triggers_once().
+        
+        If residual == False, then this simply calls find_triggers_once().
+        
+        If residual == True, then we call find_triggers_once(). We then
+        subtract the best-fit triggered pulses from the trace (in delta
+        chi2 space), excluding saturated pulses which we know won't match
+        the template. Then, we retrigger on the residual trace. If any new
+        triggers above threshold are found, we combine those with the
+        first-pass triggers and save all the triggers in the
+        self._trigger_data dictionary.
+
+        Parameters
+        ----------
+                
+        thresh : float
+            See find_triggers_once() for documentation.
+        thresh_ttl : NoneType, float, optional
+            See find_triggers_once() for documentation.
+        pileup_window_msec : float, optional
+            See find_triggers_once() for documentation.
+        pileup_window_samples : int, optional
+            See find_triggers_once() for documentation.
+        dynamic : bool, optional
+            See find_triggers_once() for documentation.
+        dynamic_threshold_function : function, optional
+            See find_triggers_once() for documentation.
+        residual : bool, optional
+            If True, we search for triggers on the residual chi2 trace
+            after subtracting the best-fit pulses from the first-pass
+            trigger round.
+        saturation_amplitudes_LPF_50kHz : array_like, optional
+            If provided, this should be an N-length array or list, where
+            N is the number of channels. Each element represents the
+            saturation amplitude in each channel, in A.
+            The raw trace is passed through a 50 kHz low-pass filter.
+            Then, if the LPF-filtered trace passes above the saturation
+            amplitude within template_length/4 samples of a given trigger,
+            this trigger is considered to be a saturated pulse. The
+            residual algorithm won't run on this trigger.
+            If residual == True, but saturation_amplitudes_LPF_50kHz is
+            not provided, we just set the saturation amplitude to inf or
+            negative inf, based on positive_pulses; equivalently,
+            disabling the check saturation.
+        return_trigger_data : bool, optional
+            If True, return four objects: the first-pass trigger dictionary,
+            the first-pass delta chi2 trace, the second-pass trigger
+            dictionary, and the second-pass delta chi2 trace. If False,
+            return nothing. Regardless of this argument's value, all the
+            triggers will be saved in self._trigger_data, but setting this
+            True is the only way to determine if an individual trigger
+            was from the first-pass or second-pass triggering.
+ 
+        """
+
+        if residual:
+            
+            # Set the saturation amplitude to +/- infinity if not given
+            if saturation_amplitudes_LPF_50kHz is None:
+                if positive_pulses:
+                    saturation_amplitudes_LPF_50kHz = [np.inf for _ in self._n_channels]
+                else:
+                    saturation_amplitudes_LPF_50kHz = [-1 * np.inf for _ in self._n_channels]
+
+            # Do first pass of triggers
+            self.find_triggers_once(thresh, thresh_ttl,
+                      pileup_window_msec, pileup_window_samples,
+                      dynamic, dynamic_threshold_function)
+
+            # Save the first-pass triggers so we don't lose them
+            original_triggers = np.copy(self._trigger_data[self._trigger_name]['trigger_index'])
+            original_trigger_data = copy.deepcopy(self._trigger_data)
+            original_delta_chi2_trace = np.copy(self._delta_chi2_trace)
+            
+            # Loop over first-pass triggers
+            for trigger_index in original_triggers:
+                
+                # For each trigger, check if the pulse is saturated. If so,
+                # ignore this trigger and move on to the next trigger.
+                saturated = False
+                for ch_index in range(self._n_channels):
+                    pulse_amplitude_A = self._raw_trace_LPF_50kHz[ch_index][trigger_index - int(self._t_times / 4) : trigger_index + int(self._t_times / 4)]
+                    if positive_pulses:
+                        if sum(pulse_amplitude_A > saturation_amplitudes_LPF_50kHz[ch_index]) > 0:
+                            saturated = True
+                    else:
+                        if sum(pulse_amplitude_A < - 1 * saturation_amplitudes_LPF_50kHz[ch_index]) > 0:
+                            saturated = True
+
+                if saturated:
+                    continue
+
+                # Based on the M filtered amplitude(s) at the location of
+                # the trigger, construct the "best" chi2 shape vs. time,
+                # assuming the templates are correct. This is stored in
+                # delta_chi2_trace.
+                trigger_amplitudes = self._filtered_trace[:,trigger_index]
+                
+                trigger_trace = np.zeros((self._n_channels, self._t_times))
+                for iamp in range(self._m_amplitudes):
+                    trigger_trace += self._template[:, iamp, :] * trigger_amplitudes[iamp]
+
+                V_td = np.zeros((self._m_amplitudes, self._t_times))
+                for theta in range(self._m_amplitudes):
+                    V_td_per_channel = oaconvolve(trigger_trace, self._phi_td[theta,:], mode='same', axes=-1)
+                    V_td[theta,:] = np.sum(V_td_per_channel, axis=0)
+
+                filtered_trace = np.einsum('ij,jz->iz', self._iw_matrix, V_td).real
+            
+                delta_chi2_trace = np.einsum('iz,ij,jz->z', filtered_trace, self._w_matrix, filtered_trace)
+                
+                # Subtract delta_chi2_trace for this trigger from the original
+                # full self._delta_chi2_trace.
+                j_samples = np.argmax(delta_chi2_trace)
+                self._delta_chi2_trace[trigger_index - j_samples : trigger_index - j_samples + self._t_times] -= delta_chi2_trace
+
+            # Retrigger on the residual self._delta_chi2_trace
+            self.find_triggers_once(thresh, thresh_ttl,
+                      pileup_window_msec, pileup_window_samples,
+                      dynamic, dynamic_threshold_function)
+
+            # Save our second-pass triggers so we don't lose them
+            new_triggers = np.copy(self._trigger_data[self._trigger_name]['trigger_index'])
+            new_trigger_data = copy.deepcopy(self._trigger_data)
+
+            # Return self._delta_chi2_trace to its original value
+            # because right now, it is saving the residual trace.
+            self._residual_delta_chi2_trace = np.copy(self._delta_chi2_trace)
+            self._delta_chi2_trace = np.copy(original_delta_chi2_trace)
+            
+            # Combine all triggers into a single dictionary
+            combined_trigger_data = combine_trigger_data(
+                original_trigger_data, new_trigger_data, original_triggers, new_triggers)
+            self._trigger_data = copy.deepcopy(combined_trigger_data)
+            
+            # If the user wants the first-pass and second-pass triggers
+            # separately, return those
+            if return_trigger_data:
+                return original_trigger_data, original_delta_chi2_trace, new_trigger_data, new_delta_chi2_trace
+
+
+        else:
+            
+            # If residual algorithm is disabled, just run find_triggers_once()
+            self.find_triggers_once(thresh, thresh_ttl,
+                      pileup_window_msec, pileup_window_samples,
+                      dynamic, dynamic_threshold_function)
+
+
+
+            
+    def find_triggers_once(self, thresh, thresh_ttl=None,
+                      pileup_window_msec=None, pileup_window_samples=None,
+                      dynamic=False,
                       dynamic_threshold_function=None):
         """
-        Method to detect events in the traces with an optimum amplitude
+        Method to detect events in the traces with a delta chi2 amplitude
         greater than the specified threshold. Note that this may return
         duplicate events, so care should be taken in post-processing to
         get rid of such events.
@@ -492,20 +840,23 @@ class OptimumFilterTrigger:
             that any amplitudes higher than this will be detected as
             ttl trigger event. If left as None, then only the pulses
             are analyzed.
-
-
         pileup_window_msec : float, optional
-
+            A static pileup window that coalesces regions of time with
+            delta chi2 above threshold into a single trigger, as long
+            as they are separated by less than the window.
         pileup_window_samples : int, optional
+            Same as pileup_window_msec, but in samples
+        dynamic : bool, optional
+            If True, then pileup_window_msec and pileup_window_samples
+            will be ignored. Instead the pileup window will be
+            trigger amplitude-dependent. If True, you must also pass,
+            dynamic_threshold_function.
+        dynamic_threshold_function : function, optional
+            A function (probably lambda/anonymous, but doesn't have
+            to be) that converts a delta chi2 value to a pileup window
+            in samples. This function should accept one scalar float as
+            an argument and output one scalar float.
         
-        positive_pulses : boolean, optional
-            Boolean flag for which direction the pulses go in the
-            traces. If they go in the positive direction, then this
-            should be set to True. If they go in the negative
-            direction, then this should be set to False. Default is
-            False for the chi2 trigger, since delta chi2 is negative
-            by definition.
-
         """
 
         # check filtered trace
@@ -514,8 +865,6 @@ class OptimumFilterTrigger:
                              + ' Use "update_trace" first!')
         
         
-        # intialize dictionary with list of
-        # variables
         # intialize dictionary with list of
         # variables
         trigger_data = {
@@ -528,7 +877,7 @@ class OptimumFilterTrigger:
         for iamp in range(self._m_amplitudes):
             trigger_data[f'trigger_amplitude_{iamp}'] = list()
         if self._m_amplitudes == 1:
-            trigger_data['trigger_amplitude'] = list()
+            trigger_data[f'trigger_amplitude'] = list()
         
         # Extra parameters if TTL trigger used
         if (self._filtered_trace_ttl is not None
@@ -559,8 +908,23 @@ class OptimumFilterTrigger:
         # This is done so that the trigger behaves roughly as it used to,
         # while accounting for the difference between a chi2 and Gaussian
         # distribution.
-        survival_fraction = stats.norm.sf(thresh) * 2
-        chi2_threshold = special.gammainccinv(self._m_amplitudes / 2, survival_fraction) * 2
+        
+        #stats.norm.sf can't give arbitrarilly small values, need to switch
+        #to a different calculation method around threshold = 30. We'll just
+        #assume k = 1 so chi^2 = sigma^2
+        
+        if thresh < 25:
+            survival_fraction = stats.norm.sf(thresh) * 2
+            chi2_threshold = special.gammainccinv(self._m_amplitudes / 2, survival_fraction) * 2
+        else:
+            chi2_threshold = thresh**2
+            if self._m_amplitudes > 1:
+                warnings.warn('You have asked for an amplitude threshold of ' + 
+                        f'{thresh} sigma, but this is too high for us ' + 
+                        'calculate the equivalent chi2 threshold. We are ' + 
+                        'going to use the result for M = 1, which is a ' +
+                        f'threshold of chi2 = {chi2_threshold}.')
+        
         triggers_mask = self._delta_chi2_trace > chi2_threshold
 
         triggers = np.where(triggers_mask)[0]
@@ -630,10 +994,7 @@ class OptimumFilterTrigger:
 
                 # find index maximum amplitude
                 evt_ind = None
-                if positive_pulses:
-                    evt_ind = evt_inds[np.argmax(self._delta_chi2_trace[evt_inds])]
-                else:
-                    evt_ind = evt_inds[np.argmin(self._delta_chi2_trace[evt_inds])]
+                evt_ind = evt_inds[np.argmax(self._delta_chi2_trace[evt_inds])]
 
                 evt_ind_shift = evt_ind + self._trigger_index_shift
 
@@ -727,7 +1088,6 @@ class OptimumFilterTrigger:
         if nb_events>0:
             chan_list = [self._trigger_name]*nb_events
         self._trigger_data[self._trigger_name]['trigger_channel'] = chan_list
-        
         
         
         
