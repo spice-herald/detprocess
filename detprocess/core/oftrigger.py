@@ -9,6 +9,7 @@ import vaex as vx
 import qetpy as qp
 from scipy import special, stats
 import copy
+import warnings
 
 
 
@@ -915,8 +916,14 @@ class OptimumFilterTrigger:
         if thresh < 25:
             survival_fraction = stats.norm.sf(thresh) * 2
             chi2_threshold = special.gammainccinv(self._m_amplitudes / 2, survival_fraction) * 2
-        else: 
+        else:
             chi2_threshold = thresh**2
+            if self._m_amplitudes > 1:
+                warnings.warn('You have asked for an amplitude threshold of ' + 
+                        f'{thresh} sigma, but this is too high for us ' + 
+                        'calculate the equivalent chi2 threshold. We are ' + 
+                        'going to use the result for M = 1, which is a ' +
+                        f'threshold of chi2 = {chi2_threshold}.')
         
         triggers_mask = self._delta_chi2_trace > chi2_threshold
 
