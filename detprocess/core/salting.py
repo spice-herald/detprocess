@@ -50,11 +50,12 @@ class Salting(FilterData):
         # initialize raw data dictionary
         self._series = None
         self._group_name = None
-        self._raw_base_path = None
+        self._raw_group_path = None
         self._series_list = None
         self._detector_config = None
+        self._restricted = False
         self._ivdidv_data = dict()
-
+        
         
         # intialize randoms dataframe
         self._dataframe = None
@@ -106,14 +107,10 @@ class Salting(FilterData):
         return self._fs
         
             
-    def _generate_randoms(self, raw_path, series=None,
-                         random_rate=None,
-                         nevents=None,
-                         min_separation_msec=20,
-                         edge_exclusion_msec=50,
-                         restricted=False,
-                         calib=False,
-                         ncores=1):
+    def _generate_randoms(self, nevents=None,
+                          min_separation_msec=20,
+                          edge_exclusion_msec=50,
+                          ncores=4):
         """
         Generate randoms from continuous data
         """
@@ -121,11 +118,11 @@ class Salting(FilterData):
             del self._dataframe
         self._dataframe = None
 
-        # generate randoms
-        rand_inst = Randoms(raw_path, series=series,
+        # generate randoms self._series = series
+        rand_inst = Randoms(self._raw_group_path, series=self._series,
                             verbose=False,
-                            restricted=restricted,
-                            calib=calib)
+                            restricted=self._restricted,
+                            calib=False)
 
         
         self._dataframe = rand_inst.process(
@@ -139,11 +136,14 @@ class Salting(FilterData):
         )
             
    
-    def set_raw_data_path(self,group_path,series,restricted):
+    def set_raw_data_path(self, group_path, series, restricted=False):
+        """
+        Set raw data path
+        """
         
         self._series = series
-        self._raw_base_path = group_path
-    
+        self._raw_group_path = group_path
+        self._restricted = restricted
     
     def sample_DMpdf(self,function, xrange, nsamples=1000, npoints=10000, normalize_cdf=True):
         """
@@ -201,8 +201,10 @@ class Salting(FilterData):
 
         samples = np.random.rand(nsamples)
         sampled_energies = inv_cdf(samples)
-
-        self._DMenergies = np.append(self._DMenergies,sampled_energies* 1e3) #this is hardcoded! This is because the dRdE spectrum I'm using is in keV!
+        
+        #this is hardcoded! This is because the dRdE spectrum I'm using is in keV!
+        self._DMenergies = np.append(self._DMenergies,sampled_energies* 1e3)
+        
         return sampled_energies
 
     def get_DMenergies(self):
@@ -241,6 +243,10 @@ class Salting(FilterData):
 
     def generate_salt(self,channels,noise_tag, template_tag, dpdi_tag, dpdi_poles,
                       energies, pdf_file, PCE, nevents=100):
+        """
+        Generate salting metadata
+        """
+        
         channel_list  = convert_channel_name_to_list(channels)
         channel_name = convert_channel_list_to_name(channels)
         nb_channels = len(channel_list)
@@ -248,6 +254,7 @@ class Salting(FilterData):
         # get template 1D or 2D array
         template, time_array = self.get_template(channel_name, tag=template_tag)
         nb_samples = template.shape[-1]
+        
         #setup the output dict  
         salt_var_dict = {'salt_template_tag': list(),
                          'salt_recoil_energy_eV': list(),
@@ -261,6 +268,7 @@ class Salting(FilterData):
             dpdi_dict[chan] = dpdi
         if pdf_file and energies:
             raise ValueError('Only pass either list of energies or DM PDFs, not both!')
+
         #get the energies 
         if pdf_file:
             masses = []
@@ -275,6 +283,7 @@ class Salting(FilterData):
                 salt_var_dict['salt_dm_mass_MeV'].extend([mass] * nevents)
             DM_energies = self.get_DMenergies()
             nevents = len(DM_energies)
+
         if energies:
             if not isinstance(energies, list):
                 energies = [energies]
@@ -282,11 +291,9 @@ class Salting(FilterData):
             nevents = len(DM_energies)
                
         # generate the random selections in time 
-        series = self._series
-        cont_data = self._raw_base_path
         sep_time = nb_samples/1.25e3
-        self._generate_randoms(cont_data, series=None, nevents=nevents,
-                               min_separation_msec=sep_time, ncores=4)
+        self._generate_randoms(nevents=nevents,
+                               min_separation_msec=sep_time)
 
         # Create channel-specific keys
         for key in base_keys:
@@ -468,78 +475,12 @@ class Salting(FilterData):
                 simtime = j['trigger_index']
                 newtrace[simtime:simtime+nb_samples] += saltpulse
             newtraces.append(newtrace)
+
+        # return 
         if is_list_input:
             return [list(trace) for trace in newtraces]
         else:
             return np.array(newtraces)
-        #return newtraces
+       
         
 
-"""
-
-
-        # initialize salted traces
-        newtraces = []
-        
-        # channels 
-        channel_list  = convert_channel_name_to_list(channels)
-        channel_name = convert_channel_list_to_name(channels)
-        nb_channels = len(channel_list)
-
-        # traces
-        is_list_input = isinstance(trace, list)
-        trace_array = np.array(trace, copy=False) if is_list_input else trace
-        if trace_array.ndim == 1:
-            trace_array = trace_array.reshape(1, trace_array.shape[-1])
-
-        # check dimensions
-        if nb_channels != trace_array.shape[0]:
-            raise ValueError('ERROR:  number of channels incompatible with array shape!')
-                    
-        # filter dataframe
-        filtered_df = None
-        if ((self._dataframe['event_number'] == eventID).count() > 0
-            and (self._dataframe['series_number'] == seriesID).count() > 0):
-            filtered_df = (
-                self._dataframe[(self._dataframe['event_number'] == eventID)
-                                & (self._dataframe['series_number'] == seriesID)]
-            )
-        else:
-            return []
-        
-           
-        # loop channels
-        for i, waveform in enumerate(trace_array):
-
-            # channel name
-            chan = channel_list[i]
-            
-            # initialize
-            newtrace = np.array(waveform, copy=True)
-            salts_before_ADC = np.zeros(np.shape(waveform),dtype=float)
-
-            # loop row of filter datafame and add salt
-            columns_to_extract = ['salt_template_tag', f'salt_amplitude_{chan}',
-                                  'trigger_index','saltchanname']
-            for _, j in filtered_df[columns_to_extract].to_pandas_df().iterrows():
-                template_tag = j['salt_template_tag']
-                tempchan = j['saltchanname']
-                template,times = self.get_template(tempchan, tag=template_tag)
-                if "|" in tempchan:
-                    temp = template[i][0]
-                else:
-                    temp = template
-                nb_samples=len(times)
-                saltamp = j[f'salt_amplitude_{chan}']
-                saltpulse = temp* saltamp
-                simtime = j['trigger_index']
-                salt_and_baseline = saltpulse+newtrace[0]
-                salt_and_baseline -= salt_and_baseline[0]
-                salts_before_ADC[simtime:simtime+nb_samples] += salt_and_baseline
-                newtrace += salts_before_ADC
-            newtraces.append(newtrace)
-        if is_list_input:
-            return [list(trace) for trace in newtraces]
-        else:
-            return np.array(newtraces)
-"""
