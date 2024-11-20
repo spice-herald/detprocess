@@ -64,7 +64,7 @@ class Noise(FilterData):
                   'Returning None ')
             return None
         elif channel not in self._detector_config.keys():
-            print(f'WARNING: No channel {channe}  found! '
+            print(f'WARNING: No channel {channel}  found! '
                   f'Returning None ')
             return None
         return self._detector_config[channel]
@@ -381,6 +381,7 @@ class Noise(FilterData):
           
             self._filter_data[chan][psd_name + '_metadata'] = traces_metadata
          
+ 
             
     def calc_csd(self, channels, 
                  series=None,
@@ -389,7 +390,8 @@ class Noise(FilterData):
                  pretrigger_length_msec=None,
                  pretrigger_length_samples=None,
                  nevents=None,
-                 tag='default'):
+                 tag='default',
+                 use_hann_window=False):
         """
         Calculate two-sided and folded CSD. 
        
@@ -483,7 +485,8 @@ class Noise(FilterData):
         # calc CSD two-sided
         freqs, csd = qp.calc_csd(traces[cut],
                                  fs=self._fs,
-                                 folded_over=False)
+                                 folded_over=False,
+                                 use_hann_window=use_hann_window)
         # parameter name
         csd_name = 'csd_' + tag
         csd_freqs_name = 'csd_freqs_' + tag
