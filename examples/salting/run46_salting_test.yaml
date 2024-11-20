@@ -33,7 +33,7 @@ salting:
    Mv3025pcRegular:
        template_tag: default
        noise_tag: default     
-       collection_efficiency: [0.8]
+       collection_efficiency: [1]
        dpdi_tag: default
        dpdi_poles: 3
 # -------------------------------------------------
@@ -184,7 +184,7 @@ Mv3025pcRegular|Mv3025pcBigFins:
      # channel rename
      feature_channel: Mv3025pc
      of2x1_test:
-        run: False
+        run: True
         base_algorithm: ofnxm
         # OF window
         window_min_from_trig_usec: -100
