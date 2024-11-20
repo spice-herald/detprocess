@@ -500,7 +500,7 @@ class FeatureProcessing:
                         speed = event_counter/time_running
                         print('INFO' + node_num_str
                               + ': Speed = '
-                              + str(speed) + ' events per second')
+                              + f'{speed:.4e}' + ' events per second')
                         
                 # -----------------------
                 # Read next event
