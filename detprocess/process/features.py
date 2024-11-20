@@ -473,6 +473,7 @@ class FeatureProcessing:
 
             # loop events
             do_stop = False
+            start_time = time.time()
             while (not do_stop):
 
                 # -----------------------
@@ -493,6 +494,13 @@ class FeatureProcessing:
                               + ': Local number of events = '
                               + str(event_counter)
                               + ' (memory = ' + str(memory_usage/1e6) + ' MB)')
+                              
+                    if (event_counter%1000==0 and event_counter!=0):
+                        time_running = time.time() - start_time
+                        speed = event_counter/time_running
+                        print('INFO' + node_num_str
+                              + ': Speed = '
+                              + f'{speed:.4e}' + ' events per second')
                         
                 # -----------------------
                 # Read next event

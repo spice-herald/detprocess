@@ -907,8 +907,17 @@ class OptimumFilterTrigger:
         # This is done so that the trigger behaves roughly as it used to,
         # while accounting for the difference between a chi2 and Gaussian
         # distribution.
-        survival_fraction = stats.norm.sf(thresh) * 2
-        chi2_threshold = special.gammainccinv(self._m_amplitudes / 2, survival_fraction) * 2
+        
+        #stats.norm.sf can't give arbitrarilly small values, need to switch
+        #to a different calculation method around threshold = 30. We'll just
+        #assume k = 1 so chi^2 = sigma^2
+        
+        if thresh < 25:
+            survival_fraction = stats.norm.sf(thresh) * 2
+            chi2_threshold = special.gammainccinv(self._m_amplitudes / 2, survival_fraction) * 2
+        else: 
+            chi2_threshold = thresh**2
+        
         triggers_mask = self._delta_chi2_trace > chi2_threshold
 
         triggers = np.where(triggers_mask)[0]
