@@ -109,7 +109,7 @@ class Salting(FilterData):
             
     def _generate_randoms(self, nevents=None,
                           min_separation_msec=20,
-                          edge_exclusion_msec=50,
+                          edge_exclusion_msec=25,
                           ncores=4):
         """
         Generate randoms from continuous data
@@ -360,9 +360,9 @@ class Salting(FilterData):
             salt_var_dict[key] = salt_var_dict[key][:maxlen]   
         df = vx.from_dict(salt_var_dict)
         self._dataframe = self._dataframe.join(df)
-        if pdf_file:
-            self._listofdfs.append(self._dataframe)
-            self._dataframe = vx.concat(self._listofdfs)
+        #if pdf_file:
+        #    self._listofdfs.append(self._dataframe)
+        #    self._dataframe = vx.concat(self._listofdfs)
             #self._dataframe = self.merge_dataframe(self._listofdfs)
             
         # clear dictionary
