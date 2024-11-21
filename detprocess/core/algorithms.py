@@ -18,21 +18,129 @@ class FeatureExtractors:
 
     """
     @staticmethod
-    def ofnxm(channel, of_base,
-              available_channels=None,
-              feature_base_name='ofnxm',
-              template_tag=None,
-              amplitude_names=None,
-              window_min_from_trig_usec=None,
-              window_max_from_trig_usec=None,
-              window_min_index=None,
-              window_max_index=None,
-              lgc_outside_window=False,
-              lowchi2_fcutoff=10000,
-              interpolate_t0=False,
-              **kwargs):
+    def ofnxm_nodelay(channel, of_base,
+                      available_channels=None,
+                      feature_base_name='ofnxm_nodelay',
+                      template_tag=None,
+                      amplitude_names=None,
+                      lowchi2_fcutoff=10000,
+                      **kwargs):
         """
-        Feature extraction for the no delay Optimum Filter.
+        Feature extraction for the no delay NxM Optimum Filter.
+
+
+        Parameters
+        ----------
+        channel : str
+          channel with format 'chan1|chan2|chan3'
+          (order matter)
+
+        of_base : OFBase object
+           OFBase QETpy object 
+
+        lowchi2_fcutoff : float, optional
+            The frequency (in Hz) that we should cut off the chi^2 when
+            calculating the low frequency chi^2. Default is 10 kHz.
+
+        available_channels : list
+           list of available channels
+
+        feature_base_name : str, option
+            output feature base name
+
+
+        Returns
+        -------
+        retdict : dict
+            Dictionary containing the various extracted features.
+
+        """
+        
+        debug = True
+
+        
+        # split channel name into list (same order)
+        channel_list, separator = utils.split_channel_name(
+            channel,
+            available_channels=available_channels,
+            separator='|')
+        
+        nchans = len(channel_list)
+
+        # check data
+        if  template_tag is None: 
+            raise ValueError(f'ERROR: Missing "template_tag" argument '
+                             f'for channel {channel}, '
+                             f'algorithm "{feature_base_name}"')
+        elif template_tag.ndim != 2:
+            raise ValueError(f'ERROR: Expecting a 2D "template_tag" '
+                             f'array  for channel {channel}, '
+                             f'algorithm "{feature_base_name}"')
+        
+        nchans_array = template_tag.shape[0]
+        ntmps =  template_tag.shape[1]
+        
+        if nchans != nchans_array:
+            raise ValueError(f'ERROR: Expecting a 2D "template_tag" '
+                             f'with shape[0] = {nchans} '
+                             f'for channel {channel}, '
+                             f'algorithm "{feature_base_name}"')
+
+        
+        if amplitude_names is None:
+            amplitude_names = []
+            for itmp in range(ntmps):
+                amplitude_names.append(f'amp{itmp+1}')
+        else:
+
+            if isinstance(amplitude_names, str):
+                amplitude_names = [amplitude_names]
+
+            if len(amplitude_names) != ntmps:
+                raise ValueError(
+                    f'ERROR: Wrong length for "amplitude_names" '
+                    f'argument. Expecting {ntmps} name '
+                    f'for  channel {channel}, '
+                    f'algorithm "{feature_base_name}"')
+                                
+        # instantiate OF NxM
+        OF = qp.OFnxm(of_base=of_base,
+                      channels=channel,
+                      template_tags=template_tag,
+                      verbose=False)
+
+        # calc
+        OF.calc()
+
+        # get data
+        amps, t0, chi2 = OF.get_fit_nodelay()
+        
+        # store
+        retdict = dict()
+        retdict[f'chi2_{feature_base_name}'] = chi2
+        #retdict[f't0_{feature_base_name}'] = t0
+        for iamp, amp_name in enumerate(amplitude_names):
+            retdict[f'{amp_name}_{feature_base_name}'] = amps[iamp]
+
+        return retdict
+    
+
+    @staticmethod
+    def ofnxm_constrained(channel, of_base,
+                          available_channels=None,
+                          feature_base_name='ofnxm_constrained',
+                          template_tag=None,
+                          amplitude_names=None,
+                          window_min_from_trig_usec=None,
+                          window_max_from_trig_usec=None,
+                          window_min_index=None,
+                          window_max_index=None,
+                          lgc_outside_window=False,
+                          lowchi2_fcutoff=10000,
+                          interpolate_t0=False,
+                          **kwargs):
+        """
+        Feature extraction for the constrained NxM Optimum Filter.
 
 
         Parameters
