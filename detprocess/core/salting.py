@@ -126,7 +126,6 @@ class Salting(FilterData):
 
         
         self._dataframe = rand_inst.process(
-            random_rate=random_rate,
             nrandoms=nevents,
             min_separation_msec=min_separation_msec,
             edge_exclusion_msec=edge_exclusion_msec,
@@ -423,6 +422,7 @@ class Salting(FilterData):
         channel_name = convert_channel_list_to_name(channels)
         nb_channels = len(channel_list)
         # traces
+
         is_list_input = isinstance(trace, list)
         trace_array = np.array(trace[0], copy=False) if is_list_input else trace
         if trace_array.ndim == 1:
@@ -448,7 +448,6 @@ class Salting(FilterData):
 
             # channel name
             chan = channel_list[i]
-            
             # initialize
             newtrace = np.array(waveform, copy=True)
 
@@ -466,7 +465,10 @@ class Salting(FilterData):
                 tempchan = j['saltchanname']
                 template,times = self.get_template(tempchan, tag=template_tag)
                 if "|" in tempchan:
-                    temp = template[i][0]
+                    tempchan = convert_channel_name_to_list(tempchan)
+                    for i in range(len(channel_list)):
+                        index = tempchan.index(channel_list[i])
+                    temp = template[index][0]
                 else:
                     temp = template
                 nb_samples=len(times)
