@@ -9,6 +9,8 @@ from datetime import datetime
 import yaml
 import vaex as vx
 import re
+from qetpy.utils import convert_channel_name_to_list,convert_channel_list_to_name
+
 
 warnings.filterwarnings('ignore')
 
@@ -313,12 +315,20 @@ if __name__ == "__main__":
             chan_dataframe_list = []
             for chan, chan_config in salting_dict.items():
 
+                # check if multi-channel
+                chan_list = convert_channel_name_to_list(chan)
+                
                 # get config
                 template_tag = chan_config['template_tag']
                 noise_tag = chan_config['noise_tag']
-                pce = chan_config['collection_efficiency']
                 dpdi_tag = chan_config['dpdi_tag']
                 dpdi_poles = chan_config['dpdi_poles']
+
+                pce = 1
+                if 'collection_efficiency' in chan_config:
+                    pce = chan_config['collection_efficiency']
+                elif len(chan_list) >=2:
+                    pce = [pce]*len(chan_list)
 
                 # generate salt
                 salting.generate_salt(chan,
@@ -330,6 +340,7 @@ if __name__ == "__main__":
                                       pdf_file=pdf_file,
                                       PCE=pce,
                                       nevents=nsalt)
+                
                 salting_dataframe = salting.get_dataframe()
                 chan_dataframe_list.append(salting_dataframe)
 
@@ -490,7 +501,7 @@ if __name__ == "__main__":
                     
             # trigger dataframes path
             trigger_path = trigger_group_path_list[idx]
-
+                     
             # instantiate
             myproc = FeatureProcessing(raw_group_path,
                                        processing_setup,

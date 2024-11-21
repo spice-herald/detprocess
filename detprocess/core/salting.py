@@ -135,7 +135,8 @@ class Salting(FilterData):
         )
             
    
-    def set_raw_data_path(self, group_path, series, restricted=False):
+    def set_raw_data_path(self, group_path, series, restricted=False,
+                          fs=1.25e6):
         """
         Set raw data path
         """
@@ -143,6 +144,7 @@ class Salting(FilterData):
         self._series = series
         self._raw_group_path = group_path
         self._restricted = restricted
+        self._fs = fs
     
     def sample_DMpdf(self,function, xrange, nsamples=1000, npoints=10000, normalize_cdf=True):
         """
@@ -240,7 +242,7 @@ class Salting(FilterData):
                 sublist[i] = 1
         return energysplits
 
-    def generate_salt(self,channels,noise_tag, template_tag, dpdi_tag, dpdi_poles,
+    def generate_salt(self, channels, noise_tag, template_tag, dpdi_tag, dpdi_poles,
                       energies, pdf_file, PCE, nevents=100):
         """
         Generate salting metadata
@@ -257,7 +259,9 @@ class Salting(FilterData):
         #setup the output dict  
         salt_var_dict = {'salt_template_tag': list(),
                          'salt_recoil_energy_eV': list(),
-                         'saltchanname': list()}
+                         'saltchanname': list(),
+                         'salting_type':list()}
+        
         base_keys = ['salt_amplitude', 'salt_energy_eV']
         # get dpdi for each individual channels
         
@@ -290,7 +294,7 @@ class Salting(FilterData):
             nevents = len(DM_energies)
                
         # generate the random selections in time 
-        sep_time = nb_samples/1.25e3
+        sep_time = 1000*nb_samples/self._fs
         self._generate_randoms(nevents=nevents,
                                min_separation_msec=sep_time)
 
@@ -310,42 +314,46 @@ class Salting(FilterData):
                 norm_energy = qp.get_energy_normalization(time_array, temp[0], dpdi=dpdi[0], lgc_ev=True)
                 scaled_template = temp[0]/norm_energy
                 for n in range(nevents):
-                    if 'single' in template_tag: 
-                        fullyscaled_template = scaled_template * DM_energies[n]
-                    else: 
-                        fullyscaled_template = scaled_template * DM_energies[n]*PCE[i]
+                    fullyscaled_template = scaled_template * DM_energies[n]*PCE[i]
                     salts[n].append([fullyscaled_template])   
                     if len(salt_var_dict['salt_template_tag']) <= n:
                         salt_var_dict['salt_template_tag'].append([])
                         salt_var_dict['salt_recoil_energy_eV'].append([])
                         salt_var_dict['saltchanname'].append([])
-
+                        salt_var_dict[f'salting_type'].append([])
+                        
                     salt_var_dict[f'salt_amplitude_{chan}'][n] = max(fullyscaled_template)
                     salt_var_dict[f'salt_energy_eV_{chan}'][n] = DM_energies[n]
                     salt_var_dict[f'salt_template_tag'][n] = template_tag
                     salt_var_dict[f'salt_recoil_energy_eV'][n] = DM_energies[n]
                     salt_var_dict[f'saltchanname'][n] = channel_name
+                    if pdf_file:
+                        salt_var_dict[f'salting_type'][n] = 'dm_pdf'
+                    else:
+                        salt_var_dict[f'salting_type'][n] = f'energy_{DM_energies[n]}_eV'
         else: 
             salts = []
             dpdi = dpdi_dict[chan]
             norm_energy = qp.get_energy_normalization(time_array, template, dpdi = dpdi[0], lgc_ev=True)
             scaled_template = template/norm_energy
             for n in range(nevents):
-                if 'single' in template_tag: 
-                    fullyscaled_template = scaled_template * DM_energies[n]
-                else: 
-                    fullyscaled_template = scaled_template * DM_energies[n]*PCE
+                fullyscaled_template = scaled_template * DM_energies[n]*PCE
                 salts.append(fullyscaled_template)
                 if len(salt_var_dict['salt_template_tag']) <= n:
                     salt_var_dict['salt_template_tag'].append([])
                     salt_var_dict['salt_recoil_energy_eV'].append([])     
                     salt_var_dict['saltchanname'].append([])          
-
+                    salt_var_dict[f'salting_type'].append([])
+                    
                 salt_var_dict[f'salt_amplitude_{chan}'][n] = max(fullyscaled_template)
                 salt_var_dict[f'salt_energy_eV_{chan}'][n] = DM_energies[n]
                 salt_var_dict[f'salt_template_tag'][n] = template_tag
                 salt_var_dict[f'salt_recoil_energy_eV'][n] = DM_energies[n]
                 salt_var_dict[f'saltchanname'][n] = channel_name
+                if pdf_file:
+                    salt_var_dict[f'salting_type'][n] = 'dm_pdf'
+                else:
+                    salt_var_dict[f'salting_type'][n] = f'energy_{DM_energies[n]}_eV'
                 
         maxlen = len(self._dataframe) 
         for key in salt_var_dict:
@@ -354,13 +362,15 @@ class Salting(FilterData):
         self._dataframe = self._dataframe.join(df)
         if pdf_file:
             self._listofdfs.append(self._dataframe)
-            self._dataframe = self.merge_dataframe(self._listofdfs)
-
+            self._dataframe = vx.concat(self._listofdfs)
+            #self._dataframe = self.merge_dataframe(self._listofdfs)
+            
         # clear dictionary
         salt_var_dict.clear()
             
         return salts  
-    
+
+    """
     def merge_dataframe(self,inputdflist):
         if len(inputdflist) > 1:
             pandas_dfs = []
@@ -383,6 +393,9 @@ class Salting(FilterData):
         else:
             mergeddf =  inputdflist[0]
         return mergeddf
+    """
+
+
     
     def set_dataframe(self, dataframe=None):
         """
@@ -410,21 +423,25 @@ class Salting(FilterData):
     def get_dataframe(self):
         return self._dataframe
     
-    def inject_raw_salt(self, channels, trace, seriesID, eventID):
+    def inject_raw_salt(self, channels, trace, seriesID, eventID,
+                        include_metadata=False):
         """
         FIXME
         """
         # initialize salted traces
         newtraces = []
-        
+             
         # channels 
         channel_list  = convert_channel_name_to_list(channels)
         channel_name = convert_channel_list_to_name(channels)
         nb_channels = len(channel_list)
-        # traces
 
-        is_list_input = isinstance(trace, list)
-        trace_array = np.array(trace[0], copy=False) if is_list_input else trace
+        # traces -> FIXME...
+        #is_list_input = isinstance(trace, list)
+        #trace_array = np.array(trace[0], copy=False) if is_list_input else trace
+        trace_array = trace
+        
+        # convert to 2D
         if trace_array.ndim == 1:
             trace_array = trace_array.reshape(1, trace_array.shape[-1])
 
@@ -441,7 +458,11 @@ class Salting(FilterData):
                                 & (self._dataframe['series_number'] == seriesID)]
             )
         else:
-            return []
+            # no salting needed -> return trace
+            if include_metadata:
+                return trace,{}
+            else:
+                return trace
         
         # loop channels
         for i, waveform in enumerate(trace_array):
@@ -453,12 +474,14 @@ class Salting(FilterData):
 
             # loop row of filter datafame and add salt
             columns_to_extract = ['salt_template_tag', f'salt_amplitude_{chan}',
-                                  'trigger_index','saltchanname']
+                                  'trigger_index','saltchanname', 'salting_type']
             n = 0
             if filtered_df[f'salt_amplitude_{chan}'] is False:
                 print(f'WARNING: No channel {chan}  found in salt df! '
                       f'Assuming single channel salt and moving on!')
                 continue
+
+            salting_type = None
             for _, j in filtered_df[columns_to_extract].to_pandas_df().iterrows():
                 n +=1
                 template_tag = j['salt_template_tag']
@@ -471,18 +494,33 @@ class Salting(FilterData):
                     temp = template[index][0]
                 else:
                     temp = template
-                nb_samples=len(times)
+                nb_samples = len(times)
                 saltamp = j[f'salt_amplitude_{chan}']
                 saltpulse = temp* saltamp
                 simtime = j['trigger_index']
                 newtrace[simtime:simtime+nb_samples] += saltpulse
+
+
+                # get metadata (once)
+                if salting_type is None:
+                    salting_type = j['salting_type']
+               
             newtraces.append(newtrace)
 
         # return 
-        if is_list_input:
-            return [list(trace) for trace in newtraces]
+        #if is_list_input:
+        #    return [list(trace) for trace in newtraces]
+        output_metadata = {'salting_type': salting_type,
+                           'series_number': seriesID,
+                           'event_number': eventID}
+
+        output_trace = np.array(newtraces)
+        
+        if include_metadata:
+            return output_trace, output_metadata
         else:
-            return np.array(newtraces)
+            return output_trace
+        
        
         
 

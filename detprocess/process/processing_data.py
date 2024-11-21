@@ -101,7 +101,8 @@ class ProcessingData:
         self._current_event_number = None
         self._current_series_number = None
         self._current_trigger_index = None
-
+        self._current_salting_info = None
+        
         # get ADC and file info
         self._data_info = self._extract_data_info()
             
@@ -568,12 +569,16 @@ class ProcessingData:
             if self._salting_inst is not None:
 
                 # channels
-                chans = self._current_admin_info['detector_chans']        
+                chans = self._current_admin_info['detector_chans']
+                
                 # inject salting pulses
-                self._current_full_traces = self._salting_inst.inject_raw_salt(
-                    chans, self._current_full_traces,
-                    seriesID=self._current_series_number,
-                    eventID=self._current_event_number
+                self._current_full_traces,  self._current_salting_info = (
+                    self._salting_inst.inject_raw_salt(
+                        chans, self._current_full_traces,
+                        seriesID=self._current_series_number,
+                        eventID=self._current_event_number,
+                        include_metadata=True
+                    )
                 )
               
         else:
@@ -654,12 +659,14 @@ class ProcessingData:
                     self._current_admin_info = admins[0]
                                   
                     # inject salting pulses
-                    self._current_full_traces = self._salting_inst.inject_raw_salt(
-                        channels, self._current_full_traces, 
-                        seriesID=series_number,
-                        eventID=event_number
+                    self._current_full_traces, self._current_salting_info = (
+                        self._salting_inst.inject_raw_salt(
+                            channels, self._current_full_traces, 
+                            seriesID=series_number,
+                            eventID=event_number,
+                            include_metadata=True
+                        )
                     )
-                    
 
                 # extract trigger
                 for key_tuple, key_channels in traces_config.items():
@@ -897,6 +904,13 @@ class ProcessingData:
             )
         else:
             admin_dict['group_start_time'] = np.nan
+
+
+        if (self._current_salting_info is not None
+            and 'salting_type' in self._current_salting_info):
+            admin_dict['salting_type'] = (
+                self._current_salting_info['salting_type']
+            )
 
         return admin_dict
 
