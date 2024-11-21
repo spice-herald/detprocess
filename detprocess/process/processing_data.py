@@ -633,7 +633,7 @@ class ProcessingData:
                     raise ValueError('ERROR: Unable to get raw data file. '
                                      + 'Something went wrong...')
                 self._h5.set_files(file_list[0])
-                print(f'NEW file: {file_list[0]}')
+                
     
             # intialize
             self._current_truncated_traces_data = dict()
