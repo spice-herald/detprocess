@@ -207,7 +207,14 @@ if __name__ == "__main__":
         print('ERROR: if salting enabled, trigger acquisition needs to be '
               'done before feature processing!')
         exit()
-         
+
+
+    if acquire_salting and acquire_rand:
+        print('ERROR: For the moment, randoms cannot '
+              'be enabled in the same time as salting!')
+        exit()
+        
+        
     
     # ====================================
     # Calc Filter
