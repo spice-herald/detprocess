@@ -7,3 +7,4 @@ from .template import *
 from .ivsweep import *
 from .didv  import *
 from .noisemodel  import *
+from .salting import *

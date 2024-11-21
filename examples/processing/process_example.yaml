@@ -14,7 +14,42 @@
 
 # Filter file
 filter_file: /data/users/serfass/run32/ofnxm_test/run32_test_filter.hdf5
+didv_file: /path/to/didv_file.hdf5
 
+
+# -------------------------------------------------
+# SALTING
+# -------------------------------------------------
+salting:
+
+   # DM PDF 
+   dm_pdf_file: /path/to/pdf_file
+   energies: [1,10,100]
+   
+   # 1x1
+   Melange025pcRight:   
+     template_tag: default
+     noise_tag: default     
+     collection_efficiency: 0.5
+     dpdi_tag: default
+     dpdi_poles: 2     
+
+   # Using 2x2
+   Melange025pcLeft|Melange025pcRight:
+     template_tag: shared
+     noise_tag: default     
+     collection_efficiency: [0.4, 0.3]
+     dpdi_tag: [default, default]
+     dpdi_poles: [2, 2]
+     
+   # Using 3x1
+   Melange4pc1ch|Melange025pcLeft|Melange025pcRight:
+     template_tag: demo
+     noise_tag: default     
+     collection_efficiency: [0.5,0.4,0.3]
+     dpdi_tag: [default, default, default]
+     dpdi_poles: [2, 2, 2]
+ 
 
 # -------------------------------------------------
 # TRIGGER PROCESSING
