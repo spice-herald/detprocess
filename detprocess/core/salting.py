@@ -397,24 +397,22 @@ class Salting(FilterData):
     def get_dataframe(self):
         return self._dataframe
 
-    
+
     def inject_raw_salt(self, channels, trace, seriesID, eventID,
                         include_metadata=False):
         """
         Inject salting trace into raw data
         """
-        
         # Initialize salted traces
         newtraces = []
-
+        
         # Convert channels to list and name
         channel_list = convert_channel_name_to_list(channels)
-        channel_name = convert_channel_list_to_name(channels)
         nb_channels = len(channel_list)
-        
+
         # Copy the trace array
         trace_array = trace.copy()
-
+        
         # Ensure trace_array is 2D
         if trace_array.ndim == 1:
             trace_array = trace_array.reshape(1, trace_array.shape[-1])
@@ -431,7 +429,6 @@ class Salting(FilterData):
 
         # Check if filtered DataFrame is empty
         if filtered_df.count() == 0:
-            
             # No salting needed -> return original trace
             if include_metadata:
                 return trace, {}
@@ -439,45 +436,27 @@ class Salting(FilterData):
                 return trace
 
         # Extract common data once
-        common_columns = ['salt_template_tag', 'trigger_index', 'saltchanname', 'salting_type']
+        common_columns = ['salt_template_tag', 'trigger_index',
+                          'saltchanname', 'salting_type']
         common_data = {col: filtered_df[col].values for col in common_columns}
-
-        # Cache templates and times for unique combinations
-        unique_tempchan_template_tags = set(zip(common_data['saltchanname'], common_data['salt_template_tag']))
-        template_cache = {}
-        for tempchan, template_tag in unique_tempchan_template_tags:
-            template, times = self.get_template(tempchan, tag=template_tag)
-            template_cache[(tempchan, template_tag)] = (template, times, len(times))
-
-        # Cache tempchan lists and index mappings for tempchans containing '|'
-        tempchan_list_cache = {}
-        tempchan_index_cache = {}
-        for tempchan in set(common_data['saltchanname']):
-            if '|' in tempchan:
-                tempchan_list = convert_channel_name_to_list(tempchan)
-                tempchan_list_cache[tempchan] = tempchan_list
-                tempchan_index_cache[tempchan] = {chan: idx for idx, chan in enumerate(tempchan_list)}
-            else:
-                tempchan_list_cache[tempchan] = None
-                tempchan_index_cache[tempchan] = None
 
         # Extract salting type once (assuming it's the same for all entries)
         salting_type = common_data['salting_type'][0]
 
         # Loop over each channel
         for idx_channel, waveform in enumerate(trace_array):
+            
             # Get the channel name
             chan = channel_list[idx_channel]
-
+            
             # Initialize the new trace for this channel
-            newtrace = np.array(waveform, copy=True)
+            newtrace = waveform.copy()
 
             # Check if the amplitude column exists for this channel
             amplitude_column = f'salt_amplitude_{chan}'
             if amplitude_column not in filtered_df.get_column_names():
                 print(f'WARNING: No channel {chan} found in salt df! '
                       f'Assuming single channel salt and moving on!')
-                newtraces.append(newtrace)
                 continue
 
             # Extract amplitude data for this channel
@@ -485,14 +464,21 @@ class Salting(FilterData):
 
             # Iterate over the indices of the filtered DataFrame
             for idx in range(len(filtered_df)):
-                template_tag = common_data['salt_template_tag'][idx]
-                tempchan = common_data['saltchanname'][idx]
-                template, times, nb_samples = template_cache[(tempchan, template_tag)]
+
+                # get data
+                template_tag = str(common_data['salt_template_tag'][idx])
+                tempchan = str(common_data['saltchanname'][idx])
+                trigger_index = int(common_data['trigger_index'][idx])
+
+                # Retrieve the template and times
+                template, times = self.get_template(tempchan, tag=template_tag)
+                nb_samples = len(times)
 
                 # Handle tempchan containing '|'
                 if '|' in tempchan:
-                    if chan in tempchan_index_cache[tempchan]:
-                        index = tempchan_index_cache[tempchan][chan]
+                    tempchan_list = convert_channel_name_to_list(tempchan)
+                    if chan in tempchan_list:
+                        index = tempchan_list.index(chan)
                         temp = template[index][0]
                     else:
                         continue  # Skip if channel not in tempchan_list
@@ -506,12 +492,11 @@ class Salting(FilterData):
 
                 # Add salting pulse
                 saltpulse = temp * saltamp
-                simtime = common_data['trigger_index'][idx]
+                simtime = trigger_index
                 newtrace[simtime:simtime + nb_samples] += saltpulse
 
             newtraces.append(newtrace)
 
-            
         # Prepare output metadata
         output_metadata = {
             'salting_type': salting_type,
@@ -520,9 +505,9 @@ class Salting(FilterData):
         }
         
         output_trace = np.array(newtraces)
-        
+
         if include_metadata:
             return output_trace, output_metadata
         else:
             return output_trace
-        
+    
