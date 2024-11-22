@@ -370,33 +370,7 @@ class Salting(FilterData):
             
         return salts  
 
-    """
-    def merge_dataframe(self,inputdflist):
-        if len(inputdflist) > 1:
-            pandas_dfs = []
-            
-            for df in inputdflist:
-                # Flatten any multi-dimensional columns to ensure compatibility with pandas
-                for col in df.get_column_names():
-                    if df[col].ndim > 1:
-                        # Convert multi-dimensional columns to a string representation or summary
-                        df[col] = df[col].apply(lambda x: str(x))
-                
-                # Convert the vaex DataFrame to pandas after flattening
-                pandas_dfs.append(df.to_pandas_df())
-            
-            # Concatenate using pandas to handle missing columns and fill NaNs with 0
-            combined_pandas_df = pd.concat(pandas_dfs, axis=0, join='outer').fillna(0)
-            
-            # Convert the result back to a vaex DataFrame
-            mergeddf = vx.from_pandas(combined_pandas_df)
-        else:
-            mergeddf =  inputdflist[0]
-        return mergeddf
-    """
-
-
-    
+       
     def set_dataframe(self, dataframe=None):
         """
         Set raw data path and vaex dataframe 
@@ -422,110 +396,133 @@ class Salting(FilterData):
 
     def get_dataframe(self):
         return self._dataframe
+
     
     def inject_raw_salt(self, channels, trace, seriesID, eventID,
                         include_metadata=False):
         """
-        FIXME
+        Inject salting trace into raw data
         """
-        # initialize salted traces
+        
+        # Initialize salted traces
         newtraces = []
-             
-        # channels 
-        channel_list  = convert_channel_name_to_list(channels)
+
+        # Convert channels to list and name
+        channel_list = convert_channel_name_to_list(channels)
         channel_name = convert_channel_list_to_name(channels)
         nb_channels = len(channel_list)
-
-        # traces -> FIXME...
-        #is_list_input = isinstance(trace, list)
-        #trace_array = np.array(trace[0], copy=False) if is_list_input else trace
-        trace_array = trace
         
-        # convert to 2D
+        # Copy the trace array
+        trace_array = trace.copy()
+
+        # Ensure trace_array is 2D
         if trace_array.ndim == 1:
             trace_array = trace_array.reshape(1, trace_array.shape[-1])
 
-        # check dimensions
+        # Check dimensions
         if nb_channels != trace_array.shape[0]:
-            raise ValueError('ERROR:  number of channels incompatible with array shape!')
-                    
-        # filter dataframe
-        filtered_df = None
-        if ((self._dataframe['event_number'] == eventID).count() > 0
-            and (self._dataframe['series_number'] == seriesID).count() > 0):
-            filtered_df = (
-                self._dataframe[(self._dataframe['event_number'] == eventID)
-                                & (self._dataframe['series_number'] == seriesID)]
-            )
-        else:
-            # no salting needed -> return trace
+            raise ValueError('ERROR: number of channels incompatible with array shape!')
+
+        # Filter the DataFrame for the given eventID and seriesID
+        filtered_df = self._dataframe[
+            (self._dataframe['event_number'] == eventID) &
+            (self._dataframe['series_number'] == seriesID)
+        ]
+
+        # Check if filtered DataFrame is empty
+        if filtered_df.count() == 0:
+            
+            # No salting needed -> return original trace
             if include_metadata:
-                return trace,{}
+                return trace, {}
             else:
                 return trace
-        
-        # loop channels
-        for i, waveform in enumerate(trace_array):
 
-            # channel name
-            chan = channel_list[i]
-            # initialize
+        # Extract common data once
+        common_columns = ['salt_template_tag', 'trigger_index', 'saltchanname', 'salting_type']
+        common_data = {col: filtered_df[col].values for col in common_columns}
+
+        # Cache templates and times for unique combinations
+        unique_tempchan_template_tags = set(zip(common_data['saltchanname'], common_data['salt_template_tag']))
+        template_cache = {}
+        for tempchan, template_tag in unique_tempchan_template_tags:
+            template, times = self.get_template(tempchan, tag=template_tag)
+            template_cache[(tempchan, template_tag)] = (template, times, len(times))
+
+        # Cache tempchan lists and index mappings for tempchans containing '|'
+        tempchan_list_cache = {}
+        tempchan_index_cache = {}
+        for tempchan in set(common_data['saltchanname']):
+            if '|' in tempchan:
+                tempchan_list = convert_channel_name_to_list(tempchan)
+                tempchan_list_cache[tempchan] = tempchan_list
+                tempchan_index_cache[tempchan] = {chan: idx for idx, chan in enumerate(tempchan_list)}
+            else:
+                tempchan_list_cache[tempchan] = None
+                tempchan_index_cache[tempchan] = None
+
+        # Extract salting type once (assuming it's the same for all entries)
+        salting_type = common_data['salting_type'][0]
+
+        # Loop over each channel
+        for idx_channel, waveform in enumerate(trace_array):
+            # Get the channel name
+            chan = channel_list[idx_channel]
+
+            # Initialize the new trace for this channel
             newtrace = np.array(waveform, copy=True)
 
-            # loop row of filter datafame and add salt
-            columns_to_extract = ['salt_template_tag', f'salt_amplitude_{chan}',
-                                  'trigger_index','saltchanname', 'salting_type']
-            n = 0
-            if filtered_df[f'salt_amplitude_{chan}'] is False:
-                print(f'WARNING: No channel {chan}  found in salt df! '
+            # Check if the amplitude column exists for this channel
+            amplitude_column = f'salt_amplitude_{chan}'
+            if amplitude_column not in filtered_df.get_column_names():
+                print(f'WARNING: No channel {chan} found in salt df! '
                       f'Assuming single channel salt and moving on!')
+                newtraces.append(newtrace)
                 continue
 
-            salting_type = None
-            for _, j in filtered_df[columns_to_extract].to_pandas_df().iterrows():
-                n +=1
-                template_tag = j['salt_template_tag']
-                tempchan = j['saltchanname']
-                template,times = self.get_template(tempchan, tag=template_tag)
-                if "|" in tempchan:
-                    tempchan = convert_channel_name_to_list(tempchan)
-                    for i in range(len(channel_list)):
-                        index = tempchan.index(channel_list[i])
-                    temp = template[index][0]
+            # Extract amplitude data for this channel
+            amplitude_data = filtered_df[amplitude_column].values
+
+            # Iterate over the indices of the filtered DataFrame
+            for idx in range(len(filtered_df)):
+                template_tag = common_data['salt_template_tag'][idx]
+                tempchan = common_data['saltchanname'][idx]
+                template, times, nb_samples = template_cache[(tempchan, template_tag)]
+
+                # Handle tempchan containing '|'
+                if '|' in tempchan:
+                    if chan in tempchan_index_cache[tempchan]:
+                        index = tempchan_index_cache[tempchan][chan]
+                        temp = template[index][0]
+                    else:
+                        continue  # Skip if channel not in tempchan_list
                 else:
                     temp = template
-                nb_samples = len(times)
 
-                # amplitude
-                saltamp = j[f'salt_amplitude_{chan}']
-                if pd.isna(saltamp):
+                # Get the amplitude
+                saltamp = amplitude_data[idx]
+                if np.isnan(saltamp):
                     continue
-                
-                # add salting pulse
-                saltpulse = temp * saltamp
-                simtime = j['trigger_index']
-                newtrace[simtime:simtime+nb_samples] += saltpulse
 
-                # get metadata (once)
-                if salting_type is None:
-                    salting_type = j['salting_type']
-               
+                # Add salting pulse
+                saltpulse = temp * saltamp
+                simtime = common_data['trigger_index'][idx]
+                newtrace[simtime:simtime + nb_samples] += saltpulse
+
             newtraces.append(newtrace)
 
-        # return 
-        #if is_list_input:
-        #    return [list(trace) for trace in newtraces]
-        output_metadata = {'salting_type': salting_type,
-                           'series_number': seriesID,
-                           'event_number': eventID}
-
+            
+        # Prepare output metadata
+        output_metadata = {
+            'salting_type': salting_type,
+            'series_number': seriesID,
+            'event_number': eventID
+        }
+        
         output_trace = np.array(newtraces)
-     
+        
         if include_metadata:
             return output_trace, output_metadata
         else:
             return output_trace
         
-       
-        
-
