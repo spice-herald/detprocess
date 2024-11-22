@@ -495,11 +495,16 @@ class Salting(FilterData):
                 else:
                     temp = template
                 nb_samples = len(times)
+
+                # amplitude
                 saltamp = j[f'salt_amplitude_{chan}']
-                saltpulse = temp* saltamp
+                if pd.isna(saltamp):
+                    continue
+                
+                # add salting pulse
+                saltpulse = temp * saltamp
                 simtime = j['trigger_index']
                 newtrace[simtime:simtime+nb_samples] += saltpulse
-
 
                 # get metadata (once)
                 if salting_type is None:
@@ -515,7 +520,7 @@ class Salting(FilterData):
                            'event_number': eventID}
 
         output_trace = np.array(newtraces)
-        
+     
         if include_metadata:
             return output_trace, output_metadata
         else:
