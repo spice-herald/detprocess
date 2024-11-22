@@ -10,7 +10,7 @@ import yaml
 import vaex as vx
 import re
 from qetpy.utils import convert_channel_name_to_list,convert_channel_list_to_name
-
+import gc
 
 warnings.filterwarnings('ignore')
 
@@ -373,6 +373,9 @@ if __name__ == "__main__":
             # cleanup
             del final_dataframe
 
+        # cleanup
+        del salting
+        gc.collect()  # Force garbage collection
     # ====================================
     # Acquire randoms
     # ====================================
@@ -478,6 +481,10 @@ if __name__ == "__main__":
                            save_path=save_path)
 
             trigger_group_path_list.append(myproc.get_output_path())
+
+            # cleanup
+            del myproc
+            gc.collect()  # Force garbage collection
             
     # ------------------
     # Process feature
@@ -527,7 +534,10 @@ if __name__ == "__main__":
                            save_path=save_path)
             
 
-
+            # cleanup
+            del myproc
+            gc.collect()  # Force garbage collection
+            
     # ------------------
     # IV - dIdV sweep
     # processing

@@ -496,8 +496,9 @@ class Salting(FilterData):
                         index = tempchan_list.index(chan)
                         temp = template[index][0]
                     else:
-                        print(f'WARNING: {chan} not part of  {tempchan}. Skipping')
-                        continue  # Skip if channel not in tempchan_list
+                        raise ValueError(f'ERROR in inject function: '
+                                         f'{chan} not part of  salting channel {tempchan}. '
+                                         f'Is this correct?')
                 else:
                     temp = template
                 
