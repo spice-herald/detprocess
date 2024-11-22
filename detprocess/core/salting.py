@@ -15,8 +15,8 @@ from detprocess.core.oftrigger import OptimumFilterTrigger
 from detprocess.process.randoms import Randoms
 from detprocess.core.filterdata import FilterData
 from qetpy.utils import convert_channel_name_to_list,convert_channel_list_to_name
-from scipy.signal import correlate
-from scipy import stats, signal, interpolate, special, integrate
+from pprint import pprint
+
 
 __all__ = [
     'Salting'
@@ -427,28 +427,36 @@ class Salting(FilterData):
             (self._dataframe['series_number'] == seriesID)
         ]
 
+        
         # Check if filtered DataFrame is empty
         if filtered_df.count() == 0:
+           
             # No salting needed -> return original trace
             if include_metadata:
                 return trace, {}
             else:
                 return trace
 
+        # fill empty with nan
+        filtered_df = filtered_df.fillna(value=None)
+            
         # Extract common data once
         common_columns = ['salt_template_tag', 'trigger_index',
                           'saltchanname', 'salting_type']
         common_data = {col: filtered_df[col].values for col in common_columns}
-
+        
+      
         # Extract salting type once (assuming it's the same for all entries)
-        salting_type = common_data['salting_type'][0]
+        salting_types = common_data['salting_type']
+        salting_type = salting_types[0] if len(salting_types) > 0 else None
 
+        
         # Loop over each channel
         for idx_channel, waveform in enumerate(trace_array):
             
             # Get the channel name
             chan = channel_list[idx_channel]
-            
+                    
             # Initialize the new trace for this channel
             newtrace = waveform.copy()
 
@@ -465,6 +473,13 @@ class Salting(FilterData):
             # Iterate over the indices of the filtered DataFrame
             for idx in range(len(filtered_df)):
 
+                # check if amplitude 
+                saltamp = amplitude_data[idx]
+
+                # Check for missing or invalid amplitude
+                if saltamp is None or np.isnan(saltamp):
+                    continue
+                
                 # get data
                 template_tag = str(common_data['salt_template_tag'][idx])
                 tempchan = str(common_data['saltchanname'][idx])
@@ -481,15 +496,11 @@ class Salting(FilterData):
                         index = tempchan_list.index(chan)
                         temp = template[index][0]
                     else:
+                        print(f'WARNING: {chan} not part of  {tempchan}. Skipping')
                         continue  # Skip if channel not in tempchan_list
                 else:
                     temp = template
-
-                # Get the amplitude
-                saltamp = amplitude_data[idx]
-                if np.isnan(saltamp):
-                    continue
-
+                
                 # Add salting pulse
                 saltpulse = temp * saltamp
                 simtime = trigger_index
@@ -505,7 +516,7 @@ class Salting(FilterData):
         }
         
         output_trace = np.array(newtraces)
-
+     
         if include_metadata:
             return output_trace, output_metadata
         else:
