@@ -476,6 +476,8 @@ class Salting(FilterData):
                 # Check for missing or invalid amplitude
                 if np.ma.is_masked(saltamp) or saltamp is None or np.isnan(saltamp):
                     continue
+                else:
+                    saltamp = float(saltamp)
                                
                 # get data
                 template_tag = str(common_data['salt_template_tag'][idx])
