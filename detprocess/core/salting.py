@@ -453,7 +453,7 @@ class Salting(FilterData):
             
             # Get the channel name
             chan = channel_list[idx_channel]
-                    
+                        
             # Initialize the new trace for this channel
             newtrace = waveform.copy()
 
@@ -472,13 +472,18 @@ class Salting(FilterData):
 
                 # check if amplitude 
                 saltamp = amplitude_data[idx]
-
-                # Check for missing or invalid amplitude
-                if np.ma.is_masked(saltamp) or saltamp is None:
+                
+                # Check if saltamp is valid (not null)
+                if saltamp is None or not saltamp.is_valid:
+                    continue  # Skip if saltamp is null
+                
+                # Convert to Python native type
+                saltamp = saltamp.as_py()
+                
+                # Check for NaN
+                if saltamp is None or np.isnan(saltamp):
                     continue
-                else:
-                    saltamp = saltamp.as_py()
-                 
+                                
                 # get data
                 template_tag = str(common_data['salt_template_tag'][idx])
                 tempchan = str(common_data['saltchanname'][idx])
