@@ -437,9 +437,6 @@ class Salting(FilterData):
             else:
                 return trace
 
-        # fill empty with nan
-        filtered_df = filtered_df.fillna(value=None)
-            
         # Extract common data once
         common_columns = ['salt_template_tag', 'trigger_index',
                           'saltchanname', 'salting_type']
@@ -477,9 +474,9 @@ class Salting(FilterData):
                 saltamp = amplitude_data[idx]
 
                 # Check for missing or invalid amplitude
-                if saltamp is None or np.isnan(saltamp):
+                if np.ma.is_masked(saltamp) or saltamp is None or np.isnan(saltamp):
                     continue
-                
+                               
                 # get data
                 template_tag = str(common_data['salt_template_tag'][idx])
                 tempchan = str(common_data['saltchanname'][idx])
