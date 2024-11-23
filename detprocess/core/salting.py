@@ -477,8 +477,8 @@ class Salting(FilterData):
                 if np.ma.is_masked(saltamp) or saltamp is None:
                     continue
                 else:
-                    saltamp = float(saltamp)
-                               
+                    saltamp = saltamp.as_py()
+                 
                 # get data
                 template_tag = str(common_data['salt_template_tag'][idx])
                 tempchan = str(common_data['saltchanname'][idx])
