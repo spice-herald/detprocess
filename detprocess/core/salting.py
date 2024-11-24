@@ -59,6 +59,7 @@ class Salting(FilterData):
         
         # intialize randoms dataframe
         self._dataframe = None
+        self._injecttimes = None
         self._listofdfs = []
 
         # intialize event list
@@ -133,6 +134,9 @@ class Salting(FilterData):
             lgc_output=True,
             ncores=ncores
         )
+        
+        self._injecttimes = self._dataframe
+
             
    
     def set_raw_data_path(self, group_path, series, restricted=False,
@@ -295,9 +299,10 @@ class Salting(FilterData):
                
         # generate the random selections in time 
         sep_time = 1000*nb_samples/self._fs
-        self._generate_randoms(nevents=nevents,
-                               min_separation_msec=sep_time)
-
+        if self._dataframe is None:
+            self._generate_randoms(nevents=nevents,
+                                min_separation_msec=sep_time)
+        nevents = len(self._dataframe)
         # Create channel-specific keys
         for key in base_keys:
             for chan in channel_list:
@@ -359,6 +364,7 @@ class Salting(FilterData):
         for key in salt_var_dict:
             salt_var_dict[key] = salt_var_dict[key][:maxlen]   
         df = vx.from_dict(salt_var_dict)
+        
         self._dataframe = self._dataframe.join(df)
         #if pdf_file:
         #    self._listofdfs.append(self._dataframe)
@@ -396,7 +402,12 @@ class Salting(FilterData):
 
     def get_dataframe(self):
         return self._dataframe
-
+    
+    def clear_dataframe(self):
+        self._dataframe = None
+    
+    def get_injectiontimes(self):
+        return self._injecttimes
 
     def inject_raw_salt(self, channels, trace, seriesID, eventID,
                         include_metadata=False):
