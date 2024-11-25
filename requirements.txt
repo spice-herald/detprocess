@@ -1,5 +1,5 @@
 numpy>=1.14.3
 scipy>=1.1.0
 astropy
-pytesdaq>=0.2.8
+pytesdaq>=0.4.1
 qetpy>=1.7.6
