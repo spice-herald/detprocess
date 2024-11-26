@@ -21,13 +21,40 @@ from detprocess.process.processing_data  import ProcessingData
 from detprocess.core.eventbuilder import EventBuilder
 from detprocess.core.oftrigger import OptimumFilterTrigger
 from detprocess.utils import utils
-
-warnings.filterwarnings('ignore')
-
+import time
+import tracemalloc
+import logging
+import psutil
 
 __all__ = [
     'TriggerProcessing'
 ]
+
+
+# Configure logging
+logging.basicConfig(
+    filename='performance.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+def log_performance(label, start_time=None):
+    """Log performance metrics like time and memory usage."""
+    if start_time:
+        elapsed_time = time.time() - start_time
+        logging.info(f"{label} - Elapsed Time: {elapsed_time:.2f} seconds")
+    snapshot = tracemalloc.take_snapshot()
+    top_stats = snapshot.statistics('lineno')
+    logging.info(f"{label} - Memory Stats:")
+    for stat in top_stats[:5]:  # Log top 5 memory usage lines
+        logging.info(stat)
+
+def log_system_stats(label):
+    """Log system-level stats (memory and CPU usage)."""
+    memory = psutil.virtual_memory()
+    cpu = psutil.cpu_percent(interval=1)  # Average over 1 second
+    logging.info(f"{label} - Memory Usage: {memory.percent}%")
+    logging.info(f"{label} - CPU Usage: {cpu}%")
 
 
 class TriggerProcessing:
@@ -483,7 +510,9 @@ class TriggerProcessing:
             # loop events
             do_stop = False
             while (not do_stop):
-
+                
+                log_system_stats(f'Event loop {trigger_counter}')
+                
                 # -----------------------
                 # Check number events
                 # and memory usage
@@ -509,10 +538,22 @@ class TriggerProcessing:
                 # -----------------------
                 # Read next event
                 # -----------------------                
+
+                start_time = time.time()
+                tracemalloc.start()
+                
                 success = self._processing_data_inst.read_next_event(
                     channels=self._trigger_channels
                 )
 
+                log_performance(f'Read trigger {trigger_counter}', start_time)
+                tracemalloc.stop()
+
+                
+                end_time = time.time()
+                elapsed_time = end_time - start_time
+
+                
                 # end of file or raw data issue
                 if not success:
                     print('INFO' + node_num_str
@@ -527,7 +568,8 @@ class TriggerProcessing:
                 # reached
                 # -----------------------
 
-                                
+                start_time = time.time()
+                tracemalloc.start()           
                 # let's handle case we need to stop
                 # or memory/nb events limit reached
                 if (do_stop
@@ -589,7 +631,9 @@ class TriggerProcessing:
                             +'(lgc_save=True AND lgc_output=False) '
                         )
                     
-                                
+                log_performance(f'Save trigger dataframe {trigger_counter}', start_time)
+                tracemalloc.stop()
+             
                 # check if stop
                 if do_stop:
                     break
@@ -598,7 +642,10 @@ class TriggerProcessing:
                 # -----------------------
                 # process triggers
                 # -----------------------
+                start_time = time.time()
+                tracemalloc.start()
 
+                
                 # clear event
                 evtbuilder_inst.clear_event()
 
@@ -706,7 +753,9 @@ class TriggerProcessing:
                 else:
                     process_df = vx.concat([process_df, event_df])
 
-
+                log_performance(f'Process trigger {trigger_counter}', start_time)
+                tracemalloc.stop()
+             
 
         # cleanup
         del evtbuilder_inst
