@@ -21,7 +21,10 @@ import copy
 from detprocess.core.algorithms  import FeatureExtractors
 from detprocess.process.processing_data  import ProcessingData
 from detprocess.utils import utils
-
+import time
+import tracemalloc
+import logging
+import psutil
 import pytesdaq.io as h5io
 warnings.filterwarnings('ignore')
 
@@ -29,6 +32,51 @@ warnings.filterwarnings('ignore')
 __all__ = [
     'FeatureProcessing'
 ]
+
+
+
+def setup_logger(node_num):
+    """
+    Configure a logger for each node.
+    """
+    logger = logging.getLogger(f"Node_{node_num}")
+    logger.setLevel(logging.INFO)
+    handler = logging.FileHandler(f'feature_log_node_{node_num}.log', mode='w')
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    return logger
+
+
+
+def log_performance(label, start_time=None, logger=None):
+    """
+    Log performance metrics like time and memory usage.
+    """
+    if logger is None:
+        logger = logging.getLogger()  # Default to root logger if none provided
+    if start_time:
+        elapsed_time = time.time() - start_time
+        logger.info(f"{label} - Elapsed Time: {elapsed_time:.2f} seconds")
+    snapshot = tracemalloc.take_snapshot()
+    top_stats = snapshot.statistics('lineno')
+    logger.info(f"{label} - Memory Stats:")
+    for stat in top_stats[:5]:  # Log top 5 memory usage lines
+        logger.info(stat)
+
+def log_system_stats(label, logger=None):
+    """
+    Log system-level stats (memory and CPU usage).
+    """
+    if logger is None:
+        logger = logging.getLogger()  # Default to root logger if none provided
+    memory = psutil.virtual_memory()
+    cpu = psutil.cpu_percent(interval=1)  # Average over 1 second
+    logger.info(f"{label} - Memory Usage: {memory.percent}%")
+    logger.info(f"{label} - CPU Usage: {cpu}%")
+
+
+
 
 class FeatureProcessing:
     """
@@ -431,7 +479,12 @@ class FeatureProcessing:
         node_num_str = str()
         if node_num>-1:
             node_num_str = ' Node #' + str(node_num)
-    
+
+        # logging
+        logger = setup_logger(node_num)
+
+
+            
         # feature extractors
         FE = FeatureExtractors
         FE_ext = None
@@ -512,11 +565,19 @@ class FeatureProcessing:
                 # Read next event
                 # -----------------------
 
+                start_time = time.time()
+                tracemalloc.start()
+
+                
                 success = self._processing_data.read_next_event(
                     channels=self._selected_channels,
                     traces_config=self._traces_config
                 )
 
+                log_performance(f'Read event {event_counter}', start_time, logger)
+                tracemalloc.stop()
+
+                
                 # end of file
                 if not success:
                     do_stop = True
@@ -591,6 +652,12 @@ class FeatureProcessing:
                 # Features calculation
                 # -----------------------
 
+                
+                start_time = time.time()
+                tracemalloc.start()
+
+
+                
                 # initialize event features dictionary
                 event_features = dict()
 
@@ -758,6 +825,10 @@ class FeatureProcessing:
                 event_df = pd.DataFrame([event_features])
                 feature_df = pd.concat([feature_df, event_df],
                                        ignore_index=True)
+
+
+                log_performance(f'Process event done  {event_counter}', start_time, logger)
+                tracemalloc.stop()
                          
         # return features
         return feature_df

@@ -30,31 +30,45 @@ __all__ = [
     'TriggerProcessing'
 ]
 
+def setup_logger(node_num):
+    """
+    Configure a logger for each node.
+    """
+    logger = logging.getLogger(f"Node_{node_num}")
+    logger.setLevel(logging.INFO)
+    handler = logging.FileHandler(f'trigger_log_node_{node_num}.log', mode='w')
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    return logger
 
-# Configure logging
-logging.basicConfig(
-    filename='performance.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
 
-def log_performance(label, start_time=None):
-    """Log performance metrics like time and memory usage."""
+
+def log_performance(label, start_time=None, logger=None):
+    """
+    Log performance metrics like time and memory usage.
+    """
+    if logger is None:
+        logger = logging.getLogger()  # Default to root logger if none provided
     if start_time:
         elapsed_time = time.time() - start_time
-        logging.info(f"{label} - Elapsed Time: {elapsed_time:.2f} seconds")
+        logger.info(f"{label} - Elapsed Time: {elapsed_time:.2f} seconds")
     snapshot = tracemalloc.take_snapshot()
     top_stats = snapshot.statistics('lineno')
-    logging.info(f"{label} - Memory Stats:")
+    logger.info(f"{label} - Memory Stats:")
     for stat in top_stats[:5]:  # Log top 5 memory usage lines
-        logging.info(stat)
+        logger.info(stat)
 
-def log_system_stats(label):
-    """Log system-level stats (memory and CPU usage)."""
+def log_system_stats(label, logger=None):
+    """
+    Log system-level stats (memory and CPU usage).
+    """
+    if logger is None:
+        logger = logging.getLogger()  # Default to root logger if none provided
     memory = psutil.virtual_memory()
     cpu = psutil.cpu_percent(interval=1)  # Average over 1 second
-    logging.info(f"{label} - Memory Usage: {memory.percent}%")
-    logging.info(f"{label} - CPU Usage: {cpu}%")
+    logger.info(f"{label} - Memory Usage: {memory.percent}%")
+    logger.info(f"{label} - CPU Usage: {cpu}%")
 
 
 class TriggerProcessing:
@@ -394,7 +408,11 @@ class TriggerProcessing:
         if node_num>-1:
             node_num_str = ' node #' + str(node_num)
 
-      
+
+        # logging
+        logger = setup_logger(node_num)
+
+            
         # instantiate event builder
         evtbuilder_inst = EventBuilder()
               
@@ -511,7 +529,7 @@ class TriggerProcessing:
             do_stop = False
             while (not do_stop):
                 
-                log_system_stats(f'Event loop {trigger_counter}')
+                log_system_stats(f'Event loop {trigger_counter}', logger)
                 
                 # -----------------------
                 # Check number events
@@ -546,7 +564,7 @@ class TriggerProcessing:
                     channels=self._trigger_channels
                 )
 
-                log_performance(f'Read trigger {trigger_counter}', start_time)
+                log_performance(f'Read trigger {trigger_counter}', start_time, logger)
                 tracemalloc.stop()
 
                 
@@ -631,7 +649,7 @@ class TriggerProcessing:
                             +'(lgc_save=True AND lgc_output=False) '
                         )
                     
-                log_performance(f'Save trigger dataframe {trigger_counter}', start_time)
+                log_performance(f'Save trigger dataframe {trigger_counter}', start_time, logger)
                 tracemalloc.stop()
              
                 # check if stop
@@ -753,7 +771,7 @@ class TriggerProcessing:
                 else:
                     process_df = vx.concat([process_df, event_df])
 
-                log_performance(f'Process trigger {trigger_counter}', start_time)
+                log_performance(f'Process trigger {trigger_counter}', start_time, logger)
                 tracemalloc.stop()
              
 
