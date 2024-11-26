@@ -16,6 +16,7 @@ from detprocess.process.randoms import Randoms
 from detprocess.core.filterdata import FilterData
 from qetpy.utils import convert_channel_name_to_list,convert_channel_list_to_name
 from pprint import pprint
+import pyarrow
 
 
 __all__ = [
@@ -451,9 +452,21 @@ class Salting(FilterData):
         # Extract common data once
         common_columns = ['salt_template_tag', 'trigger_index',
                           'saltchanname', 'salting_type']
-        common_data = {col: filtered_df[col].values for col in common_columns}
         
-      
+        common_data = {}
+        for col in common_columns:
+
+            # Extract data as NumPy arrays
+            data = filtered_df.evaluate(col, array_type='numpy')
+
+            # Check if data is a masked array
+            if np.ma.isMaskedArray(data):
+                # Fill masked values with np.nan
+                data = data.filled(None)
+
+            common_data[col] = data
+        
+
         # Extract salting type once (assuming it's the same for all entries)
         salting_types = common_data['salting_type']
         salting_type = salting_types[0] if len(salting_types) > 0 else None
@@ -476,24 +489,21 @@ class Salting(FilterData):
                 continue
 
             # Extract amplitude data for this channel
-            amplitude_data = filtered_df[amplitude_column].values
+            amplitude_data = filtered_df.evaluate(amplitude_column, array_type='numpy')
+            if np.ma.isMaskedArray(amplitude_data):
+                amplitude_data = amplitude_data.filled(np.nan)
 
             # Iterate over the indices of the filtered DataFrame
             for idx in range(len(filtered_df)):
 
                 # check if amplitude 
                 saltamp = amplitude_data[idx]
-                
-                # Check if saltamp is valid (not null)
-                if saltamp is None or not saltamp.is_valid:
-                    continue  # Skip if saltamp is null
-                
-                # Convert to Python native type
-                saltamp = saltamp.as_py()
-                
-                # Check for NaN
-                if saltamp is None or np.isnan(saltamp):
+
+                # Check for missing or invalid amplitude
+                if np.isnan(saltamp):
                     continue
+                else:
+                    saltamp = float(saltamp)
                                 
                 # get data
                 template_tag = str(common_data['salt_template_tag'][idx])
