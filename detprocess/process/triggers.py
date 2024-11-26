@@ -705,13 +705,15 @@ class TriggerProcessing:
                     process_df = event_df
                 else:
                     process_df = vx.concat([process_df, event_df])
-                    
+
+
+
+        # cleanup
+        del evtbuilder_inst
                     
         # return features
         return process_df
-       
-
-
+    
         
         
     def _get_file_list(self, file_path, series=None,

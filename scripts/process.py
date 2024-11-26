@@ -10,7 +10,7 @@ import yaml
 import vaex as vx
 import re
 from qetpy.utils import convert_channel_name_to_list,convert_channel_list_to_name
-
+import gc
 
 warnings.filterwarnings('ignore')
 
@@ -276,7 +276,13 @@ if __name__ == "__main__":
         if 'nsalt' in salting_dict:
             nsalt = salting_dict['nsalt']
             salting_dict.pop('nsalt')
-
+          
+        coincident_salts = False
+        if "coincident_salts" in salting_dict:
+            coincident_salts = salting_dict['coincident_salts']
+            print(f'INFO: Salt time coincidence between channels has been set to {coincident_salts}!')
+            salting_dict.pop('coincident_salts')
+        
         # DM pdf
         pdf_file = None
         if 'dm_pdf_file' in salting_dict:
@@ -320,6 +326,7 @@ if __name__ == "__main__":
 
             # intialize dataframe list for channel
             chan_dataframe_list = []
+            i = 0
             for chan, chan_config in salting_dict.items():
 
                 # check if multi-channel
@@ -337,6 +344,10 @@ if __name__ == "__main__":
                 elif len(chan_list) >=2:
                     pce = [pce]*len(chan_list)
 
+                coinchan = False
+                if coincident_salts is True and i > 0:
+                    coincidenttimes_dataframe = salting.get_injectiontimes()
+                    salting.set_dataframe(coincidenttimes_dataframe)
                 # generate salt
                 salting.generate_salt(chan,
                                       noise_tag=noise_tag,
@@ -348,8 +359,11 @@ if __name__ == "__main__":
                                       PCE=pce,
                                       nevents=nsalt)
                 
+                
                 salting_dataframe = salting.get_dataframe()
                 chan_dataframe_list.append(salting_dataframe)
+                i += 1
+                salting.clear_dataframe()
 
             # concatanate if needed
             final_dataframe = chan_dataframe_list[0]
@@ -373,6 +387,9 @@ if __name__ == "__main__":
             # cleanup
             del final_dataframe
 
+        # cleanup
+        del salting
+        gc.collect()  # Force garbage collection
     # ====================================
     # Acquire randoms
     # ====================================
@@ -478,6 +495,10 @@ if __name__ == "__main__":
                            save_path=save_path)
 
             trigger_group_path_list.append(myproc.get_output_path())
+
+            # cleanup
+            del myproc
+            gc.collect()  # Force garbage collection
             
     # ------------------
     # Process feature
@@ -527,7 +548,10 @@ if __name__ == "__main__":
                            save_path=save_path)
             
 
-
+            # cleanup
+            del myproc
+            gc.collect()  # Force garbage collection
+            
     # ------------------
     # IV - dIdV sweep
     # processing
