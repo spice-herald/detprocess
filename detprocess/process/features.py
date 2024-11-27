@@ -762,6 +762,7 @@ class FeatureProcessing:
                                        ignore_index=True)
                          
         # return features
+        print(f'INFO {node_num_str}: Processing done. Returning dataframe!')
         return feature_df
        
         
