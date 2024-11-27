@@ -21,7 +21,7 @@ from detprocess.process.processing_data  import ProcessingData
 from detprocess.core.eventbuilder import EventBuilder
 from detprocess.core.oftrigger import OptimumFilterTrigger
 from detprocess.utils import utils
-
+vx.multithreading.thread_count = 1
 warnings.filterwarnings('ignore')
 
 
@@ -367,6 +367,9 @@ class TriggerProcessing:
         if node_num>-1:
             node_num_str = ' node #' + str(node_num)
 
+
+        # salting dataframe
+        self._processing_data_inst.load_salting_dataframe()
       
         # instantiate event builder
         evtbuilder_inst = EventBuilder()

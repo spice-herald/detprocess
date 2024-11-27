@@ -21,10 +21,9 @@ import copy
 from detprocess.core.algorithms  import FeatureExtractors
 from detprocess.process.processing_data  import ProcessingData
 from detprocess.utils import utils
-
 import pytesdaq.io as h5io
 warnings.filterwarnings('ignore')
-
+vx.multithreading.thread_count = 1
 
 __all__ = [
     'FeatureProcessing'
@@ -210,7 +209,7 @@ class FeatureProcessing:
         )
 
         # instantiate processing data
-        self._processing_data = ProcessingData(
+        self._processing_data_inst = ProcessingData(
             raw_path,
             raw_files,
             group_name=group_name,
@@ -223,7 +222,7 @@ class FeatureProcessing:
 
         # cleaup filter data tags cleanup
         self._processing_config = (
-            self._processing_data.check_filter_data_tags(
+            self._processing_data_inst.check_filter_data_tags(
                 self._processing_config,
                 default_tag='default'
             )
@@ -293,7 +292,7 @@ class FeatureProcessing:
         
         if lgc_save:
             if  save_path is None:
-                save_path  = self._processing_data.get_raw_path()
+                save_path  = self._processing_data_inst.get_raw_path()
                 if '/raw' in save_path:
                     save_path = save_path.replace('/raw','/processed')
                 if 'processed' not in save_path:
@@ -307,7 +306,7 @@ class FeatureProcessing:
             output_group_path, output_series_num = (
                 self._create_output_directory(
                     save_path,
-                    self._processing_data.get_facility(),
+                    self._processing_data_inst.get_facility(),
                     restricted=self._restricted,
                     calib=self._calib
                 )
@@ -322,7 +321,7 @@ class FeatureProcessing:
         if self._verbose:
             print('INFO: Instantiate OF base for each channel!')
 
-        self._processing_data.instantiate_OF_base(self._processing_config)
+        self._processing_data_inst.instantiate_OF_base(self._processing_config)
             
         # convert memory usage in bytes
         if isinstance(memory_limit, str):
@@ -431,7 +430,10 @@ class FeatureProcessing:
         node_num_str = str()
         if node_num>-1:
             node_num_str = ' Node #' + str(node_num)
-    
+
+        # load salting dataframe
+        self._processing_data_inst.load_salting_dataframe()
+                    
         # feature extractors
         FE = FeatureExtractors
         FE_ext = None
@@ -475,7 +477,7 @@ class FeatureProcessing:
 
             
             # set file list
-            self._processing_data.set_series(series)
+            self._processing_data_inst.set_series(series)
 
             # loop events
             do_stop = False
@@ -512,7 +514,7 @@ class FeatureProcessing:
                 # Read next event
                 # -----------------------
 
-                success = self._processing_data.read_next_event(
+                success = self._processing_data_inst.read_next_event(
                     channels=self._selected_channels,
                     traces_config=self._traces_config
                 )
@@ -596,7 +598,7 @@ class FeatureProcessing:
 
                 # update signal trace in OF base objects
                 # -> calculate FFTs, etc.
-                self._processing_data.update_signal_OF(
+                self._processing_data_inst.update_signal_OF(
                     weights=self._weights
                 )
               
@@ -607,13 +609,13 @@ class FeatureProcessing:
 
                 # admin data
                 event_features.update(
-                    self._processing_data.get_event_admin()
+                    self._processing_data_inst.get_event_admin()
                 )
 
                 # Detector settings
                 for channel in self._processing_config.keys():
                     event_features.update(
-                    self._processing_data.get_channel_settings(channel)
+                    self._processing_data_inst.get_channel_settings(channel)
                     )
 
           
@@ -635,9 +637,9 @@ class FeatureProcessing:
                         feature_channel = algorithms['feature_channel']
 
                     # number of samples raw data
-                    nb_samples = self._processing_data.get_nb_samples()
+                    nb_samples = self._processing_data_inst.get_nb_samples()
                     nb_pretrigger_samples = (
-                        self._processing_data.get_nb_pretrigger_samples()
+                        self._processing_data_inst.get_nb_pretrigger_samples()
                     )
 
                     # weights
@@ -698,7 +700,7 @@ class FeatureProcessing:
                         # add various parameters that may be needed
                         # by the algoithm
                         kwargs['fs'] = (
-                            self._processing_data.get_sample_rate()
+                            self._processing_data_inst.get_sample_rate()
                         )
 
                         if 'nb_samples' not in kwargs:
@@ -726,7 +728,7 @@ class FeatureProcessing:
                         key_tuple = (nb_samples_algorithm,
                                      nb_pretrigger_samples_algorithm)
                         
-                        OF_base = self._processing_data.get_OF_base(
+                        OF_base = self._processing_data_inst.get_OF_base(
                             key_tuple, algorithm)
                                                   
                         if OF_base is not None:
@@ -734,7 +736,7 @@ class FeatureProcessing:
                                                            OF_base,
                                                            **kwargs)
                         else:
-                            trace = self._processing_data.get_channel_trace(
+                            trace = self._processing_data_inst.get_channel_trace(
                                 channel,
                                 nb_samples=nb_samples_algorithm,
                                 nb_pretrigger_samples=(
