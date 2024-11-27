@@ -112,6 +112,8 @@ class ProcessingData:
         # salting
         self._salting_dataframe = salting_dataframe
         self._salting_inst = None
+        if  salting_dataframe is not None:
+             self._salting_inst = Salting(filter_file, didv_file=None)
         
         
     @property
@@ -124,18 +126,16 @@ class ProcessingData:
         Load salting dataframe
         """
 
-        salting_dataframe = self._salting_dataframe
-        if salting_dataframe is None:
+        if self._salting_dataframe is None:
             return
 
         # load
-        if isinstance(salting_dataframe, str):
+        if isinstance(self._salting_dataframe, str):
             salting_dataframe = vx.open(self._salting_dataframe)
-        elif not isinstance(salting_dataframe, vx.dataframe.DataFrame):
+        elif not isinstance(self._salting_dataframe, vx.dataframe.DataFrame):
             raise ValueError(f'ERROR: unrecognized salting dataframe '
                              f'{salting_dataframe} argument!')
-            
-        self._salting_inst = Salting(self._filter_file, didv_file=None)
+        
         self._salting_inst.set_dataframe(salting_dataframe)
     
     def instantiate_OF_base(self, processing_config, channel=None):

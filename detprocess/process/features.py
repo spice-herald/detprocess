@@ -543,9 +543,10 @@ class FeatureProcessing:
                         file_name =  output_base_file +  dump_str + '.hdf5'
                     
                         # convert to vaex
+                        feature_df =  feature_df.copy()
                         feature_vx = vx.from_pandas(
                             feature_df,
-                            copy_index=False)
+                            copy_index=True)
 
 
                         # export
@@ -763,7 +764,7 @@ class FeatureProcessing:
                          
         # return features
         print(f'INFO {node_num_str}: Processing done. Returning dataframe!')
-        return feature_df
+        return feature_df.copy()
        
         
     def _get_file_list(self, file_path,
