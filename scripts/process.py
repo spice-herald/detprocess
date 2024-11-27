@@ -12,13 +12,17 @@ import re
 from qetpy.utils import convert_channel_name_to_list,convert_channel_list_to_name
 import gc
 import multiprocessing
+warnings.filterwarnings('ignore')
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 if __name__ == "__main__":
 
     # multi processing
     multiprocessing.set_start_method('spawn')
 
-
+    # vaex
+    vx.multithreading.thread_count = 1
+    
     # ------------------
     # Input arguments
     # ------------------

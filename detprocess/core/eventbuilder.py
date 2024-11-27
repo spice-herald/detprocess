@@ -2,6 +2,10 @@ import numpy as np
 import os
 import vaex as vx
 import pandas as pd
+import warnings
+warnings.filterwarnings('ignore')
+
+
 
 class EventBuilder:
     """
