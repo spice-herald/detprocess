@@ -11,11 +11,13 @@ import vaex as vx
 import re
 from qetpy.utils import convert_channel_name_to_list,convert_channel_list_to_name
 import gc
-
-warnings.filterwarnings('ignore')
-
+import multiprocessing
 
 if __name__ == "__main__":
+
+    # multi processing
+    multiprocessing.set_start_method('spawn')
+
 
     # ------------------
     # Input arguments
@@ -162,6 +164,7 @@ if __name__ == "__main__":
 
     # check raw data path
     raw_group_path = args.raw_group_path
+    raw_group_path = os.path.normpath(raw_group_path)
     if not os.path.isdir(raw_group_path):
         print(f'ERROR: Raw data directory '
               f'"{raw_group_path} not found!')
@@ -176,8 +179,6 @@ if __name__ == "__main__":
         save_path = os.path.dirname(raw_group_path) + '/processed'
         if '/raw/processed' in save_path:
             save_path = save_path.replace('/raw/processed', '/processed')
-            
-
         
     # ------------------
     # check setup file

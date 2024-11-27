@@ -23,7 +23,8 @@ from detprocess.process.processing_data  import ProcessingData
 from detprocess.utils import utils
 import pytesdaq.io as h5io
 warnings.filterwarnings('ignore')
-vx.multithreading.thread_count = 1
+import gc
+
 
 __all__ = [
     'FeatureProcessing'
@@ -233,7 +234,7 @@ class FeatureProcessing:
                 lgc_save=False, save_path=None,
                 lgc_output=False, 
                 ncores=1,
-                memory_limit='1GB'):
+                memory_limit='500MB'):
         
         """
         Process data 
@@ -426,6 +427,9 @@ class FeatureProcessing:
    
         """
 
+        # set vaex single thread
+        vx.multithreading.thread_count = 1
+         
         # node string (for display)
         node_num_str = str()
         if node_num>-1:
@@ -466,7 +470,8 @@ class FeatureProcessing:
 
         # initialize data frame
         feature_df = pd.DataFrame()
-            
+        event_rows = []
+        
         # loop series
         for series in series_list:
 
@@ -492,23 +497,25 @@ class FeatureProcessing:
                 nevents_limit_reached = (nevents>0 and event_counter>=nevents)
                 
                 # flag memory limit reached
-                memory_usage = feature_df.memory_usage(deep=True).sum()
-                memory_limit_reached =  memory_usage  >= memory_limit
+                memory_limit_reached = False
+                if event_rows:
+                    memory_usage = sum(sys.getsizeof(row) for row in event_rows)
+                    memory_limit_reached =  memory_usage  >= memory_limit
         
                 # display
                 if self._verbose:
+                    
                     if (event_counter%100==0 and event_counter!=0):
                         print('INFO' + node_num_str
                               + ': Local number of events = '
                               + str(event_counter)
                               + ' (memory = ' + str(memory_usage/1e6) + ' MB)')
-                              
-                    if (event_counter%1000==0 and event_counter!=0):
+
                         time_running = time.time() - start_time
                         speed = event_counter/time_running
                         print('INFO' + node_num_str
                               + ': Speed = '
-                              + f'{speed:.4e}' + ' events per second')
+                              + f'{speed:.4f}' + ' events per second')
                         
                 # -----------------------
                 # Read next event
@@ -524,7 +531,8 @@ class FeatureProcessing:
                     do_stop = True
             
                 # -----------------------
-                # save file if needed
+                # Handle stop or
+                # memory limit
                 # -----------------------
                 
                 # now let's handle case we need to stop
@@ -533,6 +541,10 @@ class FeatureProcessing:
                 if (do_stop
                     or nevents_limit_reached
                     or memory_limit_reached):
+
+                    # convert to pandas
+                    feature_df = pd.DataFrame(event_rows)
+                    event_rows = []
                     
                     # save file if needed
                     if lgc_save:
@@ -543,15 +555,15 @@ class FeatureProcessing:
                         file_name =  output_base_file +  dump_str + '.hdf5'
                     
                         # convert to vaex
-                        feature_df =  feature_df.copy()
+                        feature_df = feature_df.reset_index(drop=True)
                         feature_vx = vx.from_pandas(
                             feature_df,
-                            copy_index=True)
-
+                            copy_index=False)
 
                         # export
                         feature_vx.export_hdf5(file_name,
                                                mode='w')
+                        feature_vx.close()
                         
                         # increment dump
                         dump_counter += 1
@@ -559,11 +571,13 @@ class FeatureProcessing:
                             print('INFO' + node_num_str
                                   + ': Incrementing dump number')
 
-                        # initialize
-                        del feature_df
-                        feature_df = pd.DataFrame()
+                        # clean up
+                        del feature_df,  feature_vx
+                        gc.collect()
 
-                        
+                        # initialize 
+                        feature_df = pd.DataFrame()
+                                            
                     # case maximum number of events reached
                     # -> processing done!
                     if nevents_limit_reached:
@@ -571,6 +585,7 @@ class FeatureProcessing:
                             print('INFO' + node_num_str
                                   + ': Requested nb events reached. '
                                   + 'Stopping processing!')
+                            
                         return feature_df
 
                     # case memory limit reached and not saving file
@@ -756,15 +771,13 @@ class FeatureProcessing:
                             )
 
                             
-                # done processing event!
-                # append event dictionary to dataframe
-                event_df = pd.DataFrame([event_features])
-                feature_df = pd.concat([feature_df, event_df],
-                                       ignore_index=True)
-                         
+                # done processing event! 
+                # append event dictionary to list
+                event_rows.append(event_features)
+                                         
         # return features
         print(f'INFO {node_num_str}: Processing done. Returning dataframe!')
-        return feature_df.copy()
+        return feature_df
        
         
     def _get_file_list(self, file_path,
