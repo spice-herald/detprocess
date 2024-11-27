@@ -9,7 +9,7 @@ from glob import glob
 from detprocess.utils import utils
 from detprocess.core import FilterData, Salting
 import copy
-
+vx.multithreading.thread_count = 1
 
 __all__ = [
     'ProcessingData'
@@ -70,11 +70,11 @@ class ProcessingData:
 
         # filter data
         self._filter_data = None
+        self._filter_file = filter_file
         if filter_file is not None:
             self._filter_data = FilterData()
             self._filter_data.load_hdf5(filter_file, overwrite=True)
-
-         
+              
         # initialize vaex dataframe
         self._dataframe = None
         self._is_trigger_dataframe = False
@@ -110,23 +110,34 @@ class ProcessingData:
         self._available_channels =  available_channels
 
         # salting
+        self._salting_dataframe = salting_dataframe
         self._salting_inst = None
-        if salting_dataframe is not None:
-
-            if isinstance(salting_dataframe, str):
-                salting_dataframe = vx.open(salting_dataframe)
-            elif not isinstance(salting_dataframe, vx.dataframe.DataFrame):
-                raise ValueError(f'ERROR: unrecognized salting dataframe '
-                                 f'{salting_dataframe} argument!')
-            
-            self._salting_inst = Salting(filter_file, didv_file=None)
-            self._salting_inst.set_dataframe(salting_dataframe)
-
+        if  salting_dataframe is not None:
+             self._salting_inst = Salting(filter_file, didv_file=None)
+        
         
     @property
     def verbose(self):
         return self._verbose
 
+
+    def load_salting_dataframe(self):
+        """
+        Load salting dataframe
+        """
+
+        if self._salting_dataframe is None:
+            return
+
+        # load
+        if isinstance(self._salting_dataframe, str):
+            salting_dataframe = vx.open(self._salting_dataframe)
+        elif not isinstance(self._salting_dataframe, vx.dataframe.DataFrame):
+            raise ValueError(f'ERROR: unrecognized salting dataframe '
+                             f'{salting_dataframe} argument!')
+        
+        self._salting_inst.set_dataframe(salting_dataframe)
+    
     def instantiate_OF_base(self, processing_config, channel=None):
         """
         Instantiate QETpy OF base class, perform pre-calculations
