@@ -234,7 +234,7 @@ class FeatureProcessing:
                 lgc_save=False, save_path=None,
                 lgc_output=False, 
                 ncores=1,
-                memory_limit='500MB'):
+                memory_limit='1GB'):
         
         """
         Process data 
