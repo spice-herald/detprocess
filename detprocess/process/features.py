@@ -1141,7 +1141,6 @@ class FeatureProcessing:
 
 
     def _create_output_directory(self, base_path, facility=None,
-                                 series_name=None,
                                  restricted=False,
                                  calib=False,
                                  output_series_name=None):
