@@ -1,6 +1,7 @@
 import os
 import sys
 import numpy as np
+from pathlib import Path
 from scipy.optimize import curve_fit
 import yaml
 import copy
@@ -12,10 +13,12 @@ from qetpy.utils import convert_channel_name_to_list, convert_channel_list_to_na
 import vaex as vx
 from datetime import datetime
 import stat
+from glob import glob
+
 
 __all__ = ['split_channel_name', 'extract_window_indices',
            'find_linear_segment', 'create_directory', 'create_series_name',
-           'read_config']
+           'read_config', 'get_dataframe_series_list']
 
 
     
@@ -860,3 +863,52 @@ def _rename_key_recursively(d, old_key, new_key):
 
 
 
+def get_dataframe_series_list(file_path):
+    """
+    Get list of series of all files in data_path
+        
+    Parameters
+    ----------
+
+    file_path : str
+       path to dataframe(s) 
+
+
+    Return
+    -------
+    
+     series_list : list of series name
+    
+    """
+    
+    # check argument
+    if not os.path.isdir(file_path):
+        raise ValueError('ERROR: Expecting a directory!')
+
+    
+    # initialize output
+    series_list = []
+
+    # get all files
+    file_list =  glob(file_path + '/*.hdf5')
+    if not file_list:
+        raise ValueError(f'ERROR: No HDF5 files found in {self._raw_path}')
+    
+    # make unique and sort
+    file_list = list(set(file_list))
+    file_list.sort()
+        
+    # loop file
+    for afile in file_list:
+        aname = str(Path(afile).name)
+        sep_start = aname.find('_I')
+        sep_end = aname.find('_F')
+        series_name = aname[sep_start+1:sep_end]
+        
+        if series_name not in series_list:
+            series_list.append(series_name)
+            
+    return series_list
+
+
+       

@@ -45,6 +45,7 @@ class FeatureProcessing:
     def __init__(self, raw_path, config_file,
                  series=None,
                  trigger_dataframe_path=None,
+                 trigger_series=None,
                  external_file=None,
                  processing_id=None,
                  restricted=False,
@@ -112,7 +113,7 @@ class FeatureProcessing:
                                          'exttrig']
         # processing id
         self._processing_id = processing_id
-
+           
         # restricted data
         self._restricted = restricted
 
@@ -123,21 +124,11 @@ class FeatureProcessing:
         
         # display
         self._verbose = verbose
-        
-        # series argument (FIXME: filter solely based raw data series?)
-        #  -> raw data series if no dataframe
-        #  -> dataframe series if trigger_dataframe_path
-        raw_series = None
-        dataframe_series = None
-        if trigger_dataframe_path is not None:
-            dataframe_series = series
-        else:
-            raw_series = series 
-             
+                 
         # Raw file list
         raw_files, raw_path, group_name = (
             self._get_file_list(raw_path,
-                                series=raw_series,
+                                series=series,
                                 restricted=restricted,
                                 calib=calib)
         )
@@ -157,7 +148,7 @@ class FeatureProcessing:
                    
             trigger_files, trigger_path, trigger_group_name = (
                 self._get_file_list(trigger_dataframe_path,
-                                    series=dataframe_series,
+                                    series=trigger_series,
                                     is_raw=False,
                                     restricted=restricted,
                                     calib=calib)
@@ -167,7 +158,6 @@ class FeatureProcessing:
                                  f'Check configuration...')
             
             self._series_list = list(trigger_files.keys())
-
 
         # get list of available channels in raw data
         available_channels = self._get_channel_list(raw_files)
@@ -186,7 +176,7 @@ class FeatureProcessing:
         self._selected_channels = selected_channels
         self._traces_config = traces_config
         self._weights = weights
-        
+
         # check channels to be processed
         if not self._selected_channels:
             raise ValueError('No channels to be processed! ' +
@@ -232,6 +222,8 @@ class FeatureProcessing:
     def process(self,
                 nevents=-1,
                 lgc_save=False, save_path=None,
+                output_series_name=None,
+                subprocess_num=None,
                 lgc_output=False, 
                 ncores=1,
                 memory_limit='1GB'):
@@ -303,13 +295,14 @@ class FeatureProcessing:
             if self._input_group_name not in save_path:
                 save_path = save_path + '/' + self._input_group_name
 
-                    
+            
             output_group_path, output_series_num = (
                 self._create_output_directory(
                     save_path,
                     self._processing_data_inst.get_facility(),
                     restricted=self._restricted,
-                    calib=self._calib
+                    calib=self._calib,
+                    output_series_name=output_series_name,
                 )
             )
             
@@ -340,7 +333,8 @@ class FeatureProcessing:
                                       lgc_output,
                                       output_series_num,
                                       output_group_path,
-                                      memory_limit)
+                                      memory_limit,
+                                      subprocess_num)
 
         else:
             
@@ -366,7 +360,8 @@ class FeatureProcessing:
                                               repeat(lgc_output),
                                               repeat(output_series_num),
                                               repeat(output_group_path),
-                                              repeat(memory_limit)))
+                                              repeat(memory_limit),
+                                              repeat(subprocess_num)))
             pool.close()
             pool.join()
 
@@ -388,7 +383,8 @@ class FeatureProcessing:
                  lgc_output,
                  output_series_num,
                  output_group_path,
-                 memory_limit):
+                 memory_limit,
+                 subprocess_num):
         """
         Process data
         
@@ -459,11 +455,16 @@ class FeatureProcessing:
             series_name = h5io.extract_series_name(
                 int(output_series_num+node_num)
             )
-                    
+
+            if subprocess_num is not None:
+                series_name = h5io.extract_series_name(
+                    int(output_series_num+subprocess_num)
+                )
+         
             output_base_file = (output_group_path
                                 + '/' + file_prefix
                                 + '_' + series_name)
-                
+        
         # intialize counters
         dump_counter = 1
         event_counter = 0
@@ -1139,9 +1140,11 @@ class FeatureProcessing:
                 weights)
 
 
-    def _create_output_directory(self, base_path, facility,
+    def _create_output_directory(self, base_path, facility=None,
+                                 series_name=None,
                                  restricted=False,
-                                 calib=False):
+                                 calib=False,
+                                 output_series_name=None):
         """
         Create output directory 
 
@@ -1161,13 +1164,15 @@ class FeatureProcessing:
 
         """
 
-        now = datetime.now()
-        series_day = now.strftime('%Y') +  now.strftime('%m') + now.strftime('%d') 
-        series_time = now.strftime('%H') + now.strftime('%M')
-        series_name = ('I' + str(facility) +'_D' + series_day + '_T'
-                       + series_time + now.strftime('%S'))
+        
+        if output_series_name is None:
+            now = datetime.now()
+            series_day = now.strftime('%Y') +  now.strftime('%m') + now.strftime('%d') 
+            series_time = now.strftime('%H') + now.strftime('%M')
+            output_series_name = ('I' + str(facility) +'_D' + series_day + '_T'
+                                  + series_time + now.strftime('%S'))
 
-        series_num = h5io.extract_series_num(series_name)
+        series_num = h5io.extract_series_num(output_series_name)
         
         # prefix
         prefix = 'feature'
@@ -1178,7 +1183,7 @@ class FeatureProcessing:
         elif calib:
             prefix += '_calib'
             
-        output_dir = base_path + '/' + prefix + '_' + series_name
+        output_dir = base_path + '/' + prefix + '_' + output_series_name
         
         
         if not os.path.isdir(output_dir):

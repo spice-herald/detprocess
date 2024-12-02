@@ -1,7 +1,8 @@
 import warnings
 import argparse
 from pprint import pprint
-from detprocess import utils, TriggerProcessing, IVSweepProcessing, FeatureProcessing, Randoms, Salting
+from detprocess import utils, TriggerProcessing, IVSweepProcessing
+from detprocess import  FeatureProcessing, Randoms, Salting, RawData
 import os
 from pathlib import Path
 from pytesdaq.utils import arg_utils
@@ -12,8 +13,26 @@ import re
 from qetpy.utils import convert_channel_name_to_list,convert_channel_list_to_name
 import gc
 import multiprocessing
+import numpy as np
+import subprocess
+import threading
+
 warnings.filterwarnings('ignore')
 warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+# script path
+script_path = os.path.abspath(__file__)
+
+
+# subprocess output
+def stream_output(stream, prefix):
+    """
+    Read a stream line-by-line and print it with a prefix.
+    """
+    for line in iter(stream.readline, ''):
+        print(f'[{prefix}]: {line.strip()}', flush=True)
+        
+        
 
 if __name__ == "__main__":
 
@@ -22,16 +41,28 @@ if __name__ == "__main__":
 
     # vaex
     vx.multithreading.thread_count = 1
+
+    # script path
+    script_path = os.path.abspath(__file__)
     
     # ------------------
     # Input arguments
     # ------------------
     parser = argparse.ArgumentParser(description='Launch Raw Data Processing')
+
     parser.add_argument('--raw_path','--input_group_path',
                         dest='raw_group_path', type=str, required=True,
                         help='Path to continuous raw data group')
+
+    parser.add_argument('-s', '--series', '--input_series',
+                        dest='raw_series', nargs='+', type=str, 
+                        help=('Continous data series name(s) '
+                              '(format string Ix_Dyyyymmdd_Thhmmss,'
+                              'space or comma seperated) [Default: all series]'))
+    
     parser.add_argument('--processing_setup', type=str,
                         help='Processing setup file')        
+
     parser.add_argument('--enable-rand', '--enable-randoms', '--enable_rand',
                         dest='enable_rand',
                         action='store_true', help='Acquire randoms')
@@ -39,41 +70,56 @@ if __name__ == "__main__":
     #                      dest='calc_filter',
     #                      action='store_true',
     #                      help='Calculate filter informations (PSD and template)')
+
     parser.add_argument('--enable-ivsweep', dest='enable_ivsweep',
                         action='store_true', help='Process IV sweep data')
+
     parser.add_argument('--enable-trig', '--enable-triggers', '--enable_trig',
                         dest='enable_trig',
                         action='store_true', help='Acquire triggers')
+
     parser.add_argument('--enable-salting', '--enable_salting',
                         dest='enable_salting',
                         action='store_true', help='Generate and inject salting')
-    parser.add_argument('--trigger_dataframe_path', 
+
+    parser.add_argument('--trigger_dataframe_path',
                         dest='trigger_dataframe_path', type=str,
-                        help='Path to trigger dataframe (threshold and/or randoms)')
+                        help='Path trigger dataframe (threshold and/or randoms) ')
+
+    parser.add_argument('--trigger_series',
+                        dest='trigger_series', nargs='+', type=str, 
+                        help=('Trigger series '
+                              '(format string Ix_Dyyyymmdd_Thhmmss,'
+                              'space or comma seperated) [Default: all series]'))
+    
+    parser.add_argument('--salting_dataframe_path', 
+                        dest='salting_dataframe_path', type=str,
+                        help='Path to salting dataframe')
+
     parser.add_argument('--enable-feature', '--enable_feature',
                         dest='enable_feature',
                         action='store_true',
                         help='Process features')
-    
-    parser.add_argument('-s', '--series', '--input_series',
-                        dest='raw_series', nargs='+', type=str, 
-                        help=('Continous data series name(s) '
-                              '(format string Ix_Dyyyymmdd_Thhmmss,'
-                              'space or comma seperated) [Default: all series]'))
+
     parser.add_argument('--random_rate', type=float,
                         help='random event rate (either "random_rate" "nrandoms"'
                         + ' required is randoms enabled!)')
+
     parser.add_argument('--nrandoms', type=int, dest='nrandoms',
                         help='Number random events (either "random_rate" "nrandoms"'
                         + ' required is randoms enabled!)')
+
     parser.add_argument('--ntriggers', type=int, dest='ntriggers',
                         help='Number trigger events [Default=all available]')
+
     parser.add_argument('--save_path', type=str,
                         help=('Base path to save process data, '
                               + '(optional)'))
+
     parser.add_argument('--ncores', type=int,
                         help=('Maximum number of cores used for '
                               'trigger processing [Default=1]'))
+    
     parser.add_argument('--processing_id', type=str,
                         help=('Processing id (short string with no space)'))
 
@@ -84,6 +130,21 @@ if __name__ == "__main__":
     parser.add_argument('--calib',
                         action='store_true',
                         help=('Processing calibration data'))
+
+
+    parser.add_argument('--feature_series_name', type=str,
+                        help='Feature processing output series name')
+
+    parser.add_argument('--use_subprocess',
+                        action='store_true',
+                        help='Launch with subprocess')
+    
+    parser.add_argument('--subprocess_num', type=int,
+                        help='Subprocess number')
+
+    
+    
+    
 
     
     args = parser.parse_args()
@@ -98,7 +159,8 @@ if __name__ == "__main__":
     acquire_trig = False
     calc_filter = False
     process_feature = False
-
+    use_subprocess = False
+    
     if args.enable_ivsweep:
         process_ivsweep = True
     if (args.enable_rand or args.random_rate or args.nrandoms):
@@ -130,6 +192,19 @@ if __name__ == "__main__":
               'type of processing (trigger or feature processing)')
         exit()
 
+
+    if args.use_subprocess:
+        use_subprocess = True
+        
+    subprocess_num = None
+    if args.subprocess_num:
+        subprocess_num = int(args.subprocess_num)
+
+    feature_series_name = None
+    if args.feature_series_name:
+        feature_series_name = args.feature_series_name
+
+        
     restricted = False
     if args.restricted:
         restricted = True
@@ -154,13 +229,17 @@ if __name__ == "__main__":
               'processing all events')
         print('Set argument "--ncores 1" ')
         exit()
-              
         
-    # threshold trigger dataframe path
+    # trigger dataframe path
     trigger_dataframe_path = None
     if args.trigger_dataframe_path:
         trigger_dataframe_path = args.trigger_dataframe_path
-  
+
+    # salting  dataframe path
+    salting_dataframe_path = None
+    if args.salting_dataframe_path:
+        salting_dataframe_path = args.salting_dataframe_path
+          
     # series
     series = None
     if args.raw_series:
@@ -183,7 +262,14 @@ if __name__ == "__main__":
         save_path = os.path.dirname(raw_group_path) + '/processed'
         if '/raw/processed' in save_path:
             save_path = save_path.replace('/raw/processed', '/processed')
-        
+
+            
+    # series
+    trigger_series = None
+    if args.trigger_series:
+        trigger_series = arg_utils.extract_list(args.trigger_series)
+
+            
     # ------------------
     # check setup file
     # ------------------
@@ -201,33 +287,95 @@ if __name__ == "__main__":
         exit()
         
     # Check some fields
-    if (trigger_dataframe_path is not None 
-        and  (acquire_trig or acquire_rand)):
-        print('ERROR: A trigger dataframe has been provided.'
-              'Cannot acquire triggers or randoms. Change arguments!')
-        exit()
+    if trigger_dataframe_path is not None:
         
-    if (acquire_salting and process_feature
-        and not acquire_trig):
+        if acquire_trig or acquire_rand:
+            print('ERROR: A trigger dataframe has been provided.'
+                  'Cannot acquire triggers or randoms. Change arguments!')
+            exit()
+
+        if acquire_salting and salting_dataframe_path is None:
+            print('ERROR: A trigger dataframe has been provided.'
+                  'Cannot regenerate salting dataframe!')
+            exit()
+            
+    if salting_dataframe_path is not None:
+
+        if (trigger_dataframe_path is None and process_feature
+             and not acquire_trig):
+            print('ERROR: if salting path provided and not trigger path, '
+                  'trigger needs to be acquired before feature processing!')
+        
+    elif (acquire_salting and process_feature
+          and not acquire_trig):
         print('ERROR: if salting enabled, trigger acquisition needs to be '
               'done before feature processing!')
         exit()
-
-
+    
     if acquire_salting and acquire_rand:
         print('ERROR: For the moment, randoms cannot '
               'be enabled in the same time as salting!')
         exit()
         
-        
+
+    # ====================================
+    # Check raw data and processing
+    # ====================================
+    print('Processing information')
+    print('======================')
+    rawdata = RawData(raw_group_path)
+    rawdata.describe()
+    raw_group_name = rawdata.get_group_name()
+    raw_base_path = rawdata.get_base_path()
+    facility = rawdata.get_facility()
     
+    if not process_ivsweep:
+      
+        processing_steps = []
+        if acquire_salting and salting_dataframe_path is None:
+            processing_steps.append('generate salting')
+        if acquire_rand:
+            processing_steps.append('acquire randoms')
+        if acquire_trig:
+            processing_steps.append('acquire triggers')
+        if process_feature:
+            processing_steps.append('process features')
+
+        process_str = ', '.join(processing_steps)
+        print(f'\nThe following processing with done:')
+        print(f' - {process_str}')
+             
+        if acquire_salting or salting_dataframe_path is not None:
+            print(' - salting will be injected in raw data')
+
+        if series is not None:
+            print(f' - only the following series with be processed: '
+                  f'{series}!')
+
+        if restricted:
+            print(f' - restricted data will be processed!')
+        else:
+            print(' - no restricted data will be processed (open only)')
+
+
+    # ====================================
+    # Processing config
+    # ====================================
+    
+    yaml_dict = yaml.load(open(processing_setup, 'r'), Loader=utils._UniqueKeyLoader)
+    filter_file = yaml_dict['filter_file']
+    didv_file = None
+    if didv_file in yaml_dict:
+        didv_file = yaml_dict['didv_file']
+                
+     
     # ====================================
     # Calc Filter
     # ====================================
     if calc_filter:
         print('CALC FILTER NOT AVAILABLE')
         
-
+        
 
 
     # ====================================
@@ -237,7 +385,7 @@ if __name__ == "__main__":
     salting_dataframe_list = [None]
     salting_energy_list = []
     
-    if acquire_salting:
+    if acquire_salting and salting_dataframe_path is None:
 
         print('\n\n================================')
         print('Salting generation')
@@ -247,16 +395,7 @@ if __name__ == "__main__":
         salting_dataframe_list = []
 
         # build output path 
-        group_name = os.path.basename(raw_group_path)
         output_path = f'{save_path}/{group_name}'
-            
-        facility = None
-        match = re.search(r'_I(\d+)', group_name)
-        if match:
-            facility = int(match.group(1))
-        else:
-            raise ValueError("No facility found from group name!")
-
         series_name = utils.create_series_name(facility)
         salting_group_name = f'salting_{series_name}'
         output_path += f'/{salting_group_name}'
@@ -264,15 +403,9 @@ if __name__ == "__main__":
         # create directory
         utils.create_directory(output_path)
         
-      
-        # load yaml file
-        yaml_dict = yaml.load(open(processing_setup, 'r'), Loader=utils._UniqueKeyLoader)
+        # get salting dict
         salting_dict = yaml_dict['salting']
-        filter_file = yaml_dict['filter_file']
-        didv_file = None
-        if didv_file in yaml_dict:
-            didv_file = yaml_dict['didv_file']
-        
+                
         # FIXME: raw data metadata, need to include
         # number of events, trace length, 
         metadata = {''}
@@ -395,6 +528,15 @@ if __name__ == "__main__":
         # cleanup
         del salting
         gc.collect()  # Force garbage collection
+
+
+    # case salting dataframe path provided
+    if salting_dataframe_path is not None:
+        salting_dataframe_list = [salting_dataframe_path]
+        print(f' - salting dataframe provided: '
+              f'{salting_dataframe_path}')
+
+        
     # ====================================
     # Acquire randoms
     # ====================================
@@ -504,10 +646,15 @@ if __name__ == "__main__":
             # cleanup
             del myproc
             gc.collect()  # Force garbage collection
-            
-    # ------------------
+
+    elif trigger_dataframe_path is not None:
+        trigger_group_path_list = [trigger_dataframe_path]
+
+
+        
+    # ======================================
     # Process feature
-    # ------------------
+    # ======================================
      
     if process_feature:
 
@@ -534,29 +681,127 @@ if __name__ == "__main__":
                     
             # trigger dataframes path
             trigger_path = trigger_group_path_list[idx]
+
+
+            #  subprocess
+            if ncores>1 and use_subprocess:
+                
+                # find trigger series list
+                series_list = utils.get_dataframe_series_list(
+                    trigger_path
+                )
+                
+                if ncores > len(series_list):
+                    print(f'\nWARNING: Changing the number of cores to '
+                          f'{nb_series} (maximum allowed)')
+                    ncores = nb_series
+                series_split_temp = np.array_split(series_list, ncores)
+                series_split = []
+                for series_sublist in series_split_temp:
+                    if series_sublist.size == 0:
+                        continue
+                    series_sublist = list(series_sublist)
+                    series_string = ','.join(series_sublist)
+                    series_split.append(series_string)
+
+                # output series
+                output_series_name =  utils.create_series_name(facility)
+                    
+                # launch processes
+                processes = []
+                threads = []
+                counter = 0
+                for aseries in series_split:
+
+                    counter += 1
+                    
+                    # build command line
+                    cmd_list = ['python3', '-u', f'{script_path}']
+                    cmd_list.extend(['--raw_path', f'{raw_group_path}'])
+                    cmd_list.extend(['--trigger_series', f'{aseries}'])
+                    cmd_list.extend(['--processing_setup', f'{processing_setup}'])
+                    cmd_list.extend(['--enable-feature', '--ncores', '1'])
+                    cmd_list.extend(['--trigger_dataframe_path', f'{trigger_path}'])
+                    cmd_list.extend(['--feature_series_name', f'{output_series_name}'])
+                    cmd_list.extend(['--subprocess_num', f'{counter}'])
+                    if processing_id is not None:
+                        cmd_list.extend(['--processing_id', f'{processing_id}'])
+                    if restricted:
+                        cmd_list.append('--restricted')
+                    if salting_df is not None:
+                        cmd_list.extend(['--salting_dataframe_path', f'{salting_df}'])
+                    if calib:
+                        cmd_list.append('--calib')
+                    if save_path is not None:
+                        cmd_list.extend(['--save_path', f'{save_path}'])
+                        
+                    # launch
+                    print(f'INFO: Launching subprocess for series {aseries}!')
+                    p = subprocess.Popen(cmd_list,
+                                         stdout=subprocess.PIPE,
+                                         stderr=subprocess.PIPE,
+                                         text=True,
+                                         bufsize=1
+                                         )
+                    processes.append(p)
+
+                    
+                    # Create threads to stream the output
+                    stdout_thread = threading.Thread(
+                        target=stream_output,
+                        args=(p.stdout, f'Subprocess #{counter}: ')
+                    )
+                    stderr_thread = threading.Thread(
+                        target=stream_output,
+                        args=(p.stderr, f'Series-{aseries} [STDERR]')
+                    )
+
+                    stdout_thread.start()
+                    stderr_thread.start()
+
+                    threads.append(stdout_thread)
+                    threads.append(stderr_thread)
+                    
+                # Wait for all threads and subprocesses to complete
+                for t in threads:
+                    t.join()
+
+                for p in processes:
+                    p.wait()
+                    if p.returncode != 0:
+                        print(f'[ERROR] Subprocess for series failed with return code {p.returncode}')
+                    else:
+                        print('[INFO] Subprocess completed successfully!')
+                                        
+            else:
                      
-            # instantiate
-            myproc = FeatureProcessing(raw_group_path,
-                                       processing_setup,
-                                       series=series, 
-                                       trigger_dataframe_path=trigger_path,
-                                       external_file=None, 
-                                       processing_id=processing_id,
-                                       restricted=restricted,
-                                       calib=calib,
-                                       salting_dataframe=salting_df)
+                # instantiate
+                myproc = FeatureProcessing(raw_group_path,
+                                           processing_setup,
+                                           series=series, 
+                                           trigger_dataframe_path=trigger_path,
+                                           trigger_series=trigger_series,
+                                           external_file=None, 
+                                           processing_id=processing_id,
+                                           restricted=restricted,
+                                           calib=calib,
+                                           salting_dataframe=salting_df)
         
-            myproc.process(nevents=-1,
-                           lgc_save=True,
-                           lgc_output=False,
-                           ncores=ncores,
-                           save_path=save_path)
+                myproc.process(nevents=-1,
+                               lgc_save=True,
+                               lgc_output=False,
+                               ncores=ncores,
+                               output_series_name=feature_series_name,
+                               subprocess_num=subprocess_num,
+                               save_path=save_path)
             
 
-            # cleanup
-            del myproc
-            gc.collect()  # Force garbage collection
-            
+                # cleanup
+                del myproc
+                gc.collect()  # Force garbage collection
+
+
+                
     # ------------------
     # IV - dIdV sweep
     # processing

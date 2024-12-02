@@ -56,7 +56,7 @@ setup(
         'pyyaml',
         'qetpy>=1.7.6',
         'pandas',
-        'pytesdaq>=0.4.1',
+        'pytesdaq>=0.4.2',
         'scikit-image',
         'iminuit>=2',
         'seaborn',
