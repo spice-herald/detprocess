@@ -325,8 +325,8 @@ if __name__ == "__main__":
     print('======================')
     rawdata = RawData(raw_group_path)
     rawdata.describe()
-    raw_group_name = rawdata.get_group_name()
-    raw_base_path = rawdata.get_base_path()
+    group_name = rawdata.get_group_name()
+    base_path = rawdata.get_base_path()
     facility = rawdata.get_facility()
     
     if not process_ivsweep:
@@ -753,7 +753,7 @@ if __name__ == "__main__":
                     )
                     stderr_thread = threading.Thread(
                         target=stream_output,
-                        args=(p.stderr, f'Series-{aseries} [STDERR]')
+                        args=(p.stderr, f'Subprocess #{counter} [STDERR]')
                     )
 
                     stdout_thread.start()
@@ -769,9 +769,9 @@ if __name__ == "__main__":
                 for p in processes:
                     p.wait()
                     if p.returncode != 0:
-                        print(f'[ERROR] Subprocess for series failed with return code {p.returncode}')
-                    else:
-                        print('[INFO] Subprocess completed successfully!')
+                        raise ValueError(f'ERROR: Subprocess for sfailed with return code {p.returncode}')
+                    
+                print('INFO: Subprocess completed successfully!')
                                         
             else:
                      
