@@ -4,7 +4,7 @@ import vaex as vx
 import pandas as pd
 import warnings
 warnings.filterwarnings('ignore')
-
+import pyarrow as pa
 
 
 class EventBuilder:
@@ -231,48 +231,70 @@ class EventBuilder:
         # number of triggers (after merging coincident events)
         nb_triggers = len(self._event_df)
         
-        #  add metadata
-        default_val = np.array([np.nan]*nb_triggers)
+        # Add string column in dataframe
+        default_val_string = pa.array([None]*nb_triggers, type=pa.string())
+        metadata_string_dict = {'processing_id':default_val_string,
+                                'data_type': default_val_string,
+                                'group_name': default_val_string}
+
+        # replace value if available
+        for key in metadata_string_dict.keys():
+            if key in event_metadata.keys():
+                key = str(key)
+                val = str(event_metadata[key])
+                if '\0' in val:
+                    val = val.replace('\0', '')  # Remove all null characters
+                metadata_string_dict[key] = pa.array([val]*nb_triggers,
+                                                     type=pa.string())
+                
+        # string that have name change
+        if 'run_type' in event_metadata.keys():
+            val = event_metadata['run_type']
+            if '\0' in val:
+                val = val.replace('\0', '')
+            metadata_string_dict['data_type'] = pa.array([val]*nb_triggers,
+                                                  type=pa.string())
+        # add to dataframe
+        for key, val in metadata_string_dict.items():
+            self._event_df[key] = val
+
+        # integer parameters
+                
+        default_val  = np.array([-1]*nb_triggers, dtype=np.int64)
         metadata_dict = {'series_number': default_val,
                          'event_number': default_val,
                          'dump_number': default_val,
                          'series_start_time': default_val,
                          'group_start_time': default_val,
                          'fridge_run_start_time': default_val,
-                         'fridge_run_number': default_val,
-                         'data_type': default_val,
-                         'group_name':default_val}
+                         'fridge_run_number': default_val}
+        
 
         # replace value if available
         for key in metadata_dict.keys():
             if key in event_metadata.keys():
                 metadata_dict[key] = np.array(
-                    [event_metadata[key]]*nb_triggers)
+                    [np.int64(event_metadata[key])]*nb_triggers
+                )
 
         # some parameters have different names
         if 'series_num' in event_metadata.keys():
             metadata_dict['series_number'] = np.array(
-                [event_metadata['series_num']]*nb_triggers).astype(int)    
+                [np.int64(event_metadata['series_num'])]*nb_triggers)
         if 'event_num' in event_metadata.keys():
             metadata_dict['event_number'] = np.array(
-                [event_metadata['event_num']]*nb_triggers).astype(int)    
+                [np.int64(event_metadata['event_num'])]*nb_triggers)
         if 'dump_num' in event_metadata.keys():
             metadata_dict['dump_number'] = np.array(
-                [event_metadata['dump_num']]*nb_triggers).astype(int)   
-        if 'run_type' in event_metadata.keys():
-            metadata_dict['data_type'] = np.array(
-                [event_metadata['run_type']]*nb_triggers).astype(str)
-        elif 'data_type' in event_metadata.keys():
-            metadata_dict['data_type'] = np.array(
-                [event_metadata['data_type']]*nb_triggers).astype(str)
+                [np.int64(event_metadata['dump_num'])]*nb_triggers)
         if 'fridge_run' in event_metadata.keys():
             metadata_dict['fridge_run_number'] = np.array(
-                [event_metadata['fridge_run']]*nb_triggers).astype(int)
+                [np.int64(event_metadata['fridge_run'])]*nb_triggers)
             
         # event times
         trigger_times = self._event_df['trigger_time'].values
         event_times = trigger_times + event_time_start
-        event_times_int = np.around(event_times).astype(int)
+        event_times_int = np.int64(np.around(event_times))
 
         # add new parameters in dictionary
         metadata_dict['event_time'] = event_times_int
@@ -286,7 +308,7 @@ class EventBuilder:
         # trigger id
         metadata_dict['trigger_prod_id'] = (
             np.array(range(nb_triggers))
-            + int(self._current_trigger_id)
+            + np.int64(self._current_trigger_id)
             + 1)
           
         self._current_trigger_id = metadata_dict['trigger_prod_id'][-1]
@@ -295,7 +317,7 @@ class EventBuilder:
         for key, val in metadata_dict.items():
             self._event_df[key] = val
 
-            
+                
     def _merge_coincident_triggers(self, fs=None,
                                   coincident_window_msec=None,
                                   coincident_window_samples=None):
@@ -321,6 +343,9 @@ class EventBuilder:
             merge_window = coincident_window_samples
             
 
+        if  merge_window == 0:
+            return
+            
         # let's convert vaex dataframe to pandas so we can modify it
         # more easily
         df_pandas = self._event_df.to_pandas_df()
@@ -456,15 +481,3 @@ class EventBuilder:
         # convert back to vaex
         self._event_df = vx.from_pandas(df_pandas, copy_index=False)
                 
-            
-            
-        
-                
-                
-                
-            
-                
-        
-            
-        
-

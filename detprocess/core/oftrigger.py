@@ -10,7 +10,7 @@ import qetpy as qp
 from scipy import special, stats
 import copy
 import warnings
-
+import pyarrow as pa
 
 
 
@@ -1086,8 +1086,12 @@ class OptimumFilterTrigger:
         nb_events = len(trigger_data['trigger_index'])
         chan_list = list()
         if nb_events>0:
-            chan_list = [self._trigger_name]*nb_events
-        self._trigger_data[self._trigger_name]['trigger_channel'] = chan_list
-        
+            if '\0' in self._trigger_name:
+                self._trigger_name = self._trigger_name.replace('\0', '')
+            self._trigger_data[self._trigger_name]['trigger_channel'] = (
+                pa.array([self._trigger_name]*nb_events,
+                         type=pa.string())
+            )
+                        
         
         
