@@ -346,6 +346,17 @@ def find_linear_segment(x, y, tolerance=0.05):
         
     return index_list
 
+def is_empty(param):
+    """
+    check if empty
+    """
+    
+    if param is None:
+        return True
+    try:
+        return len(param) == 0
+    except TypeError:
+        return False
 
 
 def read_config(yaml_file, available_channels, sample_rate=None):
@@ -551,7 +562,7 @@ def read_config(yaml_file, available_channels, sample_rate=None):
         for chan, config in config_dict.items():
 
             # check if empty 
-            if not config:
+            if is_empty(config):
                 raise ValueError(
                     f'ERROR: empty channel/parameter '
                     f'{chan} for {config_name} configuration!')

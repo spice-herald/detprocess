@@ -523,7 +523,7 @@ class TriggerProcessing:
                     print('INFO' + node_num_str
                           + ': '
                           + str(trigger_counter) 
-                          + ' events counted, triggering done')
+                          + ' events counted, triggering processing done')
                     do_stop = True
                                            
                 # -----------------------
@@ -556,12 +556,20 @@ class TriggerProcessing:
                         file_name =  (output_base_file + '_F' + dump_str.zfill(4)
                                       + '.hdf5')
                             
-                        # export
-                        process_df.export_hdf5(file_name, mode='w')
-                        
+                        # export to hdf5 
+                        try:
+                            process_df.export_hdf5(file_name, mode='w')
+                            process_df.close()
+                        except Exception as e:
+                            print("WARNING: Export failed with error:", e)
+                            df_pandas = process_df.to_pandas_df()
+                            df_pandas.to_hdf(f'debug_pandas_{node_num}.hdf5',
+                                             key='data', mode='w')
+                            raise 
+                            
                         # increment dump
                         dump_counter += 1
-                        if self._verbose:
+                        if self._verbose and not do_stop and not triggers_limit_reached:
                             if trigger_counter > 1e5:
                                 print('INFO' + node_num_str
                                       + ': Incrementing dump number, '
