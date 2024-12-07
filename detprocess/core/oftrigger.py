@@ -12,7 +12,14 @@ import copy
 import warnings
 import pyarrow as pa
 
+vx.settings.main.thread_count = 1
+vx.settings.main.thread_count_io = 1
+pa.set_cpu_count(1)
 
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
 __all__ = ['OptimumFilterTrigger',
            'shift_templates_to_match_chi2',
@@ -519,6 +526,7 @@ class OptimumFilterTrigger:
         """
         Get current filtered trace
         """
+                
         df = None
         if self._trigger_data is not None:
             df = vx.from_dict(

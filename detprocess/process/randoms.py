@@ -16,7 +16,12 @@ from math import ceil, floor
 import random
 import copy
 from humanfriendly import parse_size
+import pyarrow as pa
+warnings.filterwarnings('ignore')
 
+vx.settings.main.thread_count = 1
+vx.settings.main.thread_count_io = 1
+pa.set_cpu_count(1)
 
 __all__ = [
     'Randoms'
@@ -140,6 +145,7 @@ class Randoms:
         Acquire random trigger using specified rate (and minimum
         separation)
         """
+        
         # data are split based on series so
         # check number cores requested is possible
         nseries = len(self._series_dict.keys())
@@ -312,6 +318,11 @@ class Randoms:
         separation)
         """
 
+        # disable multithreading
+        vx.settings.main.thread_count = 1
+        vx.settings.main.thread_count_io = 1
+        pa.set_cpu_count(1)
+            
         # node string (for display)
         node_num_str = ' Node #' + str(node_num)
 
