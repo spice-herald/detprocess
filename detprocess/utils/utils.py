@@ -74,6 +74,18 @@ def split_channel_name(channel_name,
 
     # allowed separators
     separators = [',','+','-','|']
+
+
+    # check if channel_name has any separators
+    has_separator = False
+    for aseparator in separators:
+        if aseparator in channel_name:
+             has_separator = True
+             break
+    if not has_separator:
+        return [channel_name], None
+        
+             
     
     # case available_channels is None
     if  available_channels is None:

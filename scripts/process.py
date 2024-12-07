@@ -14,7 +14,6 @@ from qetpy.utils import convert_channel_name_to_list,convert_channel_list_to_nam
 import gc
 import multiprocessing
 import numpy as np
-import subprocess
 import threading
 
 warnings.filterwarnings('ignore')
@@ -23,16 +22,6 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 # script path
 script_path = os.path.abspath(__file__)
 
-
-# subprocess output
-def stream_output(stream, prefix):
-    """
-    Read a stream line-by-line and print it with a prefix.
-    """
-    for line in iter(stream.readline, ''):
-        print(f'[{prefix}]: {line.strip()}', flush=True)
-        
-        
 
 if __name__ == "__main__":
 
@@ -131,22 +120,6 @@ if __name__ == "__main__":
                         action='store_true',
                         help=('Processing calibration data'))
 
-
-    parser.add_argument('--feature_series_name', type=str,
-                        help='Feature processing output series name')
-
-    parser.add_argument('--use_subprocess',
-                        action='store_true',
-                        help='Launch with subprocess')
-    
-    parser.add_argument('--subprocess_num', type=int,
-                        help='Subprocess number')
-
-    
-    
-    
-
-    
     args = parser.parse_args()
     
    
@@ -159,8 +132,7 @@ if __name__ == "__main__":
     acquire_trig = False
     calc_filter = False
     process_feature = False
-    use_subprocess = False
-    
+       
     if args.enable_ivsweep:
         process_ivsweep = True
     if (args.enable_rand or args.random_rate or args.nrandoms):
@@ -192,19 +164,7 @@ if __name__ == "__main__":
               'type of processing (trigger or feature processing)')
         exit()
 
-
-    if args.use_subprocess:
-        use_subprocess = True
-        
-    subprocess_num = None
-    if args.subprocess_num:
-        subprocess_num = int(args.subprocess_num)
-
-    feature_series_name = None
-    if args.feature_series_name:
-        feature_series_name = args.feature_series_name
-
-        
+           
     restricted = False
     if args.restricted:
         restricted = True
@@ -321,6 +281,8 @@ if __name__ == "__main__":
     # ====================================
     # Check raw data and processing
     # ====================================
+
+
     print('Processing information')
     print('======================')
     rawdata = RawData(raw_group_path)
@@ -681,124 +643,29 @@ if __name__ == "__main__":
                     
             # trigger dataframes path
             trigger_path = trigger_group_path_list[idx]
-
-
-            #  subprocess
-            if ncores>1 and use_subprocess:
-                
-                # find trigger series list
-                series_list = utils.get_dataframe_series_list(
-                    trigger_path
-                )
-                
-                if ncores > len(series_list):
-                    print(f'\nWARNING: Changing the number of cores to '
-                          f'{nb_series} (maximum allowed)')
-                    ncores = nb_series
-                series_split_temp = np.array_split(series_list, ncores)
-                series_split = []
-                for series_sublist in series_split_temp:
-                    if series_sublist.size == 0:
-                        continue
-                    series_sublist = list(series_sublist)
-                    series_string = ','.join(series_sublist)
-                    series_split.append(series_string)
-
-                # output series
-                output_series_name =  utils.create_series_name(facility)
-                    
-                # launch processes
-                processes = []
-                threads = []
-                counter = 0
-                for aseries in series_split:
-
-                    counter += 1
-                    
-                    # build command line
-                    cmd_list = ['python3', '-u', f'{script_path}']
-                    cmd_list.extend(['--raw_path', f'{raw_group_path}'])
-                    cmd_list.extend(['--trigger_series', f'{aseries}'])
-                    cmd_list.extend(['--processing_setup', f'{processing_setup}'])
-                    cmd_list.extend(['--enable-feature', '--ncores', '1'])
-                    cmd_list.extend(['--trigger_dataframe_path', f'{trigger_path}'])
-                    cmd_list.extend(['--feature_series_name', f'{output_series_name}'])
-                    cmd_list.extend(['--subprocess_num', f'{counter}'])
-                    if processing_id is not None:
-                        cmd_list.extend(['--processing_id', f'{processing_id}'])
-                    if restricted:
-                        cmd_list.append('--restricted')
-                    if salting_df is not None:
-                        cmd_list.extend(['--salting_dataframe_path', f'{salting_df}'])
-                    if calib:
-                        cmd_list.append('--calib')
-                    if save_path is not None:
-                        cmd_list.extend(['--save_path', f'{save_path}'])
-                        
-                    # launch
-                    print(f'INFO: Launching subprocess for series {aseries}!')
-                    p = subprocess.Popen(cmd_list,
-                                         stdout=subprocess.PIPE,
-                                         stderr=subprocess.PIPE,
-                                         text=True,
-                                         bufsize=1
-                                         )
-                    processes.append(p)
-
-                    
-                    # Create threads to stream the output
-                    stdout_thread = threading.Thread(
-                        target=stream_output,
-                        args=(p.stdout, f'Subprocess #{counter}: ')
-                    )
-                    stderr_thread = threading.Thread(
-                        target=stream_output,
-                        args=(p.stderr, f'Subprocess #{counter} [STDERR]')
-                    )
-
-                    stdout_thread.start()
-                    stderr_thread.start()
-
-                    threads.append(stdout_thread)
-                    threads.append(stderr_thread)
-                    
-                # Wait for all threads and subprocesses to complete
-                for t in threads:
-                    t.join()
-
-                for p in processes:
-                    p.wait()
-                    if p.returncode != 0:
-                        raise ValueError(f'ERROR: Subprocess for sfailed with return code {p.returncode}')
-                    
-                print('INFO: Subprocess completed successfully!')
-                                        
-            else:
-                     
-                # instantiate
-                myproc = FeatureProcessing(raw_group_path,
-                                           processing_setup,
-                                           series=series, 
-                                           trigger_dataframe_path=trigger_path,
-                                           trigger_series=trigger_series,
-                                           external_file=None, 
-                                           processing_id=processing_id,
-                                           restricted=restricted,
-                                           calib=calib,
-                                           salting_dataframe=salting_df)
-        
-                myproc.process(nevents=-1,
-                               lgc_save=True,
-                               lgc_output=False,
-                               ncores=ncores,
-                               output_series_name=feature_series_name,
-                               subprocess_num=subprocess_num,
-                               save_path=save_path)
+            
+            # instantiate
+            myproc = FeatureProcessing(raw_group_path,
+                                       processing_setup,
+                                       series=series, 
+                                       trigger_dataframe_path=trigger_path,
+                                       trigger_series=trigger_series,
+                                       external_file=None, 
+                                       processing_id=processing_id,
+                                       restricted=restricted,
+                                       calib=calib,
+                                       salting_dataframe=salting_df)
+            
+            myproc.process(nevents=-1,
+                           lgc_save=True,
+                           lgc_output=False,
+                           ncores=ncores,
+                           save_path=save_path)
             
 
-                # cleanup
-                del myproc
-                gc.collect()  # Force garbage collection
+            # cleanup
+            del myproc
+            gc.collect()  # Force garbage collection
 
 
                 

@@ -113,7 +113,7 @@ class FeatureProcessing:
                                          'exttrig']
         # processing id
         self._processing_id = processing_id
-           
+
         # restricted data
         self._restricted = restricted
 
@@ -124,7 +124,7 @@ class FeatureProcessing:
         
         # display
         self._verbose = verbose
-                 
+        
         # Raw file list
         raw_files, raw_path, group_name = (
             self._get_file_list(raw_path,
@@ -176,7 +176,7 @@ class FeatureProcessing:
         self._selected_channels = selected_channels
         self._traces_config = traces_config
         self._weights = weights
-
+        
         # check channels to be processed
         if not self._selected_channels:
             raise ValueError('No channels to be processed! ' +
@@ -222,8 +222,6 @@ class FeatureProcessing:
     def process(self,
                 nevents=-1,
                 lgc_save=False, save_path=None,
-                output_series_name=None,
-                subprocess_num=None,
                 lgc_output=False, 
                 ncores=1,
                 memory_limit='1GB'):
@@ -295,14 +293,13 @@ class FeatureProcessing:
             if self._input_group_name not in save_path:
                 save_path = save_path + '/' + self._input_group_name
 
-            
+                    
             output_group_path, output_series_num = (
                 self._create_output_directory(
                     save_path,
                     self._processing_data_inst.get_facility(),
                     restricted=self._restricted,
-                    calib=self._calib,
-                    output_series_name=output_series_name,
+                    calib=self._calib
                 )
             )
             
@@ -333,8 +330,7 @@ class FeatureProcessing:
                                       lgc_output,
                                       output_series_num,
                                       output_group_path,
-                                      memory_limit,
-                                      subprocess_num)
+                                      memory_limit)
 
         else:
             
@@ -360,8 +356,7 @@ class FeatureProcessing:
                                               repeat(lgc_output),
                                               repeat(output_series_num),
                                               repeat(output_group_path),
-                                              repeat(memory_limit),
-                                              repeat(subprocess_num)))
+                                              repeat(memory_limit)))
             pool.close()
             pool.join()
 
@@ -383,8 +378,7 @@ class FeatureProcessing:
                  lgc_output,
                  output_series_num,
                  output_group_path,
-                 memory_limit,
-                 subprocess_num):
+                 memory_limit):
         """
         Process data
         
@@ -455,16 +449,11 @@ class FeatureProcessing:
             series_name = h5io.extract_series_name(
                 int(output_series_num+node_num)
             )
-
-            if subprocess_num is not None:
-                series_name = h5io.extract_series_name(
-                    int(output_series_num+subprocess_num)
-                )
-         
+                    
             output_base_file = (output_group_path
                                 + '/' + file_prefix
                                 + '_' + series_name)
-        
+                
         # intialize counters
         dump_counter = 1
         event_counter = 0
@@ -1140,10 +1129,9 @@ class FeatureProcessing:
                 weights)
 
 
-    def _create_output_directory(self, base_path, facility=None,
+    def _create_output_directory(self, base_path, facility,
                                  restricted=False,
-                                 calib=False,
-                                 output_series_name=None):
+                                 calib=False):
         """
         Create output directory 
 
@@ -1163,15 +1151,13 @@ class FeatureProcessing:
 
         """
 
-        
-        if output_series_name is None:
-            now = datetime.now()
-            series_day = now.strftime('%Y') +  now.strftime('%m') + now.strftime('%d') 
-            series_time = now.strftime('%H') + now.strftime('%M')
-            output_series_name = ('I' + str(facility) +'_D' + series_day + '_T'
-                                  + series_time + now.strftime('%S'))
+        now = datetime.now()
+        series_day = now.strftime('%Y') +  now.strftime('%m') + now.strftime('%d') 
+        series_time = now.strftime('%H') + now.strftime('%M')
+        series_name = ('I' + str(facility) +'_D' + series_day + '_T'
+                       + series_time + now.strftime('%S'))
 
-        series_num = h5io.extract_series_num(output_series_name)
+        series_num = h5io.extract_series_num(series_name)
         
         # prefix
         prefix = 'feature'
@@ -1182,7 +1168,7 @@ class FeatureProcessing:
         elif calib:
             prefix += '_calib'
             
-        output_dir = base_path + '/' + prefix + '_' + output_series_name
+        output_dir = base_path + '/' + prefix + '_' + series_name
         
         
         if not os.path.isdir(output_dir):
