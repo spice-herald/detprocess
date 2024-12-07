@@ -23,6 +23,11 @@ from detprocess.core.oftrigger import OptimumFilterTrigger
 from detprocess.utils import utils
 warnings.filterwarnings('ignore')
 
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+
 
 __all__ = [
     'TriggerProcessing'
@@ -266,7 +271,11 @@ class TriggerProcessing:
                                       memory_limit)
 
         else:
+
             
+            # disable vaex multi-threading
+            vx.set_max_threads(1)
+        
             # split data
             series_list_split = self._split_series(ncores)
             
@@ -354,10 +363,10 @@ class TriggerProcessing:
    
         """
 
-        # set vaex single thread
-        vx.multithreading.thread_count = 1
-         
-
+        
+        # disable vaex multi-threading
+        vx.set_max_threads(1)
+        
         # check argument
         if lgc_output and lgc_save:
             raise ValueError('ERROR: Unable to save and output datafame '
@@ -558,8 +567,13 @@ class TriggerProcessing:
                             
                         # export to hdf5 
                         try:
+                            # disable vaex multi-threading
+                            vx.set_max_threads(1)
+                            
+                            # export
                             process_df.export_hdf5(file_name, mode='w')
                             process_df.close()
+                            
                         except Exception as e:
                             print("WARNING: Export failed with error:", e)
                             df_pandas = process_df.to_pandas_df()

@@ -18,7 +18,6 @@ from qetpy.utils import convert_channel_name_to_list,convert_channel_list_to_nam
 from pprint import pprint
 import pyarrow
 import warnings
-vx.multithreading.thread_count = 1
 warnings.filterwarnings('ignore')
 
 
@@ -255,7 +254,10 @@ class Salting(FilterData):
         """
         Generate salting metadata
         """
-        
+
+        # disable vaex multi-threading
+        vx.set_max_threads(1)
+                
         channel_list  = convert_channel_name_to_list(channels)
         channel_name = convert_channel_list_to_name(channels)
         nb_channels = len(channel_list)

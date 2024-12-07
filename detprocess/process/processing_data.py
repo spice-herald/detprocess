@@ -9,7 +9,6 @@ from glob import glob
 from detprocess.utils import utils
 from detprocess.core import FilterData, Salting
 import copy
-vx.multithreading.thread_count = 1
 
 __all__ = [
     'ProcessingData'
@@ -128,7 +127,10 @@ class ProcessingData:
 
         if self._salting_dataframe is None:
             return
-
+        
+        # disable vaex multi-threading
+        vx.set_max_threads(1)
+           
         # load
         if isinstance(self._salting_dataframe, str):
             salting_dataframe = vx.open(self._salting_dataframe)
@@ -526,8 +528,9 @@ class ProcessingData:
 
         """
 
-        # open/set files
-
+        # disable vaex multi-threading
+        vx.set_max_threads(1)
+        
         # case dataframe
         if self._is_trigger_dataframe:
             if self._verbose:
@@ -551,7 +554,9 @@ class ProcessingData:
         """
         Read next event
         """
-
+        # disable vaex multi-threading
+        vx.set_max_threads(1)
+        
         # case no trigger dataframe ->
         # read next full trace 
         if not self._is_trigger_dataframe:

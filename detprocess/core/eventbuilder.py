@@ -94,6 +94,9 @@ class EventBuilder:
         trigger channel
         """
 
+        # disable multi-threading
+        vx.set_max_threads(1)
+        
         # intialize if needed
         if self._trigger_names is None:
             self._trigger_names = list()
@@ -128,6 +131,9 @@ class EventBuilder:
         calc
         """
 
+        # disable vaex multi-threading
+        vx.set_max_threads(1)
+        
         # find trigger object
         if trigger_name not in self._trigger_objects.keys():
             raise ValueError(
@@ -173,6 +179,10 @@ class EventBuilder:
         events based on user defined window (in msec or samples)
         """
 
+        # disable vaex multi-threading
+        vx.set_max_threads(1)
+        
+        
         # metadata
         if event_metadata is None:
             event_metadata = dict()
@@ -326,6 +336,9 @@ class EventBuilder:
         events based on user defined window (in msec or samples)
         """
         
+        # disable vaex multi-threading
+        vx.set_max_threads(1)
+              
         # check
         if (self._event_df is None or len(self._event_df)==0):
             raise ValueError('ERROR: No trigger data '

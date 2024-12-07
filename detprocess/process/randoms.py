@@ -140,6 +140,10 @@ class Randoms:
         Acquire random trigger using specified rate (and minimum
         separation)
         """
+        
+        # disable vaex multi-threading
+        vx.set_max_threads(1)
+        
         # data are split based on series so
         # check number cores requested is possible
         nseries = len(self._series_dict.keys())
@@ -312,6 +316,10 @@ class Randoms:
         separation)
         """
 
+        # disable vaex multi-threading
+        vx.set_max_threads(1)
+        
+            
         # node string (for display)
         node_num_str = ' Node #' + str(node_num)
 

@@ -22,8 +22,13 @@ from detprocess.core.algorithms  import FeatureExtractors
 from detprocess.process.processing_data  import ProcessingData
 from detprocess.utils import utils
 import pytesdaq.io as h5io
-warnings.filterwarnings('ignore')
 import gc
+warnings.filterwarnings('ignore')
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
 
 __all__ = [
@@ -427,9 +432,9 @@ class FeatureProcessing:
    
         """
 
-        # set vaex single thread
-        vx.multithreading.thread_count = 1
-         
+        # disable vaex multi-threading
+        vx.set_max_threads(1)
+                 
         # node string (for display)
         node_num_str = str()
         if node_num>-1:
@@ -556,6 +561,10 @@ class FeatureProcessing:
                     
                         # convert to vaex
                         feature_df = feature_df.reset_index(drop=True)
+
+                        # disable vaex multi-threading
+                        vx.set_max_threads(1)
+        
                         feature_vx = vx.from_pandas(
                             feature_df,
                             copy_index=False)
