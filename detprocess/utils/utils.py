@@ -18,7 +18,8 @@ from glob import glob
 
 __all__ = ['split_channel_name', 'extract_window_indices',
            'find_linear_segment', 'create_directory', 'create_series_name',
-           'read_config', 'get_dataframe_series_list']
+           'read_config', 'get_dataframe_series_list',
+           'is_empty']
 
 
     

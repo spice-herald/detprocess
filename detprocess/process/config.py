@@ -172,7 +172,7 @@ class YamlConfig:
         for config_name  in self._configuration_fields:
 
             # check if there is anything available
-            if not config_dicts[config_name]:
+            if utils.is_empty(config_dicts[config_name]):
                 continue
         
             # initialize  output
@@ -258,7 +258,7 @@ class YamlConfig:
             for chan, config in config_dict.items():
 
                 # check if empty 
-                if not config:
+                if utils.is_empty(config):
                     raise ValueError(
                         f'ERROR: empty channel/parameter '
                         f'{chan} for {config_name} configuration!')
