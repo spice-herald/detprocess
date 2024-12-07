@@ -6,6 +6,9 @@ import warnings
 warnings.filterwarnings('ignore')
 import pyarrow as pa
 
+vx.settings.main.thread_count = 1
+vx.settings.main.thread_count_io = 1
+pa.set_cpu_count(1)
 
 class EventBuilder:
     """
@@ -93,9 +96,6 @@ class EventBuilder:
         Add trigger data dictionary for a specific
         trigger channel
         """
-
-        # disable multi-threading
-        vx.set_max_threads(1)
         
         # intialize if needed
         if self._trigger_names is None:
@@ -130,9 +130,6 @@ class EventBuilder:
         """
         calc
         """
-
-        # disable vaex multi-threading
-        vx.set_max_threads(1)
         
         # find trigger object
         if trigger_name not in self._trigger_objects.keys():
@@ -178,10 +175,6 @@ class EventBuilder:
         Function to merge coincident 
         events based on user defined window (in msec or samples)
         """
-
-        # disable vaex multi-threading
-        vx.set_max_threads(1)
-        
         
         # metadata
         if event_metadata is None:
@@ -335,10 +328,7 @@ class EventBuilder:
         Function to merge coincident 
         events based on user defined window (in msec or samples)
         """
-        
-        # disable vaex multi-threading
-        vx.set_max_threads(1)
-              
+                      
         # check
         if (self._event_df is None or len(self._event_df)==0):
             raise ValueError('ERROR: No trigger data '

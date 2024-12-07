@@ -16,10 +16,12 @@ from detprocess.process.randoms import Randoms
 from detprocess.core.filterdata import FilterData
 from qetpy.utils import convert_channel_name_to_list,convert_channel_list_to_name
 from pprint import pprint
-import pyarrow
+import pyarrow as pa
 import warnings
 warnings.filterwarnings('ignore')
-
+vx.settings.main.thread_count = 1
+vx.settings.main.thread_count_io = 1
+pa.set_cpu_count(1)
 
 __all__ = [
     'Salting'
@@ -254,10 +256,7 @@ class Salting(FilterData):
         """
         Generate salting metadata
         """
-
-        # disable vaex multi-threading
-        vx.set_max_threads(1)
-                
+        
         channel_list  = convert_channel_name_to_list(channels)
         channel_name = convert_channel_list_to_name(channels)
         nb_channels = len(channel_list)

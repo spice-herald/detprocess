@@ -24,6 +24,11 @@ from detprocess.utils import utils
 import pytesdaq.io as h5io
 import gc
 warnings.filterwarnings('ignore')
+import pyarrow as pa
+
+vx.settings.main.thread_count = 1
+vx.settings.main.thread_count_io = 1
+pa.set_cpu_count(1)
 
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
@@ -431,9 +436,6 @@ class FeatureProcessing:
            (and/or if return_df=True, max dataframe size)
    
         """
-
-        # disable vaex multi-threading
-        vx.set_max_threads(1)
                  
         # node string (for display)
         node_num_str = str()
@@ -562,9 +564,12 @@ class FeatureProcessing:
                         # convert to vaex
                         feature_df = feature_df.reset_index(drop=True)
 
-                        # disable vaex multi-threading
-                        vx.set_max_threads(1)
-        
+                        # disable thread
+                        vx.settings.main.thread_count = 1
+                        vx.settings.main.thread_count_io = 1
+                        pa.set_cpu_count(1)
+
+                        # convert from pandas
                         feature_vx = vx.from_pandas(
                             feature_df,
                             copy_index=False)
