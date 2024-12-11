@@ -68,9 +68,9 @@ class TriggerProcessing:
            (or list of files). Only a single raw data group 
            allowed 
             
-        config_file : str 
+        config_file : str  or dict
            Full path and file name to the YAML settings for the
-           processing.
+           processing or dictionary with already loaded config
 
         series : str or list of str, optional
             series to be process, disregard other data from raw_path
@@ -130,22 +130,26 @@ class TriggerProcessing:
         self._input_base_path = str(input_base_path)
         self._input_group_name = str(group_name)
         self._series_list = list(input_data_dict.keys())
-
-        
-        # extract processing configuration
-        if not os.path.exists(config_file):
-            raise ValueError('Configuration file "' + config_file
-                             + '" not found!')
+    
         available_channels = self._get_channel_list(input_data_dict)
-      
-        trigger_config, evtbuider_config, filter_file, channels = (
-            self._read_config(config_file, available_channels)
-        )
 
-        self._trigger_config = trigger_config
-        self._evtbuilder_config = evtbuider_config
-        self._trigger_channels = channels
-      
+        # config file
+        if not isinstance(config_file, dict):
+
+            if (not isinstance(config_file, str)
+                or not os.path.isfile(config_file)):
+                raise ValueError(f'ERROR: argument "{config_file}" '
+                                 f'should be a file or a dictionary!')
+
+            yaml = YamlConfig(config_file, available_channels)
+            config_file = yaml.get_config('trigger')
+
+        self._trigger_config = copy.deepcopy(config_file['channels'])
+        self._evtbuilder_config = copy.deepcopy(config_file['overall'])
+        self._trigger_channels = copy.deepcopy(config_file['channel_list'])
+        if not 'filter_file' in config_file['overall']:
+            raise ValueError('ERROR: Filter file missing in yaml file!')
+         
         # check channels to be processed
         if not self._trigger_channels:
             raise ValueError('No trigger channels to be processed! ' +
@@ -159,7 +163,7 @@ class TriggerProcessing:
             input_base_path,
             input_data_dict,
             group_name=group_name,
-            filter_file=filter_file,
+            filter_file=config_file['overall']['filter_file'],
             salting_dataframe=salting_dataframe,
             verbose=verbose
         )
@@ -395,8 +399,12 @@ class TriggerProcessing:
         evtbuilder_inst = EventBuilder()
               
         # instantiate OF trigger and add to EventBuilder
-        for trig_chan, trig_data in self._trigger_config.items():
+        trigger_config = copy.deepcopy(self._trigger_config)
+        for trig_chan, trig_data in trigger_config.items():
 
+            # channel name
+            channel_name = trig_data['channel_name']
+            
             # get template
             template_tag = 'default'
             if 'template_tag' in trig_data:
@@ -404,7 +412,7 @@ class TriggerProcessing:
             
             template, template_metadata = (
                 self._processing_data_inst.get_template(
-                    trig_chan,
+                    channel_name,
                     tag=template_tag)   
             )
 
@@ -439,29 +447,23 @@ class TriggerProcessing:
 
             csd, csd_freqs, csd_metadata = (
                 self._processing_data_inst.get_noise(
-                    trig_chan,
+                    channel_name,
                     tag=noise_tag)
             )
-
-                    
-            # trigger name
-            trigger_name = trig_chan
-            if 'trigger_name' in trig_data:
-                trigger_name = trig_data['trigger_name']
             
             # sample rate
             fs = self._processing_data_inst.get_sample_rate()
             
             # instantiate optimal filter trigger
             oftrigger_inst = OptimumFilterTrigger(
-                trig_chan, fs, template, csd,
+                channel_name, fs, template, csd,
                 nb_pretrigger_samples,
-                trigger_name=trigger_name
+                trigger_name=trig_chan
             )
 
             # add in EventBuilder
             evtbuilder_inst.add_trigger_object(
-                trigger_name, oftrigger_inst)
+                trig_chan, oftrigger_inst)
             
         # output file name base (if saving data)
         output_base_file = None
@@ -581,11 +583,20 @@ class TriggerProcessing:
                             process_df.close()
                             
                         except Exception as e:
-                            print("WARNING: Export failed with error:", e)
+                            
+                            print('WARNING: Export failed with error: ', e)
+                            print('Will try again...')
+                            
+                            # let's try one more time
                             df_pandas = process_df.to_pandas_df()
-                            df_pandas.to_hdf(f'debug_pandas_{node_num}.hdf5',
-                                             key='data', mode='w')
-                            raise 
+                            process_df = vx.from_pandas(
+                                df_pandas,
+                                copy_index=False
+                            )
+                            
+                            # export
+                            process_df.export_hdf5(file_name, mode='w')
+                            process_df.close()
                             
                         # increment dump
                         dump_counter += 1
@@ -638,13 +649,10 @@ class TriggerProcessing:
                 
                 # loop trigger channels
                 for trig_chan, trig_data in self._trigger_config.items():
-                    
-                    # trigger name
-                    trigger_name = trig_chan
-                    if 'trigger_name' in trig_data.keys():
-                        trigger_name = trig_data['trigger_name']
 
-                                      
+                    # channel
+                    channel_name =  trig_data['channel_name']
+                    
                     # get threshold
                     threshold = None
                     if 'threshold_sigma' in trig_data.keys():
@@ -671,11 +679,13 @@ class TriggerProcessing:
                         positive_pulses = trig_data['positive_pulses']
                         
                     # get trace
-                    trace = self._processing_data_inst.get_channel_trace(trig_chan)
+                    trace = self._processing_data_inst.get_channel_trace(
+                        channel_name
+                    )
                                      
                     # acquire trigger
                     evtbuilder_inst.acquire_triggers(
-                        trigger_name,
+                        trig_chan,
                         trace,
                         threshold,
                         pileup_window_msec=pileup_window_msec,

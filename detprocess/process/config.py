@@ -20,7 +20,8 @@ class YamlConfig:
     Class to read and manage yaml configuration
     """
 
-    def __init__(self, yaml_file, available_channels, verbose=True):
+    def __init__(self, yaml_file, available_channels, sample_rate=None,
+                 verbose=True):
         """
         Initialize class
 
@@ -35,26 +36,39 @@ class YamlConfig:
 
         # yaml file 
         self._yaml_file = yaml_file
+
+        # sample rate
+        self._sample_rate = sample_rate
         
         # initialize processing config
         self._processing_config = None
 
         # configuration types
-        self._configuration_fields = ['global', 'salting',
-                                      'feature', 'didv', 'noise',
-                                     'template', 'trigger']
+        self._configuration_fields = ['salting', 'feature',
+                                      'didv', 'noise',
+                                      'template', 'trigger']
 
         # available global parameters
-        self._global_parameters = ['filter_file', 'didv_file']
-        self._global_trigger_parameters = ['coincident_window_msec',
-                                           'coincident_window_samples'] 
-        self._global_salting_parameters = ['dm_pdf_file',
-                                           'energies',
-                                           'nsalt'] 
+        self._overall_parameters  = {
+            'global': ['filter_file', 'didv_file'],
+            'trigger': ['coincident_window_msec',
+                        'coincident_window_samples'] ,
+            'salting': ['dm_pdf_file',
+                        'coincident_salts',
+                        'energies',
+                        'nsalt'],
+            'feature': ['trace_length_samples',
+                        'pretrigger_length_samples',
+                        'trace_length_msec',
+                        'pretrigger_length_msec']
+            }
+            
+            
         # modified/obsolete parameters
         # -> keep back-compatibility
         # obsolete keys
         self._obsolete_keys = {
+            'trigger_name': 'trigger_channel',
             'nb_samples': 'trace_length_samples',
             'nb_pretrigger_samples': 'pretrigger_length_samples'
         }
@@ -119,235 +133,273 @@ class YamlConfig:
             yaml_dict.pop('include')
             
 
-        
-        # let's split configuration based on the known
-        # type of processing
-        config_dicts = dict()
-        for config_name in self._configuration_fields:
-        
-            # set to None
-            config_dicts[config_name] = dict()
-      
-            # add if available
-            if config_name in yaml_dict.keys():
-                # add copy
-                config_dicts[config_name] = copy.deepcopy(
-                    yaml_dict[config_name]
-                )
+        # rename obsolete keys
+        for old_key, new_key in self._obsolete_keys.items():
+            yaml_dict = self._rename_key_recursively(
+                yaml_dict, old_key, new_key
+            )
+              
+        # Initialize
+        processing_configs = {'global':{}}
+        for field in self._configuration_fields:
+            processing_configs[field] = {'overall':{},
+                                         'channels':{}}
             
-                # remove from yaml file
-                yaml_dict.pop(config_name)
-
+            
         # global parameters
-        for param in self._global_parameters:
-            config_dicts['global'][param] = None
+        for param in self._overall_parameters['global']:
+            processing_configs['global'][param] = None
             if param in yaml_dict.keys():
-                config_dicts['global'][param] = copy.deepcopy(
+                processing_configs['global'][param] = copy.deepcopy(
                     yaml_dict[param]
                 )
                 yaml_dict.pop(param)
                 
-
-        # the rest of parameter are for feature processing
-        for param in  yaml_dict.keys():
-            config_dicts['feature'][param] = copy.deepcopy(
-                yaml_dict[param]
-            )
-
-        # rename obsolete keys
-        for old_key, new_key in self._obsolete_keys.items():
-            config_dicts = self._rename_key_recursively(
-                config_dicts, old_key, new_key
-            )
-            
-
-        # let's cleanup for all types:
-        #    - separate channels with ','
-        #    - replace "all" with actuall channel names
         
-        # intialize 
-        processing_config = dict()
-        
-        # Loop configuration and check/cleanup parameters
-        for config_name  in self._configuration_fields:
+        # let's split configuration based on the known
+        # type of processing
+        for field in self._configuration_fields:
 
-            # check if there is anything available
-            if utils.is_empty(config_dicts[config_name]):
+            # check if field available
+            if field not in yaml_dict.keys():
                 continue
-        
-            # initialize  output
-            processing_config[config_name] = dict()
-
-            # dictionary
-            config_dict = config_dicts[config_name]
-
-            # global parameters
-            if config_name == 'global':
-                processing_config[config_name] = config_dict.copy()
-                continue
-
-            # convert 'all' (individual) channels to actual
-            # available channels
-            if 'all' in config_dict.keys():
             
-                # loop available channels and copy parameters
-                for chan in self._available_channels:
-                
-                    processing_config[config_name][chan] = copy.deepcopy(
-                        config_dict['all']
-                    )
-                
-                # remove from dict    
-                config_dict.pop('all')
+            # set to None
+            field_map = {'overall': {},
+                         'channels': {}}
+    
+            # overall parameters
+            overall_params = []
+            if field in self._overall_parameters:
+                overall_params = self._overall_parameters[field]
 
-            # let's split channels that are separated
-            # by a comma and check duplicate
-            parameter_list = list()
-            iter_list = list(config_dict.keys())
-            for chan in iter_list:
+            # let's get config dictionary
+            config_dict = copy.deepcopy(yaml_dict[field])
+            yaml_dict.pop(field)
             
-                if ',' in chan:
-                
-                    # split channels
-                    split_channels ,_ = utils.split_channel_name(
-                        chan, self._available_channels, separator=','
+            for config, config_items in config_dict.items():
+
+                if config in overall_params:
+                    field_map['overall'][config] = (
+                        config_items
                     )
-
-                    # loop and add config for split channels
-                    for split_chan in split_channels:
-
-                        # error if multiple times defined
-                        if split_chan in parameter_list:
-                            raise ValueError(f'ERROR: channel {split_chan} '
-                                             f'defined multiple times in the '
-                                             f'{config_name} configuration. '
-                                             f'This is not allowed to avoid mistake.'
-                                             f'Check yaml file!')
-
-                        # copy dict 
-                        config_dict[split_chan] = copy.deepcopy(
-                            config_dict[chan]
+                elif field == 'feature' and config == 'global':
+                    for param in config_items:
+                        field_map['overall'][param] = (
+                            config_items[param]
                         )
-                        
-                        parameter_list.append(split_chan)
-
-                    # remove from config
-                    config_dict.pop(chan)
-            
                 else:
-                    
-                    if chan in parameter_list:
-                        raise ValueError(f'ERROR: parameter or channel {chan} '
-                                         f'defined multiple times in the '
-                                         f'{config_name} configuration. '
-                                         f'This is not allowed to avoid mistake!'
-                                         f'Check yaml file!')
-
-                    parameter_list.append(chan)
-
-            # check duplication of "length" parameters
-            if ('coincident_window_msec' in parameter_list
-                and 'coincident_window_samples' in  parameter_list):
-                raise ValueError(f'ERROR: Found both "coincident_window_msec" '
-                                 f'and "coincident_window_samples" in '
-                                 f'{config_name} configuration. Choose between '
-                                 f'msec or samples!')
-                
+                    field_map['channels'][config] = (
+                        config_items
+                    )
+            # save
+            processing_configs[field] = field_map
             
-            # loop channels/keys and add to output configuration
-            for chan, config in config_dict.items():
+        # the rest of parameters are for feature processing (without
+        # "feature" field
+        for param in  yaml_dict.keys():
 
-                # check if empty 
-                if utils.is_empty(config):
-                    raise ValueError(
-                        f'ERROR: empty channel/parameter '
-                        f'{chan} for {config_name} configuration!')
+            if param == 'global':
+                processing_configs['feature']['overall'] = copy.deepcopy(
+                    yaml_dict[param]
+                )
+            else:
+                processing_configs['feature']['channels'][param] = copy.deepcopy(
+                    yaml_dict[param]
+                )
+            
 
-                # check if non-channel parameter
-                if (config_name == 'trigger'
-                    and chan in self._global_trigger_parameters):
-                    processing_config[config_name][chan] = config
+        # for all fields, let's split channels if separated by ','
+        for field in self._configuration_fields:
+            
+            if (field not in processing_configs
+                or 'channels' not in processing_configs[field]):
+                continue
+            
+            new_channel_config = {}
+            channels = processing_configs[field]['channels']
+            for chan, chan_dict in channels.items():
+
+                # check if disable
+                if ('disable' in chan_dict and chan_dict['disable']
+                    or 'run' in chan_dict and not chan_dict['run']):
                     continue
                 
-                if (config_name == 'salting'
-                    and chan in self._global_salting_parameters):
-                    processing_config[config_name][chan] = config
-                    continue
+                if chan == 'all':
+                    for single_chan in self._available_channels:
+                        new_channel_config[single_chan] = (
+                            copy.deepcopy(chan_dict)
+                        )
+                else:
+                    # split channels
+                    split_channels, _ = utils.split_channel_name(
+                        chan, self._available_channels,
+                        separator=',', label=field
+                    )
 
-                # case individual channels
-                if chan in  self._available_channels:
-               
-                    if not isinstance(config, dict):
-                        raise ValueError(f'ERROR: Empty channel {chan} in the '
-                                         f'{config_name} configuration. Check '
-                                         f'yaml file!')
-                    # check if disabled
-                    if ('disable' in config and config['disable']
-                        or 'run' in config and not config['run']):
+                    for split_chan in split_channels:
+                        new_channel_config[split_chan] = (
+                            copy.deepcopy(chan_dict)
+                        )
+            # save
+            processing_configs[field]['channels'] = new_channel_config
+            
 
-                        # remove if needed
-                        if chan in processing_config[config_name]:
-                            processing_config[config_name].pop(chan)
-                        
-                    else:
-                        # add
-                        if chan in processing_config[config_name]:
-                            processing_config[config_name][chan].update(
-                                copy.deepcopy(config)
-                            )
-                        else:
-                            processing_config[config_name][chan] = (
-                                copy.deepcopy(config)
-                            )
+     
+    
+        # let's cleanup of each type of processing
+        # feature
+        configs = self._configure_features(processing_configs['feature'],
+                                          processing_configs['global'])
+        
+        processing_configs['feature'] = copy.deepcopy(configs)
+        
+        # trigger
+        configs = self._configure_triggers(processing_configs['trigger'],
+                                           processing_configs['global'])
+        
+        processing_configs['trigger'] = copy.deepcopy(configs)
+    
 
-                        if 'disable' in processing_config[config_name][chan]:
-                            processing_config[config_name][chan].pop('disable')
-                            
-                    continue
+        # salting
+        configs = self._configure_salting(processing_configs['salting'],
+                                           processing_configs['global'])
+        
+        processing_configs['salting'] = copy.deepcopy(configs)
 
-                # case multi-channels
-                split_channels, separator = utils.split_channel_name(
-                    chan, self._available_channels, separator=None
+
+        
+        self._processing_config = processing_configs
+
+
+    def _configure_salting(self, salting_config, global_config):
+        """
+        Salting specific configuration
+        """
+
+        # copy 
+        salting_dict = copy.deepcopy(salting_config)
+        global_dict =  copy.deepcopy(global_config)
+
+        # add global into feature_dict
+        if global_config:
+            for config, config_val in global_config.items():
+                if config not in salting_dict['overall']:
+                    salting_dict['overall'][config] = config_val
+                    
+        # loop channels
+        split_channel_list = []
+        chan_list = list(salting_dict['channels'].keys())
+        for chan in chan_list:
+
+            chan_config = copy.deepcopy(salting_dict['channels'][chan])
+            
+            # check channel has any parameters
+            if not isinstance(chan_config, dict):
+                raise ValueError(
+                    f'ERROR: Channel {chan} has '
+                    f'no configuration! Remove '
+                    f'from yaml file or disable it!'
                 )
 
-                if separator in self._separators:
-                
-                    # check if disabled
-                    if ('disable' in config and config['disable']
-                        or 'run' in config and not config['run']):
-                        if chan in processing_config[config_name]:
-                            processing_config[config_name].pop(chan)
-                    else:
-                        processing_config[config_name][chan] = (
-                            copy.deepcopy(config)
-                        )
+
+            # get split channel list
+            split_chans, separator = utils.split_channel_name(
+                chan, self._available_channels, label='salting'
+            )
+
+            split_channel_list.extend(split_chans)
+
+        split_channel_list = list(set(split_channel_list))
+        salting_dict['channel_list'] = split_channel_list
+
+        return salting_dict
+
+    def _configure_triggers(self, trigger_config, global_config):
+        """
+        Trigger specific configuration
+        """
+
+        # copy 
+        trigger_dict = copy.deepcopy(trigger_config)
+        global_dict =  copy.deepcopy(global_config)
+
+
+        # add global into feature_dict
+        if global_config:
+            for config, config_val in global_config.items():
+                if config not in trigger_dict['overall']:
+                    trigger_dict['overall'][config] = config_val
                     
-                        if 'disable' in processing_config[config_name][chan]:
-                            processing_config[config_name][chan].pop('disable')
-                            
+                    
+        # loop channels
+        split_channel_list = []
+        trigger_channel_dict = {}
+        chan_list = list(trigger_dict['channels'].keys())
+      
+        for chan in chan_list:
+
+            chan_config = copy.deepcopy(trigger_dict['channels'][chan])
+            
+            # check channel has any parameters
+            if not isinstance(chan_config, dict):
+                raise ValueError(
+                    f'ERROR: Channel {chan} has '
+                    f'no configuration! Remove '
+                    f'from yaml file or disable it!'
+                )
+
+
+            # get split channel list
+            split_chans, separator = utils.split_channel_name(
+                chan, self._available_channels, label='trigger'
+            )
+            split_channel_list.extend(split_chans)
+
+            # check if trigger channel
+            trigger_channel = chan
+            if 'trigger_channel' in chan_config:
+                trigger_channel =  chan_config['trigger_channel']
+                chan_config.pop('trigger_channel')
+            
+            # case no algorithm name
+            if 'run' in chan_config:
+
+                if not chan_config['run']:
                     continue
 
-                # at this point, parameter is unrecognized
-                raise ValueError(f'ERROR: Unrecognized parameter '
-                                 f'{chan} in the {config_name} '
-                                 f'configuration. Perhaps a channel '
-                                 f'not in raw data?')
+                chan_config['channel_name'] = chan
+                
+                # save
+                trigger_channel_dict[trigger_channel] = chan_config
+
+            else:
+                
+                for algo, algo_dict in chan_config.items():
+
+                    if (not isinstance(algo_dict, dict)
+                        or 'run' not in algo_dict):
+                        raise ValueError(
+                            f'ERROR: Missing "run" parameter for trigger '
+                            f'channel {chan}'
+                        )
+                    
+                    if not algo_dict['run']:
+                        continue
+
+                    algo_trigger_channel = f'{algo}_{trigger_channel}'
+
+                    # save
+                    algo_dict['channel_name'] = chan
+                    trigger_channel_dict[algo_trigger_channel] = algo_dict
+                    
+        trigger_dict['channels'] = trigger_channel_dict
+        split_channel_list = list(set(split_channel_list))
+        trigger_dict['channel_list'] = split_channel_list
         
-        # Feature processing specific config
-        if 'feature' in processing_config:
-            feature_dict = copy.deepcopy(processing_config['feature'])
-            global_dict = copy.deepcopy(processing_config['global'])
-            processing_config['feature'] = self._configure_features(
-                feature_dict, global_dict
-            )
-            
-        #if 'trigger' in processing_config:
-        #     processing_config['trigger'] = self._configure_features(
-        #         processing_config['trigger']
-        #     )
-        
-        self._processing_config = processing_config
-        
+        return trigger_dict
+                
+                
     def _configure_features(self, feature_config, global_config):
         """
         Feature specific configuration
@@ -355,13 +407,25 @@ class YamlConfig:
 
         # copy 
         feature_dict = copy.deepcopy(feature_config)
+        global_dict =  copy.deepcopy(global_config)
 
-        # chan
-        chan_list = list(feature_dict.keys())
 
+        # add global into feature_dict
+        if global_config:
+            for config, config_val in global_config.items():
+                if config not in feature_dict['overall']:
+                    feature_dict['overall'][config] = config_val
+
+        
+        # loop channels
+        #  - check channel is in raw data
+        #  - remove disabled algorithm
+        #  - add trace length
+        split_channel_list = []
+        chan_list = list(feature_dict['channels'].keys())
         for chan in chan_list:
 
-            chan_config = feature_dict[chan]
+            chan_config = copy.deepcopy(feature_dict['channels'][chan])
 
             # check channel has any parameters
             if not isinstance(chan_config, dict):
@@ -372,51 +436,54 @@ class YamlConfig:
                 )
     
             # channel list
-            chan_list, separator = utils.split_channel_name(
-                chan, self._available_channels
+            split_chans, separator = utils.split_channel_name(
+                chan, self._available_channels, label='feature'
             )
+
+            split_channel_list.extend(split_chans)
+
 
             # trace length
             nb_samples = None
             nb_pretrigger_samples = None
 
             # check if in global:
-            if 'trace_length_samples' in global_config:
+            if 'trace_length_samples' in feature_dict['overall']:
                 nb_samples  = (
-                    global_config['trace_length_samples']
+                    feature_dict['overall']['trace_length_samples']
                 )
-            elif 'trace_length_msec' in global_config:
-                if sample_rate is None:
+            elif 'trace_length_msec' in feature_dict['overall']:
+                if self._sample_rate is None:
                     raise ValueError(
                         'ERROR: sample rate is required '
                         'when trace length is in msec. '
                         )
                 trace_length_msec = (
-                    global_config['trace_length_msec']
+                    feature_dict['overall']['trace_length_msec']
                 )
                 nb_samples  = (
                     convert_length_msec_to_samples(trace_length_msec,
-                                                   sample_rate)
+                                                   self._sample_rate)
                 )
                 
-            if 'pretrigger_length_samples' in global_config:
+            if 'pretrigger_length_samples' in feature_dict['overall']:
                 nb_pretrigger_samples = (
-                    global_config['pretrigger_length_samples']
+                    feature_dict['overall']['pretrigger_length_samples']
                 )
-            elif 'pretrigger_length_msec' in global_config:
+            elif 'pretrigger_length_msec' in feature_dict['overall']:
                 pretrigger_length_msec = (
-                    global_config['pretrigger_length_msec']
+                    feature_dict['overall']['pretrigger_length_msec']
                 )
                 nb_pretrigger_samples  = (
                     convert_length_msec_to_samples(pretrigger_length_msec,
-                                                   sample_rate)
+                                                   self._sample_rate)
                 )
                 
             # Get trace/pretrigger length at the channel level
             if 'trace_length_samples' in chan_config.keys():
                 nb_samples  = chan_config['trace_length_samples']
             elif 'trace_length_msec' in chan_config.keys():
-                if sample_rate is None:
+                if self._sample_rate is None:
                     raise ValueError(
                         'ERROR: sample rate is required '
                         'when trace length is in msec. '
@@ -424,7 +491,7 @@ class YamlConfig:
                 trace_length_msec = chan_config['trace_length_msec']
                 nb_samples  = (
                     convert_length_msec_to_samples(trace_length_msec,
-                                                   sample_rate)
+                                                   self._sample_rate)
                 )
 
             if 'pretrigger_length_samples' in chan_config.keys():
@@ -433,7 +500,7 @@ class YamlConfig:
                 pretrigger_length_msec = chan_config['pretrigger_length_msec']
                 nb_pretrigger_samples  = (
                     convert_length_msec_to_samples(pretrigger_length_msec,
-                                                   sample_rate)
+                                                   self._sample_rate)
                 )
                 
             if (nb_samples is not None
@@ -464,7 +531,7 @@ class YamlConfig:
 
                 # remove from configuration if not run
                 if not algo_config['run']:
-                    feature_dict[chan].pop(algo)
+                    feature_dict['channels'][chan].pop(algo)
                     continue
 
                 # add to list of algorithms
@@ -480,7 +547,7 @@ class YamlConfig:
                     trace_length_msec = algo_config['trace_length_msec']
                     nb_samples_alg  = (
                         convert_length_msec_to_samples(trace_length_msec,
-                                                       sample_rate)
+                                                       self._sample_rate)
                 )
                    
                 if 'pretrigger_length_samples' in algo_config.keys():
@@ -491,28 +558,33 @@ class YamlConfig:
                     pretrigger_length_msec = algo_config['pretrigger_length_msec']
                     nb_pretrigger_samples_alg  = (
                         convert_length_msec_to_samples(pretrigger_length_msec,
-                                                       sample_rate)
+                                                       self._sample_rate)
                     )
 
                 # update algorithm with trace length
-                feature_dict[chan][algo]['nb_samples'] = (
+                feature_dict['channels'][chan][algo]['nb_samples'] = (
                     nb_samples_alg
                 )
 
-                feature_dict[chan][algo]['nb_pretrigger_samples'] = (
+                feature_dict['channels'][chan][algo]['nb_pretrigger_samples'] = (
                     nb_pretrigger_samples_alg 
                 )   
                 
             # remove channel if no algorithm
             if not algorithm_list:
-                feature_dict.pop(chan)
+                feature_dict['channels'].pop(chan)
             else:
                 # remove trace length / weight
-                if 'trace_length_samples' in feature_dict[chan]:
-                    feature_dict[chan].pop('trace_length_samples')
-                if 'pretrigger_length_samples' in feature_dict[chan]:
-                    feature_dict[chan].pop('pretrigger_length_samples')
-                                  
+                if 'trace_length_samples' in feature_dict['channels'][chan]:
+                    feature_dict['channels'][chan].pop('trace_length_samples')
+                if 'pretrigger_length_samples' in feature_dict['channels'][chan]:
+                    feature_dict['channels'][chan].pop('pretrigger_length_samples')
+
+
+        # add channel list
+        split_channel_list = list(set(split_channel_list))
+        feature_dict['channel_list'] = split_channel_list
+                    
         # return
         return feature_dict
  

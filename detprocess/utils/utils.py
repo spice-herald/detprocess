@@ -67,69 +67,96 @@ def create_directory(directory_path):
 
 def split_channel_name(channel_name,
                        available_channels=None,
-                       separator=None):
+                       separator=None,
+                       label=None):
     """
     Split channel name and return
     list of individual channels and separator
     """
 
     # allowed separators
-    separators = [',','+','-','|']
+    separators = [',' ,'+' ,'-' ,'|']
 
 
+    # strip whitespace
+    channel_name = channel_name.replace(' ','')
+    
     # check if channel_name has any separators
     has_separator = False
-    for aseparator in separators:
-        if aseparator in channel_name:
+    for sep in separators:
+        if sep in channel_name:
              has_separator = True
              break
     if not has_separator:
         return [channel_name], None
-        
-             
-    
+
+
     # case available_channels is None
     if  available_channels is None:
 
         if separator is None:
             raise ValueError(
                 'ERROR: separator required when '
-                'available_channels not provided!')
+                '"available_channels" not provided! ')
+        elif separator == '-':
+             raise ValueError(
+                'ERROR: "available_channels" required '
+                'when using separator "-"')
+        elif ((separator == '-' or separator == '+')
+              and (',' in channel_name or '|' in channel_name)):
+            raise ValueError(
+                f'ERROR: Channels cannot be split with '
+                f'{separator} before channels split with '
+                f'"," and "|"')
         else:
             channel_list = channel_name.split(separator)
             return channel_list, separator
-                          
+
+
+
     # case already an individual channel
     # or no separator found
     if (channel_name in available_channels
         or channel_name == 'all'):
         return [channel_name], None
-      
-    # Let's first find the separator if None
-    if separator is None:
 
-        separator_check = channel_name
+    # let's 
+    channel_check = channel_name
+    channel_list = []
+    for chan in available_channels:
+        if chan in channel_check:
+            channel_check = channel_check.replace(chan, '')
+            channel_list.append(chan)
+            
+    separator_list =  [x for x in channel_check]
+    separator_list =  list(set(separator_list))
+    channel_list = list(set(channel_list))
 
-        # remove all channels
-        for chan in available_channels:
-            if chan in separator_check:
-                separator_check = separator_check.replace(chan, '')
-                
-        separator_check = separator_check.strip()
-
-        # convert to list
-        separator_list = [x for x in separator_check]
-        separator_list = list(set(separator_list))
-        
-        if len(separator_list) == 1:
-            separator = separator_list[0]
+    non_separator_list = []
+    for sep in separator_list:
+        if sep not in separators:
+            non_separator_list.append(sep)
+    if non_separator_list:
+        if label is None:
+            raise ValueError(
+                f'ERROR: Unidentified channel(s) in yaml file! '
+                f'Perhaps not in raw data... or misspelled?'
+            )
         else:
             raise ValueError(
-                f'ERROR: Multiple separators found! '
-                f'Only one allowed from {separators}! '
+                f'ERROR: Unidentified channel(s) in yaml file '
+                f'({label}) '
+                f'Perhaps not in raw data... or misspelled?'
             )
 
 
+    if separator is None:
+        if len(separator_list) == 1:
+            separator_list = separator_list[0]
+        return channel_list, separator_list
+
+    # case separator provided
+    
     # check separator
     if separator not in separators:
         raise ValueError(

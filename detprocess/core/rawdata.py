@@ -6,6 +6,7 @@ import pytesdaq.io as h5io
 from glob import glob
 from pathlib import Path
 import re
+import copy
 
 __all__ = [
     'RawData'
@@ -51,6 +52,9 @@ class RawData:
         # build map
         self._build_file_map()
 
+        # load medatadata
+        self._load_metadata()
+        
         
     @property
     def verbose(self):
@@ -121,14 +125,26 @@ class RawData:
                 if series_name not in data_map:
                     raise ValueError(f'No series {series_name} found '
                                      f'in raw data! Check arguments')
-                output_map[series_name] = data_map[series_name]
+                output_map[series_name] = copy.deepcopy(data_map[series_name])
                 
         else:
-            output_map = data_map
+            output_map = copy.deepcopy(data_map)
 
         return output_map
 
 
+    def get_continuous_data_config(self, restricted=False):
+        """
+        Get metadata
+        """
+
+        config = copy.deepcopy(self._raw_metadata['cont']['open'])
+        if restricted:
+            config = copy.deepcopy(self._raw_metadata['cont']['restricted'])
+
+        return config
+
+        
     def _build_file_map(self):
         """
         Build file map, separate between files types
@@ -254,3 +270,64 @@ class RawData:
         
 
         
+    def _load_metadata(self):
+        """
+        get metadata
+        """
+        h5 = h5io.H5Reader()
+
+
+        for data_type, data in  self._raw_files.items():
+
+            # check if data avaliable
+            if not data or not isinstance(data, dict):
+                continue
+            
+            if data_type != 'cont':
+                
+                for series, file_list in  data.items():
+
+                    # check if available
+                    if not file_list or not isinstance(file_list, list):
+                        continue
+                    
+                    # get metadata
+                    metadata =  h5.get_metadata(file_list[0])
+                    metadata.pop('groups')
+                    config = h5.get_detector_config(file_list[0])
+                    channel_list = list(config.keys())
+
+                    self._raw_metadata[data_type] = {
+                        'channel_list': channel_list,
+                        'detector_config': config,
+                        'overall': metadata
+                    }
+
+                    break
+                    
+            else:
+                
+                for atype in ['open', 'restricted']:
+
+                    if not data[atype]:
+                        continue
+                
+                    for series, file_list in  data[atype].items():
+                        
+                        # check if available
+                        if not file_list or not isinstance(file_list, list):
+                            continue
+                        
+                        # get metadata
+                        metadata =  h5.get_metadata(file_list[0])
+                        metadata.pop('groups')
+                        config = h5.get_detector_config(file_list[0])
+                        channel_list = list(config.keys())
+                        
+                        self._raw_metadata['cont'][atype] = {
+                            'channel_list': channel_list,
+                            'detector_config': config,
+                            'overall': metadata
+                        }
+
+                        break

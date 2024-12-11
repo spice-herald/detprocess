@@ -2,12 +2,12 @@ import warnings
 import argparse
 from pprint import pprint
 from detprocess import utils, TriggerProcessing, IVSweepProcessing
-from detprocess import  FeatureProcessing, Randoms, Salting, RawData
+from detprocess import  FeatureProcessing, Randoms, Salting
+from detprocess import RawData, YamlConfig
 import os
 from pathlib import Path
 from pytesdaq.utils import arg_utils
 from datetime import datetime
-import yaml
 import vaex as vx
 import re
 from qetpy.utils import convert_channel_name_to_list,convert_channel_list_to_name
@@ -290,46 +290,54 @@ if __name__ == "__main__":
     group_name = rawdata.get_group_name()
     base_path = rawdata.get_base_path()
     facility = rawdata.get_facility()
+
+    available_channels = None
     
     if not process_ivsweep:
-      
-        processing_steps = []
-        if acquire_salting and salting_dataframe_path is None:
-            processing_steps.append('generate salting')
-        if acquire_rand:
-            processing_steps.append('acquire randoms')
-        if acquire_trig:
-            processing_steps.append('acquire triggers')
-        if process_feature:
-            processing_steps.append('process features')
-
-        process_str = ', '.join(processing_steps)
-        print(f'\nThe following processing with done:')
-        print(f' - {process_str}')
-             
+        
+        print('')
+        
+        metadata = rawdata.get_continuous_data_config(restricted=restricted)
+        available_channels = metadata['channel_list']
+        
         if acquire_salting or salting_dataframe_path is not None:
-            print(' - salting will be injected in raw data')
+            print('Salting will be injected in raw data')
 
         if series is not None:
-            print(f' - only the following series with be processed: '
+            print(f'Only the following series with be processed: '
                   f'{series}!')
 
         if restricted:
-            print(f' - restricted data will be processed!')
+            print(f'WARNING: Restricted data will be processed!')
         else:
-            print(' - no restricted data will be processed (open only)')
+            print('No restricted data will be processed (open only)')
 
 
+    
     # ====================================
-    # Processing config
+    # IV Sweep
     # ====================================
     
-    yaml_dict = yaml.load(open(processing_setup, 'r'), Loader=utils._UniqueKeyLoader)
-    filter_file = yaml_dict['filter_file']
-    didv_file = None
-    if didv_file in yaml_dict:
-        didv_file = yaml_dict['didv_file']
+    if process_ivsweep:
                 
+        print('\n\n================================')
+        print('IV/dIdV Sweep Processing')
+        print('================================')
+                
+        myproc = IVSweepProcessing(raw_group_path)
+        df = myproc.process(ncores=ncores, lgc_save=True,
+                            save_path=save_path)
+
+        print('Processing done! ' + str(datetime.now()))
+        sys.exit(0)
+
+
+    # ====================================
+    # Read yaml file
+    # ====================================
+    
+    yaml_config = YamlConfig(processing_setup, available_channels)
+                    
      
     # ====================================
     # Calc Filter
@@ -366,36 +374,41 @@ if __name__ == "__main__":
         utils.create_directory(output_path)
         
         # get salting dict
-        salting_dict = yaml_dict['salting']
-                
-        # FIXME: raw data metadata, need to include
-        # number of events, trace length, 
-        metadata = {''}
+        salting_config = yaml_config.get_config('salting')
 
+        # filter file
+        filter_file = None
+        if 'filter_file' in salting_config['overall']:
+            filter_file = salting_config['overall']['filter_file']
+
+        # didv file (can be in filter file)
+        didv_file = None
+        if 'didv_file' in salting_config['overall']:
+            didv_file = salting_config['overall']['didv_file']
+        
         # Number of salt per energy/pdf
-        if 'nsalt' in salting_dict:
-            nsalt = salting_dict['nsalt']
-            salting_dict.pop('nsalt')
+        nsalt = None
+        if 'nsalt' in salting_config['overall']:
+            nsalt = salting_config['overall']['nsalt']
           
         coincident_salts = False
-        if "coincident_salts" in salting_dict:
-            coincident_salts = salting_dict['coincident_salts']
+        if 'coincident_salts' in salting_config['overall']:
+            coincident_salts = salting_config['overall']['coincident_salts']
             print(f'INFO: Salt time coincidence between channels has been set to {coincident_salts}!')
-            salting_dict.pop('coincident_salts')
-        
+                   
         # DM pdf
         pdf_file = None
-        if 'dm_pdf_file' in salting_dict:
-            pdf_file = salting_dict['dm_pdf_file']
-            salting_dict.pop('dm_pdf_file')
-
+        if 'dm_pdf_file' in salting_config['overall']:
+            pdf_file = salting_config['overall']['dm_pdf_file']
+         
         # if "energies" provided, use instead of pdf
         energies = [None]
-        if 'energies' in salting_dict:
-            energies = salting_dict['energies']
-            salting_dict.pop('energies')
+        if 'energies' in salting_config['overall']:
+            energies = salting_config['overall']['energies']
+
             if not isinstance(energies, list):
                 energies = [energies]
+                
             if pdf_file is not None:
                 print('ERROR with salting parameters: Either energies or pdf '
                       'should be provided. Not both!')
@@ -427,7 +440,7 @@ if __name__ == "__main__":
             # intialize dataframe list for channel
             chan_dataframe_list = []
             i = 0
-            for chan, chan_config in salting_dict.items():
+            for chan, chan_config in salting_config['channels'].items():
 
                 # check if multi-channel
                 chan_list = convert_channel_name_to_list(chan)
@@ -572,8 +585,10 @@ if __name__ == "__main__":
         if (randoms_group_path is not None
             and salting_dataframe_list[0] is None):
             trigger_group_name = os.path.basename(randoms_group_path)
-            
 
+        # trigger config
+        trigger_config = yaml_config.get_config('trigger')
+            
         for idx, salting_df in enumerate(salting_dataframe_list):
 
             # display salting energy 
@@ -588,7 +603,7 @@ if __name__ == "__main__":
                     
             # instantiate
             myproc = TriggerProcessing(raw_group_path,
-                                       processing_setup,
+                                       trigger_config,
                                        series=series,
                                        processing_id=processing_id,
                                        restricted=restricted,
