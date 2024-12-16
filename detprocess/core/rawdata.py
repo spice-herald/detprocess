@@ -7,6 +7,8 @@ from glob import glob
 from pathlib import Path
 import re
 import copy
+import h5py
+import sys
 
 __all__ = [
     'RawData'
@@ -18,17 +20,28 @@ class RawData:
     and metadata
     """
 
-    def __init__(self, raw_path, verbose=True):
+    def __init__(self, raw_path, series=None, data_type=None,
+                 restricted=False, verbose=True):
         """
         Initialize
         """
 
         self._raw_path = raw_path
+        self._series = series
+        self._restricted = restricted
         self._verbose = verbose
 
+
         # file types
-        self._file_types = ['cont', 'iv', 'didv',
-                            'exttrig', 'calib']
+        self._available_data_types = ['cont', 'iv', 'didv',
+                                      'exttrig', 'calib']
+        if (data_type is not None
+            and data_type not in self._available_data_types):
+            raise ValueError(f'ERROR: data type {data_type} not '
+                             f'recognized! Available types are: '
+                             f'{self._available_data_types}')
+
+        self._data_type = data_type
         
         # initialize
         self._group_name = None
@@ -48,13 +61,12 @@ class RawData:
                               'iv': {},
                               'didv': {}}
 
-
         # build map
         self._build_file_map()
 
         # load medatadata
         self._load_metadata()
-        
+     
         
     @property
     def verbose(self):
@@ -64,7 +76,10 @@ class RawData:
     def raw_path(self):
         return self._raw_path
 
-
+    @property
+    def restricted(self):
+        return self._restricted
+    
     def describe(self):
         """
         Display raw data
@@ -105,44 +120,143 @@ class RawData:
         return self._facility
     
     
-    def get_continuous_data_map(self, series=None, restricted=False):
+    def get_data_files(self, data_type=None, series=None):
         """
-        Get continuous data dictionary
+        Get data dictionary
         """
-        output_map = {}
-        data_map = None
-        if restricted:
-            data_map = self._raw_files['cont']['restricted'].copy()
-        else:
-            data_map = self._raw_files['cont']['open'].copy()
-            
-            
-        if series is not None:
+        
+        # get dictionary
+        data_dict = self._get_dictionary(data_type=data_type,
+                                         series=series)
+        return data_dict
+    
+    
 
-            if not isinstance(series, list):
-                series = [series]
-            for series_name in series:
-                if series_name not in data_map:
-                    raise ValueError(f'No series {series_name} found '
-                                     f'in raw data! Check arguments')
-                output_map[series_name] = copy.deepcopy(data_map[series_name])
-                
-        else:
-            output_map = copy.deepcopy(data_map)
-
-        return output_map
-
-
-    def get_continuous_data_config(self, restricted=False):
+    def get_data_config(self, data_type=None, series=None):
         """
         Get metadata
         """
 
-        config = copy.deepcopy(self._raw_metadata['cont']['open'])
-        if restricted:
-            config = copy.deepcopy(self._raw_metadata['cont']['restricted'])
+        # get dictionary
+        config_dict = self._get_dictionary(metadata=True,
+                                         data_type=data_type,
+                                         series=series)
+        
+        return config_dict
+    
+        
 
-        return config
+    def get_duration(self, series=None,
+                     data_type=None,
+                     include_nb_events=False):
+        """
+        Get number of events and duration
+        """
+
+        # check arguement
+        if data_type is None and self._data_type is None:
+            raise ValueError(f'ERROR: data_type argument '
+                             f'required!')
+        elif data_type is None:
+            data_type = self._data_type
+
+        # get dictionary
+        data_dict = self._get_dictionary(data_type=data_type,
+                                         series=series)
+    
+        # loop series and find number of events
+        nb_events = 0
+        nb_samples = None
+        for series, file_list in data_dict.items():
+            
+            for afile in file_list:
+    
+                with h5py.File(afile, 'r') as f:
+                
+                    # Access the "adc1" group
+                    adc1_group = f['adc1']
+                
+                    try:
+                        nb_events += adc1_group.attrs['nb_events']
+                    except KeyError:
+                        nb_ds = 0
+                        for name, item in adc1_group.items():
+                            if isinstance(item, h5py.Dataset):
+                                nb_ds += 1
+                        nb_events += nb_ds
+                
+                    if nb_samples is None:
+                        nb_samples = adc1_group.attrs['nb_samples']
+                        sample_rate = adc1_group.attrs['sample_rate']
+
+        trace_length = nb_samples/sample_rate
+        duration = trace_length * nb_events
+  
+        if include_nb_events:
+            return duration, nb_events
+        else:
+            return duration
+    
+    
+    def _get_dictionary(self, metadata=False, data_type=None, series=None):
+        """
+        Get data dictionary (file names or metadata)
+        """
+
+        # copy data dict
+        data_dict = None
+        if metadata:
+            data_dict = copy.deepcopy(self._raw_metadata)
+        else:
+            data_dict = copy.deepcopy(self._raw_files)
+
+        # case return everything
+        if (series is None and data_type is None
+            and self._data_type is None):
+            return data_dict
+       
+        if data_type is None:
+            data_type = self._data_type
+            
+        
+        # check data_type
+        if data_type is not None:
+
+            if data_type not in self._available_data_types:
+                raise ValueError(f'ERROR: data type {data_type} not '
+                                 f'recognized! Available types are: '
+                                 f'{self._available_data_types}')
+            
+            data_dict = data_dict[data_type]
+
+            if data_type == 'cont':
+                if self._restricted:
+                    data_dict = data_dict['restricted']
+                else:
+                    data_dict = data_dict['open']
+
+        # check series
+        data_dict_series = {}
+        if series is None:
+            data_dict_series = data_dict
+        else:
+            
+            if data_type is None:
+                raise ValueError('ERROR: "data_type" required if '
+                                 '"series" is not None')
+            
+            if not isinstance(series, list):
+                series = [series]
+            for it_series in series:
+                if it_series in data_dict:
+                    data_dict_series[it_series] = data_dict[it_series]
+                else:
+                    raise ValueError(f'ERROR: series {it_series} not part '
+                                     f'of raw data. Check data!')
+                                
+        # return
+        return data_dict_series
+    
 
         
     def _build_file_map(self):
@@ -182,11 +296,34 @@ class RawData:
             self._facility = int(match.group(1))
         else:
             raise ValueError('ERROR: No facility found from group name!')
+
+
+        # initialize
+        file_list = []
+        
+        # build wild card
+        file_wildcard_type =  '*'
+        if self._data_type is not None:
+            file_wildcard_type= f'*{self._data_type}_*'
             
-        # get all files
-        file_list =  glob(self._raw_path + '/*.hdf5')
+        if self._series is not None:
+            
+            series_list = self._series
+            if not isinstance(self._series, list):
+                series_list = [self._series]
+            for it_series in series_list:
+                file_wildcard = f'{file_wildcard_type}{it_series}*.hdf5'
+                file_list.extend(glob(f'{self._raw_path}/{file_wildcard}'))
+        else:
+            file_list =  glob(f'{self._raw_path}/{file_wildcard_type}.hdf5')
+
         if not file_list:
-            raise ValueError(f'ERROR: No HDF5 files found in {self._raw_path}')
+
+            if self._data_type is not None:
+                raise ValueError(f'ERROR: No HDF5 files found in {self._raw_path} '
+                                 f'with data type {self._data_type}')
+            else:
+                raise ValueError(f'ERROR: No HDF5 files found in {self._raw_path}')
             
         # make unique and sort
         file_list = list(set(file_list))
@@ -194,14 +331,20 @@ class RawData:
         
         # initialize
         separated_file_list = {}
-        
-        # loop 
+
+        # data types
+        data_types = self._available_data_types
+        if self._data_type is not None:
+            data_types = [self._data_type]
+            
+        # double check type and separate based on data type
         file_counter = 0
         file_list_copy =  file_list.copy()
         for file_name in file_list:
 
             # loop file type
-            for ftype in self._file_types:
+            for ftype in data_types:
+                
                 ftype_ = f'{ftype}_'
 
                 # initialize
@@ -238,36 +381,30 @@ class RawData:
                 if series_name not in file_name:
                     raise ValueError(f'ERROR: Unrecognized file name '
                                      f'{file_name}!')
-
-
-                # check if restricted
-                is_restricted = False
-                if (ftype == 'cont'
-                    and 'restricted' in file_name):
-                    is_restricted = True
                 
                 # append file
                 if ftype != 'cont':
-                
                     if series_name not in self._raw_files[ftype]:
                         self._raw_files[ftype][series_name] = []
                         
                     self._raw_files[ftype][series_name].append(file_name)
 
-                elif 'restricted' in file_name:
-                    if series_name not in self._raw_files['cont']['restricted']:
-                        self._raw_files['cont']['restricted'][series_name] = []
-                    self._raw_files['cont']['restricted'][series_name].append(
-                        file_name
-                    )
-                else:
-                    if series_name not in self._raw_files['cont']['open']:
-                        self._raw_files['cont']['open'][series_name] = []
-                    self._raw_files['cont']['open'][series_name].append(
-                        file_name
-                    )
+                else: 
+                    if 'restricted' in file_name:
 
-        
+                        if self._restricted:
+                            if series_name not in self._raw_files['cont']['restricted']:
+                                self._raw_files['cont']['restricted'][series_name] = []
+                            self._raw_files['cont']['restricted'][series_name].append(
+                                file_name
+                            )
+                    else:
+                        if not self._restricted:
+                            if series_name not in self._raw_files['cont']['open']:
+                                self._raw_files['cont']['open'][series_name] = []
+                            self._raw_files['cont']['open'][series_name].append(
+                                file_name
+                            )
 
         
     def _load_metadata(self):
@@ -277,57 +414,59 @@ class RawData:
         h5 = h5io.H5Reader()
 
 
-        for data_type, data in  self._raw_files.items():
+        for data_type, data_dict in  self._raw_files.items():
 
             # check if data avaliable
-            if not data or not isinstance(data, dict):
+            if not data_dict or not isinstance(data_dict, dict):
                 continue
-            
-            if data_type != 'cont':
+
+            # let's loop open/restricted
+            for atype in ['open', 'restricted']:
+
+                # get dictionary
+                data = data_dict
+                if data_type == 'cont':
+                    if not data_dict[atype]:
+                        continue
+                    data = data_dict[atype]
+                    
+                # loop series
+                series_metadata_dict = {}
                 
                 for series, file_list in  data.items():
 
                     # check if available
                     if not file_list or not isinstance(file_list, list):
                         continue
-                    
+
                     # get metadata
-                    metadata =  h5.get_metadata(file_list[0])
+                    metadata =  copy.deepcopy(h5.get_metadata(file_list[0]))
+                    
+                    # adc
+                    if 'adc_list' not in metadata.keys():
+                        raise ValueError(
+                            'ERROR: unrecognized file format!'
+                        )
+                    adc_id = metadata['adc_list'][0]
+                    metadata_adc = metadata['groups'][adc_id]
+                    metadata['sample_rate'] = float(metadata_adc['sample_rate'])
+                    metadata['nb_samples'] = int(metadata_adc['nb_samples'])
                     metadata.pop('groups')
+                    
+                    # detector channel
                     config = h5.get_detector_config(file_list[0])
                     channel_list = list(config.keys())
-
-                    self._raw_metadata[data_type] = {
-                        'channel_list': channel_list,
-                        'detector_config': config,
-                        'overall': metadata
-                    }
-
-                    break
                     
-            else:
-                
-                for atype in ['open', 'restricted']:
+                    # save
+                    series_metadata_dict[series] = {'channel_list': channel_list,
+                                                    'detector_config': config,
+                                                    'overall': metadata}
 
-                    if not data[atype]:
-                        continue
                 
-                    for series, file_list in  data[atype].items():
-                        
-                        # check if available
-                        if not file_list or not isinstance(file_list, list):
-                            continue
-                        
-                        # get metadata
-                        metadata =  h5.get_metadata(file_list[0])
-                        metadata.pop('groups')
-                        config = h5.get_detector_config(file_list[0])
-                        channel_list = list(config.keys())
-                        
-                        self._raw_metadata['cont'][atype] = {
-                            'channel_list': channel_list,
-                            'detector_config': config,
-                            'overall': metadata
-                        }
+                # save
+                if data_type == 'cont':
+                    self._raw_metadata['cont'][atype] = series_metadata_dict
+                else:
+                    self._raw_metadata[data_type] = series_metadata_dict
+                    break
 
-                        break

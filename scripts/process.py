@@ -15,6 +15,7 @@ import gc
 import multiprocessing
 import numpy as np
 import threading
+import sys
 
 warnings.filterwarnings('ignore')
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -277,52 +278,15 @@ if __name__ == "__main__":
               'be enabled in the same time as salting!')
         exit()
         
-
-    # ====================================
-    # Check raw data and processing
-    # ====================================
-
-
-    print('Processing information')
-    print('======================')
-    rawdata = RawData(raw_group_path)
-    rawdata.describe()
-    group_name = rawdata.get_group_name()
-    base_path = rawdata.get_base_path()
-    facility = rawdata.get_facility()
-
-    available_channels = None
-    
-    if not process_ivsweep:
-        
-        print('')
-        
-        metadata = rawdata.get_continuous_data_config(restricted=restricted)
-        available_channels = metadata['channel_list']
-        
-        if acquire_salting or salting_dataframe_path is not None:
-            print('Salting will be injected in raw data')
-
-        if series is not None:
-            print(f'Only the following series with be processed: '
-                  f'{series}!')
-
-        if restricted:
-            print(f'WARNING: Restricted data will be processed!')
-        else:
-            print('No restricted data will be processed (open only)')
-
-
-    
     # ====================================
     # IV Sweep
     # ====================================
     
     if process_ivsweep:
                 
-        print('\n\n================================')
+        print('\n\n=====================================')
         print('IV/dIdV Sweep Processing')
-        print('================================')
+        print('=====================================')
                 
         myproc = IVSweepProcessing(raw_group_path)
         df = myproc.process(ncores=ncores, lgc_save=True,
@@ -331,6 +295,55 @@ if __name__ == "__main__":
         print('Processing done! ' + str(datetime.now()))
         sys.exit(0)
 
+
+    # ====================================
+    # Check raw data and processing
+    # ====================================
+
+    print('\n\n=====================================')
+    print('Processing information')
+    print('=====================================')
+
+    rawdata = RawData(raw_group_path,
+                      data_type='cont', restricted=restricted,
+                      series=series)
+    print('INFO: Data info:')
+    rawdata.describe()
+
+
+    group_name = rawdata.get_group_name()
+    base_path = rawdata.get_base_path()
+    facility = rawdata.get_facility()
+
+    # metadata
+    metadata = rawdata.get_data_config()
+    available_channels = None
+    for itseries in metadata:
+        available_channels = metadata[itseries]['channel_list']
+        break;
+
+    print('')
+    if acquire_salting or salting_dataframe_path is not None:
+        print('Salting will be injected in raw data')
+
+    if series is not None:
+        print(f'Only the following series with be processed: '
+              f'{series}!')
+
+    if restricted:
+        print(f'WARNING: Restricted data will be processed!')
+    else:
+        print('No restricted data will be processed (open only)')
+
+    # get duration
+    duration, nb_events =  rawdata.get_duration(include_nb_events=True)
+    data_type = 'open'
+    if restricted:
+        data_type = 'restricted'
+            
+    print(f'Total number of events ({data_type} data): {nb_events}')
+    print(f'Total duration ({data_type} data): {duration/60} minutes')
+    
 
     # ====================================
     # Read yaml file
@@ -357,10 +370,9 @@ if __name__ == "__main__":
     
     if acquire_salting and salting_dataframe_path is None:
 
-        print('\n\n================================')
+        print('\n\n=====================================')
         print('Salting generation')
-        print('================================')
-        
+        print('=====================================')
         # initialize
         salting_dataframe_list = []
 
@@ -421,9 +433,10 @@ if __name__ == "__main__":
         # Add either raw data metadata or raw path
        
         #salting.set_raw_data_metadata(...)
-        salting.set_raw_data_path(group_path=raw_group_path,
-                                  series=series,
-                                  restricted=restricted)        
+        salting.set_raw_data(rawdata,
+                             series=series,
+                             restricted=restricted)
+        
         # loop energies
         for energy in energies:
 
@@ -442,6 +455,10 @@ if __name__ == "__main__":
             i = 0
             for chan, chan_config in salting_config['channels'].items():
 
+                # display
+                print(f'INFO: Generate salting for channel  {chan}')
+
+                
                 # check if multi-channel
                 chan_list = convert_channel_name_to_list(chan)
                 
@@ -521,11 +538,10 @@ if __name__ == "__main__":
     
     if acquire_rand:
 
-             
-        print('\n\n================================')
+        print('\n\n=====================================')
         print('Randoms Acquisition')
-        print('================================')
-
+        print('=====================================')
+        
         if args.random_rate and args.nrandoms:
             print('ERROR: Choose between "random_rate" '
                   + 'or "nrandoms" argument, not both!')
@@ -543,7 +559,7 @@ if __name__ == "__main__":
             exit()
             
         # instantiate
-        myproc = Randoms(raw_group_path,
+        myproc = Randoms(rawdata,
                          processing_id=processing_id,
                          series=series,
                          restricted=restricted,
@@ -568,10 +584,9 @@ if __name__ == "__main__":
     trigger_group_path_list = []
       
     if acquire_trig:
-
-        print('\n\n================================')
+        print('\n\n=====================================')
         print('Trigger Acquisition')
-        print('================================')
+        print('=====================================')
 
         
         ntriggers = -1
@@ -635,10 +650,10 @@ if __name__ == "__main__":
      
     if process_feature:
 
-        print('\n\n================================')
+        print('\n\n=====================================')
         print('Feature Processing')
-        print('================================')
-
+        print('\n\n=====================================')
+     
         # check if trigger path exist
         if not trigger_group_path_list:
             trigger_group_path_list = [randoms_group_path]
@@ -684,26 +699,5 @@ if __name__ == "__main__":
 
 
                 
-    # ------------------
-    # IV - dIdV sweep
-    # processing
-    # ------------------
-
-    if process_ivsweep:
-
-
-        print('\n\n================================')
-        print('IV/dIdV Sweep Processing')
-        print('================================')
-        print(str(datetime.now()))
-        
-        myproc = IVSweepProcessing(raw_group_path)
-        df = myproc.process(ncores=ncores, lgc_save=True,
-                            save_path=save_path)
-
-        
-
-
-
     # done
     print('Processing done! ' + str(datetime.now()))
