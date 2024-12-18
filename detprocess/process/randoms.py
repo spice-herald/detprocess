@@ -16,7 +16,14 @@ from math import ceil, floor
 import random
 import copy
 from humanfriendly import parse_size
+import pyarrow as pa
+from detprocess.core.rawdata import RawData
 
+warnings.filterwarnings('ignore')
+
+vx.settings.main.thread_count = 1
+vx.settings.main.thread_count_io = 1
+pa.set_cpu_count(1)
 
 __all__ = [
     'Randoms'
@@ -29,7 +36,8 @@ class Randoms:
     saved in vaex dataframe for further processing.
     """
 
-    def __init__(self, raw_path, series=None,
+    def __init__(self, raw_data,
+                 series=None,
                  processing_id=None,
                  restricted=False,
                  calib=False,
@@ -40,10 +48,10 @@ class Randoms:
         Parameters
         ---------
         
-        raw_path : str or list of str 
-           raw data group directory OR full path to HDF5  file 
-           (or list of files). Only a single raw data group 
-           allowed 
+        raw_data : str or dictionary
+           raw data group directory 
+           OR RawData object
+           Only a single raw data group allowed
             
         series : str or list of str, optional
             series to be process, disregard other data from raw_path
@@ -79,24 +87,62 @@ class Randoms:
 
         # calibration
         self._calib = calib
+        data_type = 'cont'
         if calib:
             self._restricted = False
+            data_type = 'calib'
 
-        # extract input file list
-        input_file_dict, input_base_path, input_group_name, facility = (
-            self._get_file_list(raw_path, series=series,
-                                restricted=restricted,
-                                calib=calib)
-        )
-        
-        if not input_file_dict:
+
+        rawdata_inst = None
+        if isinstance(raw_data, str):
+            
+            rawdata_inst = RawData(raw_data,
+                                   data_type=data_type,
+                                   series=series,
+                                   restricted=self._restricted)
+        else:
+
+            if 'RawData' not in str(type(raw_data)):
+                raise ValueError(
+                    'ERROR: raw data argument should be either '
+                    'a directory or RawData object'
+                )
+            
+            rawdata_inst = raw_data
+
+            if rawdata_inst.restricted != self._restricted:
+                raise ValueError(f'ERROR: Unable to use RawData '
+                                 f'object. It needs requirement restricted = '
+                                 f'{self._restricted}!')
+                
+
+        # check
+        #rawdata_inst.describe()
+
+        # get file list
+        data_dict = rawdata_inst.get_data_files(data_type=data_type,
+                                                series=series)
+        if not data_dict:
             raise ValueError('No files were found! Check configuration...')
-        
-        self._input_base_path = input_base_path
-        self._input_group_name = input_group_name
-        self._series_dict = input_file_dict
-        self._facility = facility
 
+        # get metadata list 
+        data_config = rawdata_inst.get_data_config(data_type=data_type,
+                                                   series=series)
+        # save info
+        self._series_dict = copy.deepcopy(data_dict)
+        self._series_metadata_dict = copy.deepcopy(data_config)
+        self._input_base_path = rawdata_inst.get_base_path()
+        self._input_group_name = rawdata_inst.get_group_name()
+        self._facility = rawdata_inst.get_facility()
+        self._duration, self._nb_events = (
+            rawdata_inst.get_duration(data_type=data_type,
+                                      series=series,
+                                      include_nb_events=True)
+        )
+
+        print(f'INFO: Total raw data duration = '
+              f'{self._duration/60} minutes ({self._nb_events} events)')
+        
         # initialize output path
         self._output_group_path = None
     
@@ -127,8 +173,8 @@ class Randoms:
     
     def process(self, random_rate=None,
                 nrandoms=None,
-                min_separation_msec=100,
-                edge_exclusion_msec=50,
+                min_separation_msec=20,
+                edge_exclusion_msec=20,
                 ncores=1,
                 lgc_save=False,
                 lgc_output=False,
@@ -140,6 +186,7 @@ class Randoms:
         Acquire random trigger using specified rate (and minimum
         separation)
         """
+        
         # data are split based on series so
         # check number cores requested is possible
         nseries = len(self._series_dict.keys())
@@ -160,30 +207,17 @@ class Randoms:
                   + 'not both!')
             return
 
-        # if input is number of randoms, let's calculate
-        # approximately random_rate (slightly increased so
+        # if input is number of randoms, let's
+        # calculate random_rate (slightly increased so
         # we end up with enough events)
         self._nrandoms = nrandoms
         if nrandoms is not None:
+            random_rate = 1.05*float(nrandoms)/self._duration
 
-            # let's get approximate random rate
-            nb_events = 0
-            nb_samples = 0
-            sample_rate = 0
-            for series,file_dict in self._series_dict.items():
-                nb_samples = file_dict['nb_samples']
-                sample_rate = file_dict['sample_rate']
-                nb_events_per_file = file_dict['nb_events_first_file']
-                nb_files = len(file_dict['files'])
-                nb_events  = nb_events + (nb_events_per_file * nb_files)
-
-            # increasing nrandoms by 2%
-            nrandoms_increased = float(nrandoms)*1.02
-            random_rate = nrandoms_increased/(nb_events*nb_samples/sample_rate)
-          
-        
+            
         # average time between randoms
         random_length_sec = 1/random_rate
+
         if random_length_sec < min_separation_sec:
             min_separation_sec = random_length_sec * 0.75
             print('WARNING: Changed min separation to '
@@ -194,7 +228,7 @@ class Randoms:
 
         if min_separation_sec > edge_exclusion_sec:
             edge_exclusion_sec = min_separation_sec
-                        
+
         # If rate is low, we can increase minimum seperation
         # (up to 50% time between randoms) 
         #if (random_length_sec/2>min_separation_sec):
@@ -290,10 +324,10 @@ class Randoms:
         if self._verbose:
             print('INFO: Randoms acquisition done!') 
 
-        #if lgc_output and self._nrandoms is not None:
-        #    if len(output_df)>self._nrandoms:
-        #        output_df = output_df[0:self._nrandoms]
-            
+        if lgc_output and self._nrandoms is not None:
+            if len(output_df)>self._nrandoms:
+                output_df = output_df.sample(n=self._nrandoms)
+                            
         return output_df
 
     
@@ -312,6 +346,11 @@ class Randoms:
         separation)
         """
 
+        # disable multithreading
+        vx.settings.main.thread_count = 1
+        vx.settings.main.thread_count_io = 1
+        pa.set_cpu_count(1)
+            
         # node string (for display)
         node_num_str = ' Node #' + str(node_num)
 
@@ -321,7 +360,11 @@ class Randoms:
             trigger_prod_group_name = (
                 str(Path(output_group_path).name)
             )
-        
+
+        # copy series dict
+        series_dict = copy.deepcopy(self._series_dict)
+        series_metadata_dict = copy.deepcopy(self._series_metadata_dict)
+            
         # set output dataframe to None
         # only used if dataframe returned
         process_df = None
@@ -358,6 +401,9 @@ class Randoms:
                       + ': Acquiring randoms for series '
                       + series)
 
+            # metadata
+            series_metadata = series_metadata_dict[series]['overall']
+                
             
             # flag memory limit reached (on a series by series basis)
             # if memory reached, save file 
@@ -368,19 +414,27 @@ class Randoms:
                 memory_limit_reached =  memory_usage  >= memory_limit
                 
             # series num
-            series_num = self._series_dict[series]['series_num']
+            series_num = series_metadata['series_num']
                       
             # trace length in second:
-            sample_rate = self._series_dict[series]['sample_rate']
-            nb_samples = self._series_dict[series]['nb_samples']
+            sample_rate = series_metadata['sample_rate']
+            nb_samples = series_metadata['nb_samples']
             trace_length_sec = nb_samples/sample_rate
         
             # timing
-            fridge_run_start_time = (
-                self._series_dict[series]['fridge_run_start_time'])
-            series_start_time = self._series_dict[series]['series_start_time']
-            group_start_time =  self._series_dict[series]['group_start_time']
+            fridge_run_start_time = np.nan
+            series_start_time = np.nan
+            group_start_time =  np.nan
             
+            if 'fridge_run_start' in  series_metadata:
+                fridge_run_start_time = series_metadata['fridge_run_start']
+                series_start_time = series_metadata['series_start']
+                group_start_time =  series_metadata['group_start']
+            elif 'fridge_run_start_time' in  series_metadata:
+                fridge_run_start_time = series_metadata['fridge_run_start_time']
+                series_start_time = series_metadata['series_start_time']
+                group_start_time =  series_metadata['group_start_time']
+                
             # nb random triggers per event
             nb_rand_trig_per_event =  int(
                 round(trace_length_sec/random_length_sec)
@@ -404,7 +458,7 @@ class Randoms:
                     (nb_rand_trig_per_event-1)*min_separation_samples
                 )
             )
-
+            
             # build list with samples  
             samples_list =  list(range(nb_samples_reduced))
                                      
@@ -415,12 +469,13 @@ class Randoms:
             if random_length_sec>trace_length_sec:
                 event_fraction = trace_length_sec/random_length_sec
 
+         
             # loop files
             current_event_time = None
             trigger_id = 0
             total_event_counter = 0
         
-            for file_name in self._series_dict[series]['files']:
+            for file_name in series_dict[series]:
 
                 # initialize feature dictionary
                 feature_dict = {'series_number': list(),
@@ -445,6 +500,8 @@ class Randoms:
                 metadata = h5reader.get_metadata(file_name,
                                                  include_dataset_metadata=True)
 
+                
+
                 # find ADC id 
                 if 'adc_list' not in metadata.keys():
                     raise ValueError(
@@ -468,6 +525,7 @@ class Randoms:
 
                 # number of randoms requested
                 nb_random_events = int(round(nb_events*event_fraction))
+        
                 if nb_random_events == 0:
                     nb_random_events = 1
                     #print('WARNING: Modifying random rate to have a least '
@@ -577,7 +635,12 @@ class Randoms:
                 dump_str = str(dump_counter)
                 file_name =  (output_base_file + '_F' + dump_str.zfill(4)
                               + '.hdf5')
-                        
+
+                # check if nrandoms provided
+                if (self._nrandoms is not None
+                    and len(process_df)>self._nrandoms):
+                    process_df = process_df.sample(n=self._nrandoms)
+                
                 # export
                 process_df.export_hdf5(file_name, mode='w')
                         
@@ -704,274 +767,4 @@ class Randoms:
         return output_dir, series_num
         
   
-    def _get_file_list(self, file_path, series=None,
-                       restricted=False,
-                       calib=False):
-        """
-        Get file list from path. Return as a dictionary
-        with key=series and value=list of files
-
-        Parameters
-        ----------
-
-        file_path : str or list of str 
-           raw data group directory OR full path to HDF5  file 
-           (or list of files). Only a single raw data group 
-           allowed 
-        
-        series : str or list of str, optional
-            series to be process, disregard other data from raw_path
-
-
-        restricted : boolean
-            if True, use restricted data
-            if False, exclude restricted data
-
-        calib : boolean
-           if True, use only "calib" files
-           if False, no calib files included
-
-
-        Return
-        -------
-        
-        series_dict : dict 
-          list of files for splitted inot series
-
-        base_path :  str
-           base path of the raw data
-
-        group_name : str
-           group name of raw data
-
-        """
-        
-        # loop file path
-        if not isinstance(file_path, list):
-            file_path = [file_path]
-
-        # initialize
-        file_list = list()
-        base_path = None
-        group_name = None
-        facility = None
-        
-        # loop files 
-        for a_path in file_path:
-            
-            # case path is a directory
-            if os.path.isdir(a_path):
-
-                if base_path is None:
-                    base_path = str(Path(a_path).parent)
-                    group_name = str(Path(a_path).name)
-                            
-                if series is not None:
-                    if series == 'even' or series == 'odd':
-                        file_name_wildcard = series + '_*.hdf5'
-                        file_list = glob(a_path + '/' + file_name_wildcard)
-                    else:
-                        if not isinstance(series, list):
-                            series = [series]
-                        for it_series in series:
-                            file_name_wildcard = '*' + it_series + '_*.hdf5'
-                            file_list.extend(
-                                glob(a_path + '/' + file_name_wildcard))
-                else:
-                    file_list = glob(a_path + '/*.hdf5')
-                    
-                
-                # check a single directory
-                if len(file_path) != 1:
-                    raise ValueError('Only single directory allowed! ' +
-                                     'No combination files and directories')
-                
-                    
-            # case file
-            elif os.path.isfile(a_path):
-
-                if base_path is None:
-                    base_path = str(Path(a_path).parents[1])
-                    group_name = str(Path(Path(a_path).parent).name)
-                    
-                if a_path.find('.hdf5') != -1:
-                    if series is not None:
-                        if series == 'even' or series == 'odd':
-                            if a_path.find(series) != -1:
-                                file_list.append(a_path)
-                        else:
-                            if not isinstance(series, list):
-                                series = [series]
-                            for it_series in series:
-                                if a_path.find(it_series) != -1:
-                                    file_list.append(a_path)
-                    else:
-                        file_list.append(a_path)
-
-            else:
-                raise ValueError('File or directory "' + a_path
-                                 + '" does not exist!')
-            
-        if not file_list:
-            raise ValueError('ERROR: No raw input data found. Check arguments!')
-
-        # sort
-        file_list.sort()
-      
-        # get list of series
-        series_dict = dict()
-        h5reader = h5io.H5Reader()
-        series_name = None
-        file_counter = 0
-        for afile in file_list:
-
-            file_name = str(Path(afile).name)
-                        
-            # skip if filter file
-            if 'filter' in file_name:
-                continue
-
-            # skip didv and iv
-            if ('didv_' in file_name
-                or 'iv_' in file_name
-                or 'exttrig_' in file_name):
-                continue
-
-            # skip if trigger data already
-            if ('thresh_' in file_name
-                or 'threshtrig_'  in file_name):
-                continue
-
-            # calibration
-            if (calib
-                and 'calib_' not in file_name):
-                continue
-
-            # not calibration
-            if not calib:
-                
-                if 'calib_' in file_name:
-                    continue
-                            
-                # restricted
-                if (restricted
-                    and 'restricted' not in file_name):
-                    continue
-
-                # not restricted
-                if (not restricted
-                    and 'restricted' in file_name):
-                    continue
-       
-            
-            # case unrecognized
-            if ('calib_' not in  file_name
-                and 'cont_' not in  file_name
-                and 'rand_' not in  file_name):
-
-                # unknown file -> check trigger type
-                 # check trigger type of first event
-                metadata = h5reader.get_metadata(afile)
-                data_mode = None
-                if 'adc_list' in metadata:
-                    adc_name = metadata['adc_list'][0]
-                    data_mode = metadata['groups'][adc_name]['data_mode']
-
-                if data_mode is not None:
-                    if data_mode != 'cont':
-                        continue
-                else:
-                    print(f'WARNING: file {file_name} not recognized! '
-                          f'Skipping...')
-                    continue
-
-            # append file if series already in dictionary
-            if (series_name is not None
-                and series_name in afile
-                and series_name in series_dict.keys()):
-        
-                if afile not in series_dict[series_name]['files']:
-                    series_dict[series_name]['files'].append(afile)
-                    file_counter += 1
-                continue
-            
-            # get metadata
-            metadata = h5reader.get_metadata(afile)
-        
-            # get series name
-            series_num = metadata['series_num']
-            series_name = h5io.extract_series_name(series_num)
-            if series_name not in series_dict.keys():
-                series_dict[series_name] = dict()
-                series_dict[series_name]['files'] = list()
-                series_dict[series_name]['series_num'] = series_num
-            
-                
-            facility = metadata['facility']
-                
-            # append file
-            if afile not in series_dict[series_name]:
-                series_dict[series_name]['files'].append(afile)
-                file_counter += 1
-                
-            # get other ADC info
-            if 'adc_list' not in metadata.keys():
-                raise ValueError(
-                    'ERROR: unrecognized file format!'
-                )
-
-            
-            adc_id = metadata['adc_list'][0]
-            metadata_adc = metadata['groups'][adc_id]
-            series_dict[series_name]['sample_rate'] = metadata_adc['sample_rate']
-            series_dict[series_name]['nb_samples'] = metadata_adc['nb_samples']
-            
-            # nb of events in file
-            nb_events_metadata = 0
-            if 'nb_events' in  metadata_adc.keys():
-                nb_events_metadata = metadata_adc['nb_events']
-            elif  'nb_datasets' in  metadata_adc.keys():
-                nb_events_metadata = metadata_adc['nb_datasets']
-            else:
-                raise ValueError('ERROR: Unknow file format. Unable '
-                                 'to get number of events')
-            
-            series_dict[series_name]['nb_events_first_file'] = nb_events_metadata
-
-
-
-            # time since start of run
-            fridge_run_start_time = np.nan
-            if 'fridge_run_start' in metadata:
-                fridge_run_start_time = metadata['fridge_run_start']
-            elif 'fridge_run_start_time' in metadata:
-                fridge_run_start_time = metadata['fridge_run_start_time']
-
-            series_dict[series_name]['fridge_run_start_time'] = fridge_run_start_time
-
-            # time since start of series
-            if 'series_start' in metadata:
-                series_dict[series_name]['series_start_time'] = metadata['series_start']
-            else:
-                series_dict[series_name]['series_start_time'] = np.nan
-
-            # time since start of group
-            if 'group_start' in metadata:
-                series_dict[series_name]['group_start_time'] = metadata['group_start']
-            else:
-                series_dict[series_name]['group_start_time'] = np.nan
-
-            # close
-            h5reader.close()
-                
-                
-        if self._verbose:
-            print('INFO: Found total of '
-                  + str(file_counter)
-                  + ' files from ' + str(len(series_dict.keys()))
-                  + ' different series number!')
-
-      
-        return series_dict, base_path, group_name, facility
-
-
+    

@@ -224,6 +224,18 @@ class FilterData:
                   + file_name)
             
         # update
+        self.set_data(data, overwrite=overwrite)
+                                
+    def set_data(self, data, overwrite=False):
+        """
+        Set data directly
+        """
+
+        if not isinstance(data, dict):
+            raise ValueError('ERROR: filter data should be a '
+                             'dictionary!')
+
+        # update
         if overwrite or not self._filter_data:
             self._filter_data.update(data)
         else:
@@ -236,7 +248,7 @@ class FilterData:
                         self._filter_data[key][par_name] = (
                             data[key][par_name]
                         )
-
+                        
                         
                         
     def save_hdf5(self, file_name, overwrite=False):

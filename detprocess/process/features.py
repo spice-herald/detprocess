@@ -21,9 +21,24 @@ import copy
 from detprocess.core.algorithms  import FeatureExtractors
 from detprocess.process.processing_data  import ProcessingData
 from detprocess.utils import utils
+from detprocess.process.config import YamlConfig
+from detprocess.core.rawdata import RawData
+
+
+
 import pytesdaq.io as h5io
-warnings.filterwarnings('ignore')
 import gc
+warnings.filterwarnings('ignore')
+import pyarrow as pa
+
+vx.settings.main.thread_count = 1
+vx.settings.main.thread_count_io = 1
+pa.set_cpu_count(1)
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
 
 __all__ = [
@@ -42,9 +57,10 @@ class FeatureProcessing:
 
     """
 
-    def __init__(self, raw_path, config_file,
+    def __init__(self, raw_data, config_data,
                  series=None,
                  trigger_dataframe_path=None,
+                 trigger_series=None,
                  external_file=None,
                  processing_id=None,
                  restricted=False,
@@ -116,38 +132,104 @@ class FeatureProcessing:
         # restricted data
         self._restricted = restricted
 
-        # calib
-        self._calib = calib
-        if calib:
-            self._restricted = False
-        
         # display
         self._verbose = verbose
         
-        # series argument (FIXME: filter solely based raw data series?)
-        #  -> raw data series if no dataframe
-        #  -> dataframe series if trigger_dataframe_path
-        raw_series = None
-        dataframe_series = None
-        if trigger_dataframe_path is not None:
-            dataframe_series = series
+        # calibration data
+        data_type = 'cont'
+        self._calib = calib
+        if calib:
+            self._restricted = False
+            data_type = 'calib'
+        elif trigger_dataframe_path is None:
+            data_type = 'thresh'
+        
+         
+        # extract input file list
+        rawdata_inst = None
+        if isinstance(raw_data, str):
+            
+            rawdata_inst = RawData(raw_data,
+                                   data_type=data_type,
+                                   series=series,
+                                   restricted=self._restricted)
         else:
-            raw_series = series 
-             
-        # Raw file list
-        raw_files, raw_path, group_name = (
-            self._get_file_list(raw_path,
-                                series=raw_series,
-                                restricted=restricted,
-                                calib=calib)
-        )
 
-        if not raw_files:
-            raise ValueError('No raw data files were found! '
-                             + 'Check configuration...')
-        self._series_list = list(raw_files.keys())
-        self._input_group_name = str(group_name)
-      
+            if 'RawData' not in str(type(raw_data)):
+                raise ValueError(
+                    'ERROR: raw data argument should be either '
+                    'a directory or RawData object'
+                )
+            
+            rawdata_inst = raw_data
+
+            if rawdata_inst.restricted != self._restricted:
+                raise ValueError(f'ERROR: Unable to use RawData object.'
+                                 f'It needs requirement restricted = '
+                                 f'{self._restricted}!')
+                
+        # get file list
+        rawdata_files = copy.deepcopy(
+            rawdata_inst.get_data_files(data_type=data_type,
+                                        series=series)
+        )
+        
+        if not rawdata_files:
+            raise ValueError('No files were found! Check configuration...')
+                
+        # get metadata list 
+        rawdata_metadata = rawdata_inst.get_data_config(data_type=data_type,
+                                                    series=series)
+        
+        self._series_list = list(rawdata_files.keys())
+        self._input_base_path = rawdata_inst.get_base_path()
+        self._input_group_name = rawdata_inst.get_group_name()
+        
+        # available channels
+        self._available_channels = None
+        self._sample_rate = None
+        for it, it_config in rawdata_metadata.items():
+            self._available_channels = it_config['channel_list']
+            self._sample_rate = it_config['overall']['sample_rate']
+            break;
+
+    
+        
+        # config file
+        config_dict = {}
+        if  isinstance(config_data, str):
+            
+            if not os.path.isfile(config_data):
+                raise ValueError(f'ERROR: argument "{config_data}" '
+                                 f'should be a file or YamlConfig object!')
+
+            yaml = YamlConfig(config_data, self._available_channels,
+                              sample_rate=self._sample_rate)
+            
+            config_dict = copy.deepcopy(yaml.get_config('feature'))
+
+        else:
+            
+            if 'YamlConfig' not in str(type(config_data)):
+                raise ValueError(
+                    'ERROR: raw data argument should be either '
+                    'a directory or YamlConfig object'
+                )
+            
+            config_dict = copy.deepcopy(config_data.get_config('feature'))
+
+        # save info
+        self._processing_config = config_dict['channels']
+        self._selected_channels = config_dict['channel_list']
+        self._traces_config =  config_dict['traces_config']
+        self._weights =  config_dict['weights']
+        self._filter_file = config_dict['overall']['filter_file']
+        
+        # check channels to be processed
+        if not self._selected_channels:
+            raise ValueError('ERROR: No channels to be processed! ' +
+                             'Check configuration...')
+        
         # Dataframe file list
         trigger_files = None
         trigger_path = None
@@ -157,41 +239,15 @@ class FeatureProcessing:
                    
             trigger_files, trigger_path, trigger_group_name = (
                 self._get_file_list(trigger_dataframe_path,
-                                    series=dataframe_series,
-                                    is_raw=False,
-                                    restricted=restricted,
-                                    calib=calib)
+                                    series=trigger_series)
             )
+
             if not trigger_files:
                 raise ValueError(f'No dataframe files were found! '
                                  f'Check configuration...')
             
             self._series_list = list(trigger_files.keys())
-
-
-        # get list of available channels in raw data
-        available_channels = self._get_channel_list(raw_files)
-
-        # sample rate
-        self._sample_rate = self._get_sample_rate(raw_files)
-    
-        # read  configuration file
-        if not os.path.exists(config_file):
-            raise ValueError('Configuration file "' + config_file
-                             + '" not found!')
-        config, filter_file, selected_channels, traces_config, weights = (
-            self._read_config(config_file, available_channels)
-        )
-        self._processing_config = config
-        self._selected_channels = selected_channels
-        self._traces_config = traces_config
-        self._weights = weights
-        
-        # check channels to be processed
-        if not self._selected_channels:
-            raise ValueError('No channels to be processed! ' +
-                             'Check configuration...')
-        
+               
         # External feature extractors
         self._external_file = None
         if external_file is not None:
@@ -211,17 +267,17 @@ class FeatureProcessing:
 
         # instantiate processing data
         self._processing_data_inst = ProcessingData(
-            raw_path,
-            raw_files,
-            group_name=group_name,
+            self._input_base_path,
+            rawdata_files,
+            group_name=self._input_group_name,
             trigger_files=trigger_files,
             trigger_group_name=trigger_group_name,
-            filter_file=filter_file,
-            available_channels=available_channels,
+            filter_file=self._filter_file,
+            available_channels=self._available_channels,
             salting_dataframe=salting_dataframe,
             verbose=verbose)
 
-        # cleaup filter data tags cleanup
+        # cleaup filter data tags 
         self._processing_config = (
             self._processing_data_inst.check_filter_data_tags(
                 self._processing_config,
@@ -426,10 +482,7 @@ class FeatureProcessing:
            (and/or if return_df=True, max dataframe size)
    
         """
-
-        # set vaex single thread
-        vx.multithreading.thread_count = 1
-         
+                 
         # node string (for display)
         node_num_str = str()
         if node_num>-1:
@@ -556,6 +609,13 @@ class FeatureProcessing:
                     
                         # convert to vaex
                         feature_df = feature_df.reset_index(drop=True)
+
+                        # disable thread
+                        vx.settings.main.thread_count = 1
+                        vx.settings.main.thread_count_io = 1
+                        pa.set_cpu_count(1)
+
+                        # convert from pandas
                         feature_vx = vx.from_pandas(
                             feature_df,
                             copy_index=False)
@@ -780,11 +840,8 @@ class FeatureProcessing:
         return feature_df
        
         
-    def _get_file_list(self, file_path,
-                       is_raw=True,
-                       series=None,
-                       restricted=False,
-                       calib=False):
+    def _get_file_list(self, dataframe_path, series=None):
+    
         """
         Get file list from path. Return as a dictionary
         with key=series and value=list of files
@@ -792,21 +849,13 @@ class FeatureProcessing:
         Parameters
         ----------
 
-        file_path : str or list of str 
+        dataframe_path : str or list of str 
            raw data group directory OR full path to HDF5  file 
            (or list of files). Only a single raw data group 
            allowed 
         
         series : str or list of str, optional
             series to be process, disregard other data from raw_path
-
-        restricted : boolean
-            if True, use restricted data
-            if False, exclude restricted data
-
-        calib : boolean
-           if True, use only "calib" files
-           if False, no calib files included
 
         Return
         -------
@@ -822,9 +871,9 @@ class FeatureProcessing:
 
         """
 
-        # convert file_path to list 
-        if isinstance(file_path, str):
-            file_path = [file_path]
+        # convert dataframe_path to list 
+        if isinstance(dataframe_path, str):
+            dataframe_path = [dataframe_path]
             
             
         # initialize
@@ -834,34 +883,28 @@ class FeatureProcessing:
 
 
         # loop files 
-        for a_path in file_path:
-
+        for a_path in dataframe_path:
                    
             # case path is a directory
             if os.path.isdir(a_path):
+
+                # check a single directory
+                if len(dataframe_path) != 1:
+                    raise ValueError('Only single directory allowed! ' +
+                                     'No combination files and directories')
 
                 if base_path is None:
                     base_path = str(Path(a_path).parent)
                     group_name = str(Path(a_path).name)
                             
                 if series is not None:
-                    if series == 'even' or series == 'odd':
-                        file_name_wildcard = series + '_*.hdf5'
-                        file_list = glob(a_path + '/' + file_name_wildcard)
-                    else:
-                        if not isinstance(series, list):
-                            series = [series]
-                        for it_series in series:
-                            file_name_wildcard = '*' + it_series + '_*.hdf5'
-                            file_list.extend(glob(a_path + '/' + file_name_wildcard))
+                    if not isinstance(series, list):
+                        series = [series]
+                    for it_series in series:
+                        file_name_wildcard = '*' + it_series + '_*.hdf5'
+                        file_list.extend(glob(a_path + '/' + file_name_wildcard))
                 else:
                     file_list = glob(a_path + '/*.hdf5')
-                
-                # check a single directory
-                if len(file_path) != 1:
-                    raise ValueError('Only single directory allowed! ' +
-                                     'No combination files and directories')
-                
                     
             # case file
             elif os.path.isfile(a_path):
@@ -872,15 +915,11 @@ class FeatureProcessing:
                     
                 if a_path.find('.hdf5') != -1:
                     if series is not None:
-                        if series == 'even' or series == 'odd':
-                            if a_path.find(series) != -1:
+                        if not isinstance(series, list):
+                            series = [series]
+                        for it_series in series:
+                            if a_path.find(it_series) != -1:
                                 file_list.append(a_path)
-                        else:
-                            if not isinstance(series, list):
-                                series = [series]
-                            for it_series in series:
-                                if a_path.find(it_series) != -1:
-                                    file_list.append(a_path)
                     else:
                         file_list.append(a_path)
 
@@ -889,20 +928,13 @@ class FeatureProcessing:
                                  f'does not exist!')
             
         if not file_list:
-            if is_raw:
-                msg = ('No input raw data found. '
-                       'Check data path! ')
-                if series is not None:
-                    msg = msg + ' Or check "series" argument.'
-                raise ValueError(msg)
-            else:
-                msg = ('No input dataframe vaex files found. '
-                       'Check data path!')
-                if series is not None:
-                    msg = (msg
-                           + ' Or check "series" argument (it should be '
-                           + '"series" of dataframe files, not raw data)')
-                raise ValueError(msg)
+            msg = ('ERROR: No input dataframe vaex files found. '
+                   'Check data path!')
+            if series is not None:
+                msg = (msg
+                       + ' Or check "series" argument (it should be '
+                       + '"series" of dataframe files, not raw data)')
+            raise ValueError(msg)
             
 
         # sort
@@ -913,41 +945,10 @@ class FeatureProcessing:
         # in multiple cores
         
         series_dict = dict()
-        h5reader = h5io.H5Reader()
         series_name = None
         file_counter = 0
         
         for file_name in file_list:
-
-            # skip if filter file
-            if 'filter' in file_name:
-                continue
-
-            # skip didv and iv
-            if ('didv_' in file_name
-                or  'iv_' in file_name):
-                continue
-
-            # calibration
-            if (calib
-                and 'calib_' not in file_name):
-                continue
-
-            # not calibration
-            if not calib:
-                
-                if 'calib_' in file_name:
-                    continue
-                            
-                # restricted
-                if (restricted
-                    and 'restricted' not in file_name):
-                    continue
-
-                # not restricted
-                if (not restricted
-                    and 'restricted' in file_name):
-                    continue
 
             # append file if series already in dictionary
             if (series_name is not None
@@ -959,15 +960,10 @@ class FeatureProcessing:
                     file_counter += 1
                 continue
             
-            # get metadata
-            if is_raw:
-                metadata = h5reader.get_metadata(file_name)
-                series_name = h5io.extract_series_name(metadata['series_num'])
-            else:
-                series_name =str(Path(file_name).name)
-                sep_start = series_name.find('_I')
-                sep_end = series_name.find('_F')
-                series_name = series_name[sep_start+1:sep_end]
+            series_name =str(Path(file_name).name)
+            sep_start = series_name.find('_I')
+            sep_end = series_name.find('_F')
+            series_name = series_name[sep_start+1:sep_end]
 
                 
             if series_name not in series_dict.keys():
@@ -980,19 +976,14 @@ class FeatureProcessing:
                 
 
         if self._verbose:
-            msg = ' raw data file(s) with '
-            if not is_raw:
-                msg = ' dataframe file(s) with '
-                
-            print('INFO: Found total of '
-                  + str(file_counter)
-                  + msg
-                  + str(len(series_dict.keys()))
-                  + ' different series number!')
+            print(f'INFO: Found total of {file_counter} '
+                  f'dataframe file (s) with {len(series_dict.keys())} '
+                  f' different series number!')
 
       
         return series_dict, base_path, group_name
 
+    
     def _load_external_extractors(self, external_file):
         """
         Helper function for loading an alternative SingleChannelExtractors
@@ -1022,121 +1013,6 @@ class FeatureProcessing:
         
         return module.FeatureExtractors
 
-
-
-    
-    def _read_config(self, yaml_file, available_channels):
-        """
-        Read and check yaml configuration
-        file 
-
-        Parameters
-        ----------
-
-        yaml_file : str
-          yaml configuraton file name (full path)
-
-        available_channels : list
-          list of channels available in the file
-
-
-        Return
-        ------
-        
-        processing_config : dict 
-           dictionary with  processing configuration
-
-
-        filter_file : str
-            filter file name (full path)
-        
-        selected_channels : list
-            list of all channels to be processed
-           
-        
-        """
-        # read configuration file
-        all_config = utils.read_config(yaml_file,
-                                       available_channels,
-                                       sample_rate=self._sample_rate)
-        # feature config
-        if 'feature' not in all_config:
-            raise ValueError(f'ERROR: No "feature" configuration '
-                             f'found in yaml file {yaml_file}')
-
-        processing_config =  copy.deepcopy(all_config['feature'])
-   
-        # filter file
-        if all_config['global']['filter_file'] is None:
-            raise ValueError(f'ERROR: No filter file path '
-                             f'found in yaml file {yaml_file}. '
-                             f'This is required for feature processing ')
-
-        filter_file = all_config['global']['filter_file']
-
-        # Initialize some list/dict
-        selected_channels = list()
-        traces_config = dict()
-        weights = dict()
-
-        # loop channels
-        for chan in list(processing_config.keys()):
-
-            # add to selected channel
-            chan_list, separator = utils.split_channel_name(
-                chan, available_channels
-            )
-            
-            selected_channels.extend(chan_list.copy())
-
-            # chan config
-            chan_config = copy.deepcopy(
-                processing_config[chan]
-            )
-
-            # weights
-            for chan_split in chan_list:
-                param = f'weight_{chan_split}'
-                if param in chan_config:
-                    if chan not in weights:
-                        weights[chan] = dict()
-                    weights[chan][param] = chan_config[param]
-            
-            # now loop through algorithms, get/add trace length at the
-            # algorithm level 
-            for algo, algo_config in chan_config.items():
-            
-                if not isinstance(algo_config, dict):
-                    continue
-                
-                if not algo_config['run']:
-                    continue
-
-                nb_samples =  algo_config['nb_samples']
-                nb_pretrigger_samples = algo_config['nb_pretrigger_samples']
-                trace_tuple = (nb_samples, nb_pretrigger_samples)
-                
-                if trace_tuple in traces_config:
-                    traces_config[trace_tuple].extend(chan_list.copy())
-                else:
-                    traces_config[trace_tuple] = chan_list.copy()
-
-        # make unique
-        selected_channels = list(set(selected_channels))
-        if not selected_channels:
-            raise ValueError('ERROR: No valid channels found in '
-                             'yaml file. Nothing can be processed!')
-
-        for key in traces_config.keys():
-            traces_config[key] = list(set(traces_config[key]))
-            
-        if not traces_config:
-            traces_config = None
-
-        # return
-        return (processing_config, filter_file,
-                selected_channels, traces_config,
-                weights)
 
 
     def _create_output_directory(self, base_path, facility,
