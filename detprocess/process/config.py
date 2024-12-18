@@ -584,6 +584,57 @@ class YamlConfig:
         # add channel list
         split_channel_list = list(set(split_channel_list))
         feature_dict['channel_list'] = split_channel_list
+
+
+        # get weight and trace info
+        traces_config = dict()
+        weights = dict()
+
+        # loop channels
+        for chan, chan_config in feature_dict['channels'].items():
+
+            # list of individual channels
+            chan_list, separator = utils.split_channel_name(
+                chan, feature_dict['channel_list']
+            )
+            
+            # weights
+            for chan_split in chan_list:
+                param = f'weight_{chan_split}'
+                if param in chan_config:
+                    if chan not in weights:
+                        weights[chan] = dict()
+                    weights[chan][param] = chan_config[param]
+            
+            # now loop through algorithms, get/add trace length at the
+            # algorithm level 
+            for algo, algo_config in chan_config.items():
+            
+                if not isinstance(algo_config, dict):
+                    continue
+                
+                if not algo_config['run']:
+                    continue
+
+                nb_samples =  algo_config['nb_samples']
+                nb_pretrigger_samples = algo_config['nb_pretrigger_samples']
+                trace_tuple = (nb_samples, nb_pretrigger_samples)
+                
+                if trace_tuple in traces_config:
+                    traces_config[trace_tuple].extend(chan_list.copy())
+                else:
+                    traces_config[trace_tuple] = chan_list.copy()
+
+      
+        for key in traces_config.keys():
+            traces_config[key] = list(set(traces_config[key]))
+            
+        if not traces_config:
+            traces_config = None
+
+        feature_dict['traces_config'] = copy.deepcopy(traces_config)
+        feature_dict['weights'] = copy.deepcopy(weights)
+        
                     
         # return
         return feature_dict

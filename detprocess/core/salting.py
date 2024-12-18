@@ -138,7 +138,9 @@ class Salting(FilterData):
             lgc_output=True,
             ncores=ncores
         )
-        
+
+        print(f'INFO: {len(self._dataframe)} salting events randomly selected!')
+             
         self._injecttimes = self._dataframe
 
             

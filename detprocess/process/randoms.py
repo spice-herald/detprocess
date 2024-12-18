@@ -48,9 +48,8 @@ class Randoms:
         Parameters
         ---------
         
-        raw_data : str or list of str or dictionay
+        raw_data : str or dictionary
            raw data group directory 
-           OR full path to HDF5  file (s)
            OR RawData object
            Only a single raw data group allowed
             
@@ -94,7 +93,7 @@ class Randoms:
             data_type = 'calib'
 
 
-            rawdata_inst = None
+        rawdata_inst = None
         if isinstance(raw_data, str):
             
             rawdata_inst = RawData(raw_data,

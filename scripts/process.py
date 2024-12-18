@@ -171,9 +171,12 @@ if __name__ == "__main__":
         restricted = True
 
     calib = False
+    data_type = 'cont'
     if args.calib:
         calib = True 
         restricted = False
+        data_type = 'calib'
+
         
     # processing id
     processing_id = None
@@ -304,22 +307,25 @@ if __name__ == "__main__":
     print('Processing information')
     print('=====================================')
 
-    rawdata = RawData(raw_group_path,
-                      data_type='cont', restricted=restricted,
-                      series=series)
+    rawdata_obj = RawData(raw_group_path,
+                          data_type=data_type,
+                          restricted=restricted,
+                          series=series)
     print('INFO: Data info:')
-    rawdata.describe()
+    rawdata_obj.describe()
 
 
-    group_name = rawdata.get_group_name()
-    base_path = rawdata.get_base_path()
-    facility = rawdata.get_facility()
+    group_name = rawdata_obj.get_group_name()
+    base_path = rawdata_obj.get_base_path()
+    facility = rawdata_obj.get_facility()
 
     # metadata
-    metadata = rawdata.get_data_config()
+    metadata = rawdata_obj.get_data_config()
     available_channels = None
-    for itseries in metadata:
-        available_channels = metadata[itseries]['channel_list']
+    sample_rate = None
+    for it, it_config in metadata.items():
+        available_channels = it_config['channel_list']
+        sample_rate = it_config['overall']['sample_rate']
         break;
 
     print('')
@@ -336,20 +342,26 @@ if __name__ == "__main__":
         print('No restricted data will be processed (open only)')
 
     # get duration
-    duration, nb_events =  rawdata.get_duration(include_nb_events=True)
-    data_type = 'open'
-    if restricted:
-        data_type = 'restricted'
-            
-    print(f'Total number of events ({data_type} data): {nb_events}')
-    print(f'Total duration ({data_type} data): {duration/60} minutes')
+    duration, nb_events =  rawdata_obj.get_duration(include_nb_events=True)
+
+
+    data_type_str = data_type
+
+    if data_type == 'cont':
+        data_type_str = 'continuous (open)'
+        if restricted:
+            data_type_str = 'continuous (restricted)'
+   
+    print(f'Total duration {data_type_str} data: {duration/60} minutes '
+          f'({nb_events} events)')
     
 
     # ====================================
     # Read yaml file
     # ====================================
     
-    yaml_config = YamlConfig(processing_setup, available_channels)
+    yaml_obj = YamlConfig(processing_setup, available_channels,
+                           sample_rate=sample_rate)
                     
      
     # ====================================
@@ -386,7 +398,7 @@ if __name__ == "__main__":
         utils.create_directory(output_path)
         
         # get salting dict
-        salting_config = yaml_config.get_config('salting')
+        salting_config = yaml_obj.get_config('salting')
 
         # filter file
         filter_file = None
@@ -433,7 +445,7 @@ if __name__ == "__main__":
         # Add either raw data metadata or raw path
        
         #salting.set_raw_data_metadata(...)
-        salting.set_raw_data(rawdata,
+        salting.set_raw_data(rawdata_obj,
                              series=series,
                              restricted=restricted)
         
@@ -559,7 +571,7 @@ if __name__ == "__main__":
             exit()
             
         # instantiate
-        myproc = Randoms(rawdata,
+        myproc = Randoms(rawdata_obj,
                          processing_id=processing_id,
                          series=series,
                          restricted=restricted,
@@ -600,9 +612,6 @@ if __name__ == "__main__":
         if (randoms_group_path is not None
             and salting_dataframe_list[0] is None):
             trigger_group_name = os.path.basename(randoms_group_path)
-
-        # trigger config
-        trigger_config = yaml_config.get_config('trigger')
             
         for idx, salting_df in enumerate(salting_dataframe_list):
 
@@ -617,8 +626,8 @@ if __name__ == "__main__":
                            f'done using DM PDF!')
                     
             # instantiate
-            myproc = TriggerProcessing(raw_group_path,
-                                       trigger_config,
+            myproc = TriggerProcessing(rawdata_obj,
+                                       yaml_obj,
                                        series=series,
                                        processing_id=processing_id,
                                        restricted=restricted,
@@ -652,7 +661,7 @@ if __name__ == "__main__":
 
         print('\n\n=====================================')
         print('Feature Processing')
-        print('\n\n=====================================')
+        print('=====================================')
      
         # check if trigger path exist
         if not trigger_group_path_list:
@@ -675,8 +684,8 @@ if __name__ == "__main__":
             trigger_path = trigger_group_path_list[idx]
             
             # instantiate
-            myproc = FeatureProcessing(raw_group_path,
-                                       processing_setup,
+            myproc = FeatureProcessing(rawdata_obj,
+                                       yaml_obj,
                                        series=series, 
                                        trigger_dataframe_path=trigger_path,
                                        trigger_series=trigger_series,
