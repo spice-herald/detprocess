@@ -54,7 +54,7 @@ setup(
         'scipy',
         'matplotlib',
         'pyyaml',
-        'qetpy>=1.7.6',
+        'qetpy>=1.7.7',
         'pandas',
         'pytesdaq>=0.4.2',
         'scikit-image',
