@@ -7,9 +7,9 @@ import pytesdaq.io as h5io
 import vaex as vx
 from glob import glob
 from detprocess.utils import utils
-from detprocess.core import FilterData
+from detprocess.core import FilterData, Salting
 import copy
-
+vx.multithreading.thread_count = 1
 
 __all__ = [
     'ProcessingData'
@@ -31,6 +31,7 @@ class ProcessingData:
                  trigger_group_name=None,
                  filter_file=None,
                  available_channels=None,
+                 salting_dataframe=None,
                  verbose=True):
         """
         Intialize data processing
@@ -69,16 +70,16 @@ class ProcessingData:
 
         # filter data
         self._filter_data = None
+        self._filter_file = filter_file
         if filter_file is not None:
             self._filter_data = FilterData()
             self._filter_data.load_hdf5(filter_file, overwrite=True)
-
-         
+              
         # initialize vaex dataframe
         self._dataframe = None
-        self._is_dataframe = False
+        self._is_trigger_dataframe = False
         if self._trigger_files is not None:
-            self._is_dataframe = True
+            self._is_trigger_dataframe = True
 
 
         # initialize OF containers
@@ -92,25 +93,51 @@ class ProcessingData:
         self._h5 = h5io.H5Reader()
         
         # initialize current event traces and metadata
-        self._current_traces  = None
+        self._current_full_traces  = None
         self._current_admin_info = None
-        self._current_traces_data = None
+        self._current_truncated_traces_data = None
         self._current_dataframe_index = -1
         self._current_dataframe_info = None
         self._current_event_number = None
         self._current_series_number = None
         self._current_trigger_index = None
-
+        self._current_salting_info = None
+        
         # get ADC and file info
         self._data_info = self._extract_data_info()
             
         # available channels
         self._available_channels =  available_channels
+
+        # salting
+        self._salting_dataframe = salting_dataframe
+        self._salting_inst = None
+        if  salting_dataframe is not None:
+             self._salting_inst = Salting(filter_file, didv_file=None)
+        
         
     @property
     def verbose(self):
         return self._verbose
 
+
+    def load_salting_dataframe(self):
+        """
+        Load salting dataframe
+        """
+
+        if self._salting_dataframe is None:
+            return
+
+        # load
+        if isinstance(self._salting_dataframe, str):
+            salting_dataframe = vx.open(self._salting_dataframe)
+        elif not isinstance(self._salting_dataframe, vx.dataframe.DataFrame):
+            raise ValueError(f'ERROR: unrecognized salting dataframe '
+                             f'{salting_dataframe} argument!')
+        
+        self._salting_inst.set_dataframe(salting_dataframe)
+    
     def instantiate_OF_base(self, processing_config, channel=None):
         """
         Instantiate QETpy OF base class, perform pre-calculations
@@ -502,7 +529,7 @@ class ProcessingData:
         # open/set files
 
         # case dataframe
-        if self._is_dataframe:
+        if self._is_trigger_dataframe:
             if self._verbose:
                 print('INFO: Loading dataframe for trigger series '
                       + series)
@@ -525,21 +552,46 @@ class ProcessingData:
         Read next event
         """
 
-        if not self._is_dataframe:
+        # case no trigger dataframe ->
+        # read next full trace 
+        if not self._is_trigger_dataframe:
 
             # read the entire trace
-            self._current_traces, self._current_admin_info = (
+            self._current_full_traces, self._current_admin_info = (
                 self._h5.read_next_event(
                     detector_chans=channels,
                     adctoamp=True,
                     include_metadata=True
                 )
             )
-
+            
             # check size
-            if self._current_traces.size == 0:
+            if self._current_full_traces.size == 0:
                 return False
+            
+            self._current_event_number = int(
+                self._current_admin_info['event_num']
+            )
+            self._current_series_number = int(
+                self._current_admin_info['series_num']
+            )
 
+            # salting     
+            if self._salting_inst is not None:
+
+                # channels
+                chans = self._current_admin_info['detector_chans']
+                
+                # inject salting pulses
+                self._current_full_traces,  self._current_salting_info = (
+                    self._salting_inst.inject_raw_salt(
+                        chans, self._current_full_traces,
+                        seriesID=self._current_series_number,
+                        eventID=self._current_event_number,
+                        include_metadata=True
+                    )
+                )
+              
         else:
 
             # require traces_info
@@ -548,15 +600,15 @@ class ProcessingData:
                     'ERROR: No trace info available.'
                     'Something went wrong...'
                 )
-
+            
 
             # increment event pointer
             # and get event info
-            self._current_dataframe_index +=1
+            self._current_dataframe_index += 1
 
             # check if still some events
             if self._current_dataframe_index >= len(self._dataframe):
-                self._current_traces = []
+                self._current_full_traces = None
                 return False
 
             # get record
@@ -574,8 +626,7 @@ class ProcessingData:
             # event index in file
             event_index = int(event_number%100000)
 
-            # check if new file need dump needs
-            # to be load
+            # check if new file need dump needs to be loaded
             if (self._current_series_number is None
                 or series_number != self._current_series_number
                 or dump_number != self._current_dump_number):
@@ -593,41 +644,93 @@ class ProcessingData:
                     raise ValueError('ERROR: Unable to get raw data file. '
                                      + 'Something went wrong...')
                 self._h5.set_files(file_list[0])
-
-
-            # intialize
-            self._current_admin_info = None
-            self._current_traces_data = dict()
-
-            for key_tuple, key_channels in traces_config.items():
-
-                # nb samples
-                nb_samples = int(key_tuple[0])
-                nb_pretrigger_samples = int(key_tuple[1])
                 
-                # read traces
-                traces, info = (
-                    self._h5.read_single_event(
-                        event_index,
-                        detector_chans=key_channels,
-                        trigger_index=trigger_index,
-                        trace_length_samples=nb_samples,
-                        pretrigger_length_samples=nb_pretrigger_samples,
-                        adctoamp=True,
-                        include_metadata=True
-                    )
-                )
-                self._current_traces_data[key_tuple] = {
-                    'traces': traces,
-                    'channels': info['detector_chans']
-                }
+    
+            # intialize
+            self._current_truncated_traces_data = dict()
+            
+            # case salting
+            if self._salting_inst is not None:
 
-                if self._current_admin_info is None:
-                    self._current_admin_info = info
-                else:
-                    self._current_admin_info['detector_config'].update(
-                        info['detector_config']
+                # load and salt full traces if not done yet
+                if (event_number != self._current_event_number
+                    or series_number != self._current_series_number
+                    or self._current_full_traces is None):
+
+
+                    traces, admins = self._h5.read_many_events(
+                        output_format=1,
+                        detector_chans=channels,
+                        event_nums=[event_number],
+                        series_nums=[series_number],
+                        adctoamp=True,
+                        include_metadata=True)
+
+                    self._current_full_traces = traces[0]
+                    self._current_admin_info = admins[0]
+                                  
+                    # inject salting pulses
+                    self._current_full_traces, self._current_salting_info = (
+                        self._salting_inst.inject_raw_salt(
+                            channels, self._current_full_traces, 
+                            seriesID=series_number,
+                            eventID=event_number,
+                            include_metadata=True
+                        )
                     )
+
+                # extract trigger
+                for key_tuple, key_channels in traces_config.items():
+
+                    # min/max index
+                    nb_samples = int(key_tuple[0])
+                    nb_pretrigger_samples = int(key_tuple[1])
+                    min_idx = int(trigger_index - nb_pretrigger_samples)
+                    max_idx = int(min_idx + nb_samples)
+
+
+                    truncated_traces = (
+                        self._current_full_traces[:, min_idx:max_idx].copy()
+                    )
+
+                    chans = self._current_admin_info['detector_chans']
+                    
+                    self._current_truncated_traces_data[key_tuple] = {
+                        'traces': truncated_traces,
+                        'channels': chans
+                    }
+
+            else:
+
+                for key_tuple, key_channels in traces_config.items():
+
+                    # nb samples
+                    nb_samples = int(key_tuple[0])
+                    nb_pretrigger_samples = int(key_tuple[1])
+                
+                    # read traces
+                    traces, info = (
+                        self._h5.read_single_event(
+                            event_index,
+                            detector_chans=key_channels,
+                            trigger_index=trigger_index,
+                            trace_length_samples=nb_samples,
+                            pretrigger_length_samples=nb_pretrigger_samples,
+                            adctoamp=True,
+                            include_metadata=True
+                        )
+                    )
+                    self._current_truncated_traces_data[key_tuple] = {
+                        'traces': traces,
+                        'channels': info['detector_chans']
+                    }
+                    
+                    if self._current_admin_info is None:
+                        self._current_admin_info = info
+                    else:
+                        self._current_admin_info['detector_config'].update(
+                            info['detector_config']
+                        )
 
             # update info
             self._current_event_number = event_number
@@ -729,7 +832,7 @@ class ProcessingData:
             return admin_dict
 
         # case dataframe
-        if self._is_dataframe:
+        if self._is_trigger_dataframe:
             if self._current_dataframe_info is None:
                 return admin_dict
             else:
@@ -812,6 +915,13 @@ class ProcessingData:
             )
         else:
             admin_dict['group_start_time'] = np.nan
+
+
+        if (self._current_salting_info is not None
+            and 'salting_type' in self._current_salting_info):
+            admin_dict['salting_type'] = (
+                self._current_salting_info['salting_type']
+            )
 
         return admin_dict
 
@@ -920,7 +1030,7 @@ class ProcessingData:
                 raise ValueError('Unable to get event  traces for '
                                  + channel)
             # get array
-            array = self._current_traces[channel_indices,:]
+            array = self._current_full_traces[channel_indices,:]
 
         else:
 
@@ -929,18 +1039,18 @@ class ProcessingData:
                     'ERROR: "nb_pretrigger_samples" required!')
 
             key = (nb_samples, nb_pretrigger_samples)
-            if (self._current_traces_data is None
-                or key not in self._current_traces_data.keys()):
+            if (self._current_truncated_traces_data is None
+                or key not in self._current_truncated_traces_data.keys()):
                 raise ValueError('ERROR: Traces not available!')
 
             channel_indices = list()
             for chan in channels:
                 channel_indices.append(
-                    self._current_traces_data[key]['channels'].index(chan)
+                    self._current_truncated_traces_data[key]['channels'].index(chan)
                 )
 
             # get array
-            array = self._current_traces_data[key]['traces'][channel_indices,:]
+            array = self._current_truncated_traces_data[key]['traces'][channel_indices,:]
 
 
         # Build output

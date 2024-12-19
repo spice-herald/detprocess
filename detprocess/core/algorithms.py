@@ -17,6 +17,7 @@ class FeatureExtractors:
     convenience.
 
     """
+   
     @staticmethod
     def ofnxm(channel, of_base,
               available_channels=None,
@@ -32,7 +33,8 @@ class FeatureExtractors:
               interpolate_t0=False,
               **kwargs):
         """
-        Feature extraction for the no delay Optimum Filter.
+        Feature extraction for the NxM Optimum Filter.
+        Returns both constrained and nodelay paramaters.
 
 
         Parameters
@@ -119,7 +121,7 @@ class FeatureExtractors:
         OF.calc()
 
         # get data
-        amps, t0, chi2 = OF.get_fit_withdelay(
+        amps_constrained, t0_constrained, chi2_constrained = OF.get_fit_withdelay(
             window_min_from_trig_usec=window_min_from_trig_usec,
             window_max_from_trig_usec=window_max_from_trig_usec,
             window_min_index=window_min_index,
@@ -127,13 +129,18 @@ class FeatureExtractors:
             interpolate_t0=interpolate_t0,
             lgc_outside_window=lgc_outside_window
         )
+        amps_nodelay, t0_nodelay, chi2_nodelay = OF.get_fit_nodelay()
         
         # store
         retdict = dict()
-        retdict[f'chi2_{feature_base_name}'] = chi2
-        retdict[f't0_{feature_base_name}'] = t0
+        retdict[f'chi2_{feature_base_name}_constrained'] = chi2_constrained
+        retdict[f't0_{feature_base_name}_constrained'] = t0_constrained
         for iamp, amp_name in enumerate(amplitude_names):
-            retdict[f'{amp_name}_{feature_base_name}'] = amps[iamp]
+            retdict[f'{amp_name}_{feature_base_name}_constrained'] = amps_constrained[iamp]
+            
+        retdict[f'chi2_{feature_base_name}_nodelay'] = chi2_nodelay
+        for iamp, amp_name in enumerate(amplitude_names):
+            retdict[f'{amp_name}_{feature_base_name}_nodelay'] = amps_nodelay[iamp]
 
         return retdict
     

@@ -9,11 +9,56 @@ import re
 from pprint import pprint
 from pytesdaq.io import convert_length_msec_to_samples
 from qetpy.utils import convert_channel_name_to_list, convert_channel_list_to_name
-
+import vaex as vx
+from datetime import datetime
+import stat
 
 __all__ = ['split_channel_name', 'extract_window_indices',
-           'find_linear_segment', 'read_config']
+           'find_linear_segment', 'create_directory', 'create_series_name',
+           'read_config']
 
+
+    
+def create_series_name(facility):
+    """
+    Create output directory 
+    
+    Parameters
+    ----------
+    
+    facility : int
+       facility number
+    
+    
+    Return
+    ------
+          
+    name : str
+        
+    """
+
+    now = datetime.now()
+    series_day = now.strftime('%Y') +  now.strftime('%m') + now.strftime('%d') 
+    series_time = now.strftime('%H') + now.strftime('%M')
+    series_name = ('I' + str(facility) +'_D' + series_day + '_T'
+                   + series_time + now.strftime('%S'))
+    
+    return series_name
+        
+
+def create_directory(directory_path):
+    """
+    create (sub) directory
+    """
+
+    if not os.path.isdir(directory_path):
+        try:
+            os.makedirs(directory_path)
+            os.chmod(directory_path, stat.S_IRWXG | stat.S_IRWXU | stat.S_IROTH | stat.S_IXOTH)
+        except OSError:
+            raise ValueError('\nERROR: Unable to create directory "'+ directory_path  + '"!\n')
+        
+        
 
 
 def split_channel_name(channel_name,
@@ -26,7 +71,7 @@ def split_channel_name(channel_name,
 
     # allowed separators
     separators = [',','+','-','|']
-
+    
     # case available_channels is None
     if  available_channels is None:
 
@@ -318,12 +363,12 @@ def read_config(yaml_file, available_channels, sample_rate=None):
 
     # configuration types
     configuration_types = ['global', 'feature',
-                           'didv', 'noise',
+                           'salting', 'didv', 'noise',
                            'template', 'trigger']
     
     
     # available global config
-    global_parameters = ['filter_file']
+    global_parameters = ['filter_file','didv_file']
 
     # global trigger parameters
     global_trigger_parameters = ['coincident_window_msec',
@@ -402,6 +447,11 @@ def read_config(yaml_file, available_channels, sample_rate=None):
         # check if there is anything available
         if not config_dicts[config_name]:
             continue
+
+        # FIXME: remove salting
+        if config_name == 'salting':
+            continue
+
         
         # initialize  output
         processing_config[config_name] = dict()

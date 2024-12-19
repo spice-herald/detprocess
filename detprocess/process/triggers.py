@@ -21,7 +21,6 @@ from detprocess.process.processing_data  import ProcessingData
 from detprocess.core.eventbuilder import EventBuilder
 from detprocess.core.oftrigger import OptimumFilterTrigger
 from detprocess.utils import utils
-
 warnings.filterwarnings('ignore')
 
 
@@ -46,6 +45,7 @@ class TriggerProcessing:
                  processing_id=None,
                  restricted=False,
                  calib=False,
+                 salting_dataframe=None,
                  verbose=True):
         """
         Intialize data processing 
@@ -79,6 +79,9 @@ class TriggerProcessing:
         calib : boolean
            if True, use only "calib" files
            if False, no calib files included
+
+        salting_dataframe : str or vaex dataframe
+           str if path to vaex hdf5 file or directly a dataframe 
 
         verbose : bool, optional
             if True, display info
@@ -140,14 +143,14 @@ class TriggerProcessing:
         
         # initialize output path
         self._output_group_path = None
-
-
+                  
         # instantiate processing data
         self._processing_data_inst = ProcessingData(
             input_base_path,
             input_data_dict,
             group_name=group_name,
             filter_file=filter_file,
+            salting_dataframe=salting_dataframe,
             verbose=verbose
         )
 
@@ -165,7 +168,7 @@ class TriggerProcessing:
                 save_path=None,
                 output_group_name=None,
                 ncores=1,
-                memory_limit='2GB'):
+                memory_limit='1GB'):
         
         """
         Process data 
@@ -351,6 +354,9 @@ class TriggerProcessing:
    
         """
 
+        # set vaex single thread
+        vx.multithreading.thread_count = 1
+         
 
         # check argument
         if lgc_output and lgc_save:
@@ -363,6 +369,9 @@ class TriggerProcessing:
         if node_num>-1:
             node_num_str = ' node #' + str(node_num)
 
+
+        # salting dataframe
+        self._processing_data_inst.load_salting_dataframe()
       
         # instantiate event builder
         evtbuilder_inst = EventBuilder()
@@ -496,11 +505,11 @@ class TriggerProcessing:
                                   
                 # display
                 if self._verbose:
-                    if (trigger_counter%500==0 and trigger_counter!=0):
+                    if (trigger_counter%100==0 and trigger_counter!=0):
                         print('INFO' + node_num_str
                               + ': Local number of events = '
-                              + str(trigger_counter)
-                              + ' (memory = ' + str(memory_usage/1e6) + 'MB)')
+                              + str(trigger_counter) 
+                              + ' (memory = ' + str(memory_usage/1e6) + ' MB)')
                         
                 # -----------------------
                 # Read next event
@@ -511,6 +520,10 @@ class TriggerProcessing:
 
                 # end of file or raw data issue
                 if not success:
+                    print('INFO' + node_num_str
+                          + ': '
+                          + str(trigger_counter) 
+                          + ' events counted, triggering done')
                     do_stop = True
                                            
                 # -----------------------
@@ -549,8 +562,14 @@ class TriggerProcessing:
                         # increment dump
                         dump_counter += 1
                         if self._verbose:
-                            print('INFO' + node_num_str
-                                  + ': Incrementing dump number')
+                            if trigger_counter > 1e5:
+                                print('INFO' + node_num_str
+                                      + ': Incrementing dump number, '
+                                      + f'{trigger_counter:.3e}' + ' total events triggered' ) 
+                            else:
+                                print('INFO' + node_num_str
+                                      + ': Incrementing dump number, '
+                                      + str(trigger_counter) + ' total events triggered' ) 
 
                         # initialize
                         del process_df
@@ -691,13 +710,15 @@ class TriggerProcessing:
                     process_df = event_df
                 else:
                     process_df = vx.concat([process_df, event_df])
-                    
+
+
+
+        # cleanup
+        del evtbuilder_inst
                     
         # return features
         return process_df
-       
-
-
+    
         
         
     def _get_file_list(self, file_path, series=None,
