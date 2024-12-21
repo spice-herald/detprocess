@@ -130,6 +130,44 @@ class RawData:
                                          series=series)
         return data_dict
     
+
+    def get_available_channels(self, data_type=None, series=None):
+        """
+        Get available channels in raw data
+        """
+        
+        available_channels = []
+        
+        # get config
+        metadata = self.get_data_config(data_type=data_type,
+                                        series=series)
+        # get channels
+        for it, it_config in metadata.items():
+            available_channels = it_config['channel_list']
+            break;
+
+        # return
+        return available_channels
+
+    
+    def get_sample_rate(self, data_type=None, series=None):
+        """
+        Get available channels in raw data
+        """
+        
+        sample_rate = np.nan
+        
+        # get config
+        metadata = self.get_data_config(data_type=data_type,
+                                        series=series)
+        # get channels
+        for it, it_config in metadata.items():
+            sample_rate = it_config['overall']['sample_rate']
+            break
+        
+        # return
+        return sample_rate
+
     
 
     def get_data_config(self, data_type=None, series=None):
@@ -145,7 +183,82 @@ class RawData:
         return config_dict
     
         
+    def get_traces(self, series_nums, event_nums,
+                   channels=None,
+                   adctoamp=True,
+                   include_metadata=False):
 
+        """
+        Get traces
+        """
+
+        # raw files
+        raw_files = copy.deepcopy(self._raw_files)
+             
+        # instanciate
+        h5 = h5io.H5Reader()
+
+        # get files
+        if not isinstance(series_nums, (list, tuple, np.ndarray)):
+            series_nums = [series_nums]
+
+        if not isinstance(event_nums, (list, tuple, np.ndarray)):
+            event_nums = [event_nums]
+
+
+        file_list = []
+        for series in series_nums:
+
+            series_name = h5io.extract_series_name(series)
+
+            for data_type, data_series in raw_files.items():
+
+                if (self._data_type is not None
+                    and self._data_type != data_type):
+                    continue
+
+                if not data_series:
+                    continue
+                
+                data = data_series
+                if data_type == 'cont':
+
+                    if not self._restricted:
+                        data = data_series['open']
+                    else:
+                        data = data_series['restricted']
+
+                for itseries, series_file_list in data.items():
+
+                    if not series_file_list:
+                        continue
+                    
+                    if itseries == series_name:
+                        file_list.extend(series_file_list)
+
+        # set file
+        h5.set_files(file_list)
+
+
+        # get traces
+        traces, admins = h5.read_many_events(
+            output_format=2,
+            detector_chans=channels,
+            event_nums=event_nums,
+            series_nums=series_nums,
+            adctoamp=adctoamp,
+            include_metadata=True)
+
+
+        # return
+        if include_metadata:
+            return traces, admins
+        else:
+            return traces
+
+        
+
+    
     def get_duration(self, series=None,
                      data_type=None,
                      include_nb_events=False):
