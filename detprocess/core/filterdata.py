@@ -224,6 +224,18 @@ class FilterData:
                   + file_name)
             
         # update
+        self.set_data(data, overwrite=overwrite)
+                                
+    def set_data(self, data, overwrite=False):
+        """
+        Set data directly
+        """
+
+        if not isinstance(data, dict):
+            raise ValueError('ERROR: filter data should be a '
+                             'dictionary!')
+
+        # update
         if overwrite or not self._filter_data:
             self._filter_data.update(data)
         else:
@@ -236,7 +248,7 @@ class FilterData:
                         self._filter_data[key][par_name] = (
                             data[key][par_name]
                         )
-
+                        
                         
                         
     def save_hdf5(self, file_name, overwrite=False):
@@ -382,11 +394,11 @@ class FilterData:
         channel_name = convert_channel_list_to_name(channels)
         nb_channels = len(channel_list)
 
-        if nb_channels < 2:
-            raise ValueError(
-                'ERROR: At least 2 channels required to calculate csd'
-            )
-        
+        if nb_channels == 1:
+            return self.get_psd(channel_name, tag=tag,
+                                fold=fold,
+                                return_metadata=return_metadata)
+                
         # get values
         output_metadata = dict()
         csd, csd_freqs, metadata = (
@@ -413,8 +425,8 @@ class FilterData:
             return csd, csd_freqs, output_metadata
         else:
             return csd, csd_freqs
-            
-    
+
+      
     def get_template(self, channel, tag='default',
                      return_metadata=False):
         """

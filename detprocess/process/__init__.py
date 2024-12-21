@@ -4,3 +4,4 @@ from .processing_data import *
 from .randoms import *
 from .ivprocess import *
 from .filterprocess import *
+from .config import *
