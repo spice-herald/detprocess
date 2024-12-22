@@ -15,6 +15,7 @@ import warnings
 
 
 __all__ = ['OptimumFilterTrigger',
+           'OptimumFilterTriggerX2',
            'shift_templates_to_match_chi2',
            'combine_trigger_data']
 
@@ -339,17 +340,15 @@ class OptimumFilterTrigger:
                  trigger_name=None,
                  template_ttl=None):
         """
-        Initialization of the FIR filter.
+        Initialization of the NxM filter.
        
         ----------
         trigger_channel : str or list of str
-            the channel name (s) of the trigger. In case of NxM trigger, 
-            it can be a list of channels
+            The channel name (s) of the trigger.
         fs : float
             The sample rate of the data (Hz)
         template : ndarray
-            The pulse template(s) to be used when creating the optimum
-            filter (assumed to be normalized). We will do an NxM trigger.
+            The pulse template(s) to be used when creating the optimum filter.
             You can pass this in a few ways:
             3D array [channels, amplitudes, samples]
             1D array or 2D array with shape [1,S] or [S,1]
@@ -362,7 +361,11 @@ class OptimumFilterTrigger:
             Same shape requirements as "template", though the number of
             samples is replaced by the number of frequencies (which 
             should be equal, anyway).
-         template_ttl : NoneType, ndarray, optional
+        pretrigger_samples : int
+            Number of samples before the trigger.
+        trigger_name : str, optional
+            Name of the trigger. Defaults to None.
+        template_ttl : NoneType, ndarray, optional
             The template for the trigger channel pulse. If left as
             None, then the trigger channel will not be analyzed.
         
@@ -1091,3 +1094,183 @@ class OptimumFilterTrigger:
         
         
         
+class OptimumFilterTriggerX2(OptimumFilterTrigger):
+    
+    def __init__(self, trigger_channel, fs, template, noisecsd,
+                 pretrigger_samples, template_group_ids, delta_t_list,
+                 trigger_name=None):
+        """
+        Extended initialization to support multiple time-shifted templates.
+
+        Parameters
+        ----------
+        trigger_channel : str or list of str
+            The channel name(s) of the trigger.
+        fs : float
+            The sample rate of the data (Hz).
+        template : ndarray
+            The pulse template(s) used for creating the optimum filter.
+            You can pass this in a few ways:
+            3D array [channels, amplitudes, samples]
+            1D array or 2D array with shape [1,S] or [S,1]
+                - Will be reshaped into 1 x 1 x S
+            2D array with two non-unity dimensions
+                - Will raise an error because we don't know whether
+                  to set N_chan = 1 or M_amp = 1
+        noisecsd : ndarray
+            The two-sided cross power spectral density in units of A^2/Hz
+            Same shape requirements as "template", though the number of
+            samples is replaced by the number of frequencies.
+        pretrigger_samples : int
+            Number of samples before the trigger.
+        template_group_ids : list of int
+            Array of 0s and 1s with length `m_amplitudes`, which represents
+            the amplitudes that time-shift together.
+        delta_t_list : list of int
+            Array of integers representing possible time shifts in samples.
+        trigger_name : str, optional
+            Name of the trigger. Defaults to None.
+        """
+        
+        super().__init__(trigger_channel, fs, template, noisecsd, pretrigger_samples, trigger_name)
+
+        # Validate template_ids
+        if len(template_group_ids) != self._m_amplitudes:
+            raise ValueError(f"template_group_ids must have length {self._m_amplitudes}, but got {len(template_group_ids)}")
+
+        # Validate delta_t_list
+        if not isinstance(delta_t_list, (list, np.ndarray)):
+            raise TypeError("delta_t_list must be a list or ndarray of integers.")
+
+        # Initialize multiple OFBase objects with time-shifted templates
+        self._of_base_list = [None for _ in delta_t_list]
+        self._iw_matrix_list = [None for _ in delta_t_list]
+        self._w_matrix_list = [None for _ in delta_t_list]
+        self._phi_fd_list = [None for _ in delta_t_list]
+        self._phi_td_list = [None for _ in delta_t_list]
+        
+        for i, delta_t in enumerate(delta_t_list):
+            
+            # Create a shifted template
+            shifted_template = np.copy(self._template)
+            for k in range(self._m_amplitudes):
+                if template_group_ids[k] == 1:
+                    shifted_template[:, k, :] = np.roll(self._template[:, k, :], shift=delta_t, axis=-1)
+
+            # Initialize a new OFBase object
+            of_base = qp.OFBase(fs)
+            of_base.add_template_many_channels(
+                self._trigger_channel,
+                shifted_template,
+                self._template_tags,
+                pretrigger_samples=self._pretrigger_samples
+            )
+            of_base.set_csd(self._trigger_channel, self._noisecsd)
+            of_base.calc_phi_matrix(self._trigger_channel, self._template_tags)
+            of_base.calc_weight_matrix(self._trigger_channel, self._template_tags)
+
+            # Calculate the inverse weight matrix and the phi matrix
+            iw_matrix = of_base.iw_matrix(self._trigger_channel, self._template_tags)
+            w_matrix = np.linalg.inv(iw_matrix)
+
+            # Transpose phi matrix to [n_channels, m_amplitudes, f_frequencies]
+            phi_fd = np.copy(of_base.phi(self._trigger_channel, self._template_tags))
+            phi_fd = phi_fd.transpose(1,2,0)
+
+            phi_fd[:,:,0] = 0 #ensure we do not use DC information
+            phi_td = ifft(phi_fd, axis=2).real
+            
+            # Save the OFBase object and related matrices
+            self._of_base_list[i] = of_base
+            self._iw_matrix_list[i] = iw_matrix
+            self._w_matrix_list[i] = w_matrix
+            self._phi_fd_list[i] = phi_fd
+            self._phi_td_list[i] = phi_td
+
+        self.template_group_ids = template_group_ids
+        self.delta_t_list = delta_t_list
+
+
+
+    def update_trace(self, trace, padding=True):
+        """
+        Override the update_trace method to compute delta_chi2 for each
+        time-shifted template and choose the maximum value at each time
+        sample. Note that passing a filtered_trace is not supported at
+        this time, and neither are TTL traces.
+
+        Parameters
+        ----------
+        trace : ndarray, required
+            Trigger channel trace(s) to be filtered.
+            Units: Amps
+                Pulses should be positive-going for consistency,
+                but this technically doesn't matter.
+            Shape: 2D array [N_channels, samples] 
+            Default: None (required "filtered_trace")
+        padding : bool, optional
+            If True, set the filtered values to zero near the edges.
+        """
+        
+        # Check the dimensions of the input traces
+        if trace.ndim == 1:
+            self._raw_trace = np.reshape(trace, (1, len(trace)))
+        else:
+            self._raw_trace = trace
+
+        self._raw_trace_LPF_50kHz = np.copy(self._raw_trace)
+        for ich in range(self._n_channels):            
+            self._raw_trace_LPF_50kHz[ich] = qp.utils.lowpassfilter(self._raw_trace[ich], cut_off_freq=50e3, fs=self._fs)
+
+        if self._raw_trace.shape[0] != self._n_channels:
+            raise ValueError(
+                f'ERROR: "trace" has shape {trace.shape}, ' + 
+                f'but we have {self._n_channels} channels!'
+            )
+            
+        # For each time-shifted template, calculate the filtered amplitude(s)
+        # and delta_chi2
+        filtered_traces = np.zeros((len(self.delta_t_list), self._m_amplitudes, self._raw_trace.shape[-1]))
+        delta_chi2_traces = np.zeros((len(self.delta_t_list), self._raw_trace.shape[-1]))
+        for i, of_base in enumerate(self._of_base_list):
+            
+            # V is the vector of convolutions; equivalently, the element in WA = V
+            V_td = np.zeros((self._m_amplitudes, self._raw_trace.shape[-1]))
+            for theta in range(self._m_amplitudes):
+                V_td_per_channel = oaconvolve(self._raw_trace, self._phi_td_list[i][theta,:], mode='same', axes=-1)
+                V_td[theta,:] = np.sum(V_td_per_channel, axis=0)
+
+            filtered_traces[i] = np.einsum('ij,jz->iz', self._iw_matrix_list[i], V_td).real
+            delta_chi2_traces[i] = np.einsum('iz,ij,jz->z', filtered_traces[i], self._w_matrix_list[i], filtered_traces[i])
+
+        # Combine results by taking the maximum delta_chi2 at each time sample
+        self._delta_chi2_trace = np.max(delta_chi2_traces, axis=0)
+        self._filtered_trace = np.max(filtered_traces, axis=0)
+        
+        self._delta_chi2_trace_list = delta_chi2_traces
+        self._filtered_trace_list = filtered_traces
+        self._filtered_trace_ttl = None
+
+        # Set padding if required
+        if padding:
+            cut_len = self._t_times
+            self._delta_chi2_trace[:cut_len] = 0.0
+            self._delta_chi2_trace[-(cut_len)+(cut_len+1)%2:] = 0.0
+
+
+
+    def get_filtered_trace_list(self):
+        """
+        Get all current filtered traces
+        """
+
+        return self._filtered_trace_list
+
+
+    def get_filtered_delta_chi2_list(self):
+        """
+        Get all current delta chi2 traces
+        """
+
+        return self._delta_chi2_trace_list
+    
