@@ -190,9 +190,6 @@ class TriggerProcessing:
                 )
             
             config_dict = config_data.get_config('trigger')
-
-        
-            
             
         self._trigger_config = copy.deepcopy(config_dict['channels'])
         self._evtbuilder_config = copy.deepcopy(config_dict['overall'])
@@ -706,7 +703,9 @@ class TriggerProcessing:
                     # get threshold
                     threshold = None
                     if 'threshold_sigma' in trig_data.keys():
-                        threshold = trig_data['threshold_sigma']
+                        threshold = float(trig_data['threshold_sigma'])
+                    elif 'threshold' in trig_data.keys():
+                        threshold = float(trig_data['threshold'])
                     else:
                         raise ValueError(
                             'ERROR: "treshold_sigma" missing in '
@@ -715,12 +714,13 @@ class TriggerProcessing:
                     # pileup window
                     pileup_window_msec = None
                     if 'pileup_window_msec' in trig_data.keys():
-                        pileup_window_msec = (
-                            trig_data['pileup_window_msec'])
+                        pileup_window_msec = float(
+                            trig_data['pileup_window_msec']
+                        )
 
                     pileup_window_samples = None
                     if 'pileup_window_samples' in trig_data.keys():
-                        pileup_window_samples = (
+                        pileup_window_samples = int(
                             trig_data['pileup_window_samples'])
 
                     # positive pulse
