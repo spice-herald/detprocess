@@ -361,7 +361,7 @@ if __name__ == "__main__":
     # ====================================
     
     yaml_obj = YamlConfig(processing_setup, available_channels,
-                           sample_rate=sample_rate)
+                          sample_rate=sample_rate)
                     
      
     # ====================================
