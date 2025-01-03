@@ -198,7 +198,7 @@ class ProcessingData:
             # channel list
             chan_list, _ = utils.split_channel_name(
                 chan,
-                self._available_channels,
+                available_channels=self._available_channels,
                 separator='|'
             )
 
@@ -442,7 +442,7 @@ class ProcessingData:
             # check psd / csd tags
             for tag in psd_tags.keys():
                 psd_tags[tag] = (
-                    list(set(psd_tags[tag]))
+                    utils.unique_list(psd_tags[tag])
                 )
                 if len(psd_tags[tag]) != 1:
                     raise ValueError(
@@ -452,8 +452,9 @@ class ProcessingData:
                 
             for tag in csd_tags.keys():
                 csd_tags[tag] = (
-                    list(set(csd_tags[tag]))
+                    utils.unique_list(csd_tags[tag])
                 )
+                
                 if len(csd_tags[tag]) != 1:
                     raise ValueError(
                         f'ERROR: Only a single csd tag '
@@ -476,16 +477,17 @@ class ProcessingData:
                     
         # remove duplicated
         for key in self._OF_base_objs:
-            self._OF_base_objs[key]['channels'] = list(
-                set(self._OF_base_objs[key]['channels'])
+            self._OF_base_objs[key]['channels'] = utils.unique_list(
+                self._OF_base_objs[key]['channels']
             )
             
-            self._OF_base_objs[key]['channels_split'] = list(
-                set(self._OF_base_objs[key]['channels_split'])
+            
+            self._OF_base_objs[key]['channels_split'] =  utils.unique_list(
+                self._OF_base_objs[key]['channels_split']
             )
                     
-            self._OF_base_objs[key]['algorithms'] = list(
-                set(self._OF_base_objs[key]['algorithms'])
+            self._OF_base_objs[key]['algorithms'] = utils.unique_list(
+                self._OF_base_objs[key]['algorithms']
             )
 
     def get_OF_base(self, key_tuple, algo_name):
@@ -814,7 +816,7 @@ class ProcessingData:
                 # channel list
                 chan_list, _ = utils.split_channel_name(
                     chan,
-                    self._available_channels,
+                    available_channels=self._available_channels,
                     separator='|'
                 )
 
@@ -974,7 +976,8 @@ class ProcessingData:
 
         #  get channels list
         channels, separator = utils.split_channel_name(
-            channel, self._current_admin_info['detector_chans']
+            channel,
+            available_channels=self._current_admin_info['detector_chans']
         )
 
         # fill dictionary
@@ -1014,7 +1017,8 @@ class ProcessingData:
 
         #  get channels for case + or | used
         channels, separator = utils.split_channel_name(
-            channel, self._current_admin_info['detector_chans']
+            channel,
+            available_channels=self._current_admin_info['detector_chans']
         )
 
         weights_array = None
@@ -1373,7 +1377,7 @@ class ProcessingData:
             # channel list
             chan_list, _ = utils.split_channel_name(
                 chan,
-                self._available_channels,
+                available_channels=self._available_channels,
                 separator='|'
             )
 

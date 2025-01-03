@@ -70,27 +70,34 @@ def split_channel_name(channel_name,
                        separator=None,
                        label=None):
     """
-    Split channel name and return
-    list of individual channels and separator
+    Split channel name after various checks and return
+    list of individual channels and separator(s)
     """
 
     # allowed separators
-    separators = [',' ,'+' ,'-' ,'|']
-
+    allowed_separators = [',', '|', '+' ,'-']
 
     # strip whitespace
     channel_name = channel_name.replace(' ','')
+
+    # check if separator allowed
+    if (separator is not None
+        and separator not in allowed_separators):
+        raise ValueError(
+            f'ERROR: separator "{separator}" not '
+            f'recognized. Allowed separator '
+            f'{allowed_separators} ')
     
     # check if channel_name has any separators
     has_separator = False
-    for sep in separators:
+    for sep in allowed_separators:
         if sep in channel_name:
              has_separator = True
              break
     if not has_separator:
         return [channel_name], None
 
-
+    
     # case available_channels is None
     if  available_channels is None:
 
@@ -98,21 +105,23 @@ def split_channel_name(channel_name,
             raise ValueError(
                 'ERROR: separator required when '
                 '"available_channels" not provided! ')
-        elif separator == '-':
-             raise ValueError(
+
+        if separator == '-':
+            raise ValueError(
                 'ERROR: "available_channels" required '
                 'when using separator "-"')
-        elif ((separator == '-' or separator == '+')
+
+        if ((separator == '-' or separator == '+')
               and (',' in channel_name or '|' in channel_name)):
             raise ValueError(
                 f'ERROR: Channels cannot be split with '
                 f'{separator} before channels split with '
                 f'"," and "|"')
-        else:
-            channel_list = channel_name.split(separator)
-            return channel_list, separator
+    
+        channel_list = channel_name.split(separator)
+        return channel_list, separator
 
-
+    # from this point available_channels has been provided
 
     # case already an individual channel
     # or no separator found
@@ -120,7 +129,7 @@ def split_channel_name(channel_name,
         or channel_name == 'all'):
         return [channel_name], None
 
-    # let's 
+    # get list of separators
     channel_check = channel_name
     channel_list = []
     for chan in available_channels:
@@ -130,11 +139,11 @@ def split_channel_name(channel_name,
             
     separator_list =  [x for x in channel_check]
     separator_list =  list(set(separator_list))
-    channel_list = list(set(channel_list))
-
+       
+    # check if any channels are  unavailable
     non_separator_list = []
     for sep in separator_list:
-        if sep not in separators:
+        if sep not in allowed_separators:
             non_separator_list.append(sep)
     if non_separator_list:
         if label is None:
@@ -149,59 +158,38 @@ def split_channel_name(channel_name,
                 f'Perhaps not in raw data... or misspelled?'
             )
 
-
+    # if no separator 
     if separator is None:
+        
         if len(separator_list) == 1:
             separator_list = separator_list[0]
+            if separator_list != '-':
+                channel_list = channel_name.split(separator_list)
+                
         return channel_list, separator_list
 
     # case separator provided
     
-    # check separator
-    if separator not in separators:
-        raise ValueError(
-            f'ERROR: separator "{separator}" not '
-            f'recognized. Allowed separator '
-            f'{separators} ')
-
     # check if separator in channe_name
     if separator not in channel_name:
         return [channel_name], None
 
-    # now let's split channel name
-    pattern = f"([{re.escape(separator)}])"
-    split_parts = re.split(pattern, channel_name)
-      
-    channel_list = []
-    current_name = ''
-    for part in split_parts:
-        
-        if part in available_channels:
-
-            # add current_name if constructed
-            if current_name:
-                channel_list.append(current_name)
-            current_name = ''
-            
-            # add part ot list
-            channel_list.append(part)
+    # case not '-'
+    if separator != '-':
+        channel_list = channel_name.split(separator)
+        channel_list.reverse()
+        return channel_list, separator
 
 
-        elif part == separator:
+    if ('|' in channel_name
+        or '+' in channel_name
+        or ',' in channel_name):
 
-            if (current_name
-                and  current_name in available_channels):
-                channel_list.append(current_name)
-                current_name = ''     
-            elif current_name:
-                current_name += part
-        else:
-            current_name += part
-        
-    if current_name and  current_name in available_channels:
-        channel_list.append(current_name)
+        raise ValueError(f'Multiple separators available, split first '
+                         f'with other separators before "-"')
+    else:
+        return  channel_list, separator
 
-    return channel_list, separator
 
 
 
@@ -433,6 +421,25 @@ def get_dataframe_series_list(file_path):
             series_list.append(series_name)
             
     return series_list
+
+def unique_list(alist):
+    """
+    make list unique
+    """
+
+    if not isinstance(alist, (list, np.ndarray)):
+        alist = [alist]
+    
+    seen = set()
+    unique_items = []
+    
+    for item in alist:
+        if item not in seen:
+            unique_items.append(item)
+        seen.add(item)
+        
+    return unique_items
+
 
 def get_indices_from_freq_ranges(freqs, freq_ranges):
     """

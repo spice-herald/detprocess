@@ -170,6 +170,7 @@ class EventBuilder:
                     fs=None,
                     coincident_window_msec=None,
                     coincident_window_samples=None,
+                    nb_trigger_channels=None,
                     trace_length_continuous_sec=None):
         """
         Function to merge coincident 
@@ -225,11 +226,15 @@ class EventBuilder:
             return
     
         # merge coincident events
-        self._merge_coincident_triggers(
-            fs=fs,
-            coincident_window_msec=coincident_window_msec,
-            coincident_window_samples=coincident_window_samples)
-
+        if (nb_trigger_channels is None
+            or nb_trigger_channels > 1):
+            print('Merging!')
+            self._merge_coincident_triggers(
+                fs=fs,
+                coincident_window_msec=coincident_window_msec,
+                coincident_window_samples=coincident_window_samples
+            )
+            
 
         # number of triggers (after merging coincident events)
         nb_triggers = len(self._event_df)

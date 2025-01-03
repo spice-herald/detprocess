@@ -233,7 +233,8 @@ class YamlConfig:
                 else:
                     # split channels
                     split_channels, _ = utils.split_channel_name(
-                        chan, self._available_channels,
+                        chan,
+                        available_channels=self._available_channels,
                         separator=',', label=field
                     )
 
@@ -305,13 +306,14 @@ class YamlConfig:
 
             # get split channel list
             split_chans, separator = utils.split_channel_name(
-                chan, self._available_channels, label='salting'
+                chan,
+                available_channels=self._available_channels,
+                label='salting'
             )
 
             split_channel_list.extend(split_chans)
 
-        split_channel_list = list(set(split_channel_list))
-        salting_dict['channel_list'] = split_channel_list
+        salting_dict['channel_list'] =  utils.unique_list(split_channel_list)
 
         return salting_dict
 
@@ -323,7 +325,6 @@ class YamlConfig:
         # copy 
         trigger_dict = copy.deepcopy(trigger_config)
         global_dict =  copy.deepcopy(global_config)
-
 
         # add global into feature_dict
         if global_config:
@@ -352,10 +353,13 @@ class YamlConfig:
 
             # get split channel list
             split_chans, separator = utils.split_channel_name(
-                chan, self._available_channels, label='trigger'
+                chan,
+                available_channels=self._available_channels,
+                label='trigger'
             )
-            split_channel_list.extend(split_chans)
 
+            split_channel_list.extend(split_chans)
+      
             # check if trigger channel
             trigger_channel = chan
             if 'trigger_channel' in chan_config:
@@ -394,9 +398,7 @@ class YamlConfig:
                     trigger_channel_dict[algo_trigger_channel] = algo_dict
                     
         trigger_dict['channels'] = trigger_channel_dict
-        split_channel_list = list(set(split_channel_list))
-        trigger_dict['channel_list'] = split_channel_list
-        
+        trigger_dict['channel_list'] = utils.unique_list(split_channel_list)
         return trigger_dict
                 
                 
@@ -582,9 +584,7 @@ class YamlConfig:
 
 
         # add channel list
-        split_channel_list = list(set(split_channel_list))
-        feature_dict['channel_list'] = split_channel_list
-
+        feature_dict['channel_list'] = utils.unique_list(split_channel_list)
 
         # get weight and trace info
         traces_config = dict()
@@ -627,7 +627,7 @@ class YamlConfig:
 
       
         for key in traces_config.keys():
-            traces_config[key] = list(set(traces_config[key]))
+            traces_config[key] = utils.unique_list(traces_config[key])
             
         if not traces_config:
             traces_config = None

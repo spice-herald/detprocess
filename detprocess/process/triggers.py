@@ -194,6 +194,7 @@ class TriggerProcessing:
         self._trigger_config = copy.deepcopy(config_dict['channels'])
         self._evtbuilder_config = copy.deepcopy(config_dict['overall'])
         self._trigger_channels = copy.deepcopy(config_dict['channel_list'])
+      
         if not 'filter_file' in config_dict['overall']:
             raise ValueError('ERROR: Filter file missing in yaml file!')
          
@@ -445,8 +446,9 @@ class TriggerProcessing:
         # instantiate event builder
         evtbuilder_inst = EventBuilder()
               
-        # instantiate OF trigger and add to EventBuilder
+        # instantiate OF trigger and add to EventBuilder'
         trigger_config = copy.deepcopy(self._trigger_config)
+        nb_trigger_chans = len(list(trigger_config.keys()))
         for trig_chan, trig_data in trigger_config.items():
 
             # channel name
@@ -456,7 +458,7 @@ class TriggerProcessing:
             template_tag = 'default'
             if 'template_tag' in trig_data:
                 template_tag = trig_data['template_tag']
-            
+
             template, template_metadata = (
                 self._processing_data_inst.get_template(
                     channel_name,
@@ -490,7 +492,6 @@ class TriggerProcessing:
                 noise_tag = trig_data['csd_tag']
             elif 'psd_tag' in trig_data:
                 noise_tag = trig_data['psd_tag']
-            
 
             csd, csd_freqs, csd_metadata = (
                 self._processing_data_inst.get_noise(
@@ -500,7 +501,7 @@ class TriggerProcessing:
             
             # sample rate
             fs = self._processing_data_inst.get_sample_rate()
-            
+
             # instantiate optimal filter trigger
             oftrigger_inst = OptimumFilterTrigger(
                 channel_name, fs, template, csd,
@@ -580,7 +581,7 @@ class TriggerProcessing:
                         
                 # -----------------------
                 # Read next event
-                # -----------------------                
+                # -----------------------
                 success = self._processing_data_inst.read_next_event(
                     channels=self._trigger_channels
                 )
@@ -695,11 +696,11 @@ class TriggerProcessing:
 
                 
                 # loop trigger channels
-                for trig_chan, trig_data in self._trigger_config.items():
+                for trig_chan, trig_data in trigger_config.items():
 
                     # channel
                     channel_name =  trig_data['channel_name']
-                    
+                 
                     # get threshold
                     threshold = None
                     if 'threshold_sigma' in trig_data.keys():
@@ -728,11 +729,11 @@ class TriggerProcessing:
                     if 'positive_pulses' in trig_data.keys():
                         positive_pulses = trig_data['positive_pulses']
                         
-                    # get trace
+                    # get trace (If multiple channels, need to follow order)
                     trace = self._processing_data_inst.get_channel_trace(
                         channel_name
                     )
-                                     
+
                     # acquire trigger
                     evtbuilder_inst.acquire_triggers(
                         trig_chan,
@@ -766,7 +767,8 @@ class TriggerProcessing:
                     event_info,
                     fs=fs,
                     coincident_window_msec=coincident_window_msec,
-                    coincident_window_samples=coincident_window_samples
+                    coincident_window_samples=coincident_window_samples,
+                    nb_trigger_channels=nb_trigger_chans
                 )
 
 
@@ -780,6 +782,7 @@ class TriggerProcessing:
                              
                 # increment counter
                 nb_triggers = len(event_df)
+             
                 trigger_counter += nb_triggers
                 
 

@@ -770,10 +770,10 @@ class IVSweepProcessing:
 
 
         # check base_path / group
-        base_path_iv = list(set(base_path_iv))
-        base_path_didv = list(set(base_path_didv))
-        group_name_iv = list(set(group_name_iv))
-        group_name_didv = list(set(group_name_didv))
+        base_path_iv = utils.unique_list(base_path_iv)
+        base_path_didv = utils.unique_list(base_path_didv)
+        group_name_iv = utils.unique_list(group_name_iv)
+        group_name_didv = utils.unique_list(group_name_didv)
         
         if  (len(base_path_iv)>1 or len(group_name_iv)>1):
             raise ValueError('ERROR: IV data should be in a single directory!')
