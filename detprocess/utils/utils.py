@@ -177,7 +177,6 @@ def split_channel_name(channel_name,
     # case not '-'
     if separator != '-':
         channel_list = channel_name.split(separator)
-        channel_list.reverse()
         return channel_list, separator
 
 
