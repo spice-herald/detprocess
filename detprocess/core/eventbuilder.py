@@ -228,7 +228,6 @@ class EventBuilder:
         # merge coincident events
         if (nb_trigger_channels is None
             or nb_trigger_channels > 1):
-            print('Merging!')
             self._merge_coincident_triggers(
                 fs=fs,
                 coincident_window_msec=coincident_window_msec,

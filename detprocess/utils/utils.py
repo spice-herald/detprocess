@@ -19,7 +19,7 @@ from glob import glob
 __all__ = ['split_channel_name', 'extract_window_indices',
            'find_linear_segment', 'create_directory', 'create_series_name',
            'get_dataframe_series_list', 'get_indices_from_freq_ranges',
-           'is_empty']
+           'is_empty','unique_list']
 
 
     
