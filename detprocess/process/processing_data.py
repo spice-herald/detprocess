@@ -414,13 +414,18 @@ class ProcessingData:
                         )
                     else:
                         nb_pretrigger_template = nb_pretrigger_samples
+                    print(template_metadata.keys())
+                    template_time_tags = None
+                    if 'template_time_tags' in template_metadata.keys():
+                        template_time_tags = template_metadata['template_time_tags']
 
                     # add
                     self._OF_base_objs[key_tuple]['OF'].add_template_many_channels(
                         chan, template, template_tag,
                         pretrigger_samples=nb_pretrigger_template,
                         integralnorm=integralnorm,
-                        overwrite=True)
+                        overwrite=True,
+                        template_time_tags = template_time_tags)
 
                 # build matrix
                 if nb_channels > 1:
