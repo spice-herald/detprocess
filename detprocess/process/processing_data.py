@@ -635,16 +635,16 @@ class ProcessingData:
             )
 
             # get event/series number, and trigger index
-            event_number = self._current_dataframe_info['event_number']
-            dump_number = self._current_dataframe_info['dump_number']
-            series_number = self._current_dataframe_info['series_number']
-            trigger_index = self._current_dataframe_info['trigger_index']
-            group_name = self._current_dataframe_info['group_name']
+            event_number = int(self._current_dataframe_info['event_number'])
+            dump_number = int(self._current_dataframe_info['dump_number'])
+            series_number = int(self._current_dataframe_info['series_number'])
+            trigger_index = int(self._current_dataframe_info['trigger_index'])
+            group_name = str(self._current_dataframe_info['group_name'])
 
             # event index in file
             event_index = int(event_number%100000)
 
-            # check if new file need dump needs to be loaded
+            # check if new file needs to be loaded
             if (self._current_series_number is None
                 or series_number != self._current_series_number
                 or dump_number != self._current_dump_number):
