@@ -9,7 +9,7 @@ from qetpy.utils import convert_channel_name_to_list, convert_channel_list_to_na
 import qetpy.plotting as plotting
 from qetpy import calc_corrcoeff_from_csd
 import copy
-
+from detprocess.utils import estimate_sampling_rate
 
 class FilterData:
     """
@@ -328,7 +328,7 @@ class FilterData:
                 if 'sample_rate' in metadata:
                     sample_rate = float(metadata['sample_rate'])
                 else:
-                    sample_rate = 2*np.max(np.abs(psd_freqs))
+                    sample_rate = estimate_sampling_rate(psd_freqs)
 
                 psd_freqs, psd = fold_spectrum(psd, sample_rate)
                 
@@ -417,7 +417,7 @@ class FilterData:
             if 'sample_rate' in metadata:
                 sample_rate = float(metadata['sample_rate'])
             else:
-                sample_rate = 2*np.max(np.abs(csd_freqs))
+                sample_rate = estimate_sampling_rate(csd_freqs)
                 
             csd_freqs, csd = fold_spectrum(csd, sample_rate)
 
@@ -620,10 +620,10 @@ class FilterData:
             raise ValueError('ERROR: psd needs to be two-sided!')
 
 
-        sample_rate_array = 2*np.max(np.abs(psd_freqs))
+        sample_rate_array = estimate_sampling_rate(psd_freqs)
         if sample_rate is None:
             sample_rate = sample_rate_array
-        elif sample_rate_array != sample_rate:
+        elif round(sample_rate_array) != round(sample_rate):
             raise ValueError('ERROR: sample_rate is inconsistent with '
                              'frequency array!')
         
@@ -741,10 +741,10 @@ class FilterData:
             raise ValueError('ERROR: psd needs to be two-sided!')
 
 
-        sample_rate_array = 2*np.max(np.abs(csd_freqs))
+        sample_rate_array = estimate_sampling_rate(csd_freqs)
         if sample_rate is None:
             sample_rate = sample_rate_array
-        elif sample_rate_array != sample_rate:
+        elif round(sample_rate_array) != round(sample_rate):
             raise ValueError('ERROR: sample_rate is inconsistent with '
                              'frequency array!')
                 
@@ -810,10 +810,10 @@ class FilterData:
         if is_folded:
             raise ValueError('ERROR: dpdi needs to be two-sided!')
 
-        sample_rate_array = 2*np.max(np.abs(dpdi_freqs))
+        sample_rate_array = estimate_sampling_rate(dpdi_freqs)
         if sample_rate is None:
             sample_rate = sample_rate_array
-        elif sample_rate_array != sample_rate:
+        elif round(sample_rate_array) != round(sample_rate):
             raise ValueError(f'ERROR: sample rate ({sample_rate}) '
                              f'is inconsistent with sample rate from '
                              f'frequency array ({sample_rate_array})!')

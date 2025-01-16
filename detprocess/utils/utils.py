@@ -19,7 +19,7 @@ from glob import glob
 __all__ = ['split_channel_name', 'extract_window_indices',
            'find_linear_segment', 'create_directory', 'create_series_name',
            'get_dataframe_series_list', 'get_indices_from_freq_ranges',
-           'is_empty','unique_list']
+           'is_empty','unique_list','estimate_sampling_rate']
 
 
     
@@ -487,3 +487,55 @@ def get_indices_from_freq_ranges(freqs, freq_ranges):
 
             
     return name_list, index_ranges
+
+
+def estimate_sampling_rate(freq_array):
+    """
+    Estimate the sampling rate from a frequency array that may be:
+      - Double-sided (fftfreq)
+      - Single-sided (rfftfreq)
+      
+    Parameters
+    ----------
+    freq_array : array-like
+        Array of frequencies (e.g., as returned by fftfreq or rfftfreq).
+        
+    Returns
+    -------
+    fs : float
+        Estimated sampling rate.
+        
+    Notes
+    -----
+    - For a double-sided array of length N, the bin spacing is fs/N,
+      and there are negative frequencies in the array.
+    - For a single-sided array of length M = (N//2) + 1, the bin spacing
+      is still fs/N, but the array contains only [0, fs/N, 2fs/N, ..., fs/2].
+   
+    """
+    freq_array = np.asarray(freq_array)
+    
+    # Sort (in case the input is not sorted) and remove duplicates
+    freq_sorted = np.unique(np.sort(freq_array))
+    
+    # Find the smallest positive frequency (this is our bin spacing, df)
+    positive_mask = freq_sorted > 0
+    if not np.any(positive_mask):
+        raise ValueError("No positive frequencies found; cannot infer sampling rate.")
+        
+    df = freq_sorted[positive_mask][0]  # first positive frequency
+    
+    # Check if we have negative frequencies (i.e. double-sided)
+    if freq_sorted[0] < 0:
+        # Double-sided array (e.g., fftfreq)
+        N = len(freq_array)
+    else:
+        # Single-sided array (e.g., rfftfreq)
+        # For real-valued time-domain signals,
+        #   length of rfftfreq array = N//2 + 1.
+        # => N = 2 * (len(freq_array) - 1) if N is even
+        # (also works for odd N in practice because rfftfreq definition.)
+        N = 2 * (len(freq_array) - 1)
+    
+    fs = N * df
+    return fs

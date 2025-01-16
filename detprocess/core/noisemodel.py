@@ -9,7 +9,7 @@ from lmfit import Model
 from detprocess.core.filterdata import FilterData
 import qetpy as qp
 import matplotlib.pyplot as plt
-
+from detprocess.utils import utils
 
 __all__ = ['NoiseModel']
 
@@ -277,11 +277,7 @@ class NoiseModel(FilterData):
             raise ValueError(
                 'ERROR: Two-sides PSD needs '
                 'to be provided, not folded PSD!')
-        
-        # if not is_folded:
-        #     fs =  np.max(np.abs(psd_freqs))*2
-         #    psd_freqs, psd = qp.foldpsd(psd, fs)
-            
+                  
         self._noise_data[channel][state]['psd'] = psd
         self._noise_data[channel][state]['psd_freqs'] = psd_freqs
      
@@ -799,7 +795,7 @@ class NoiseModel(FilterData):
                 raise ValueError('ERROR: SC PSD should be two-sided')
 
             # fold
-            fs =  np.max(np.abs(psd_freqs))*2
+            fs =  utils.estimate_sampling_rate(psd_freqs)
             psd_fold_freqs, psd_fold = qp.foldpsd(psd, fs)
 
             # Tc
@@ -823,7 +819,7 @@ class NoiseModel(FilterData):
             squid_noise_freqs = self._noise_data[chan]['sim']['normal']['freqs']
           
             # fold
-            fs_squid =  np.max(np.abs(squid_noise_freqs))*2
+            fs_squid = utils.estimate_sampling_rate(squid_noise_freqs)
             squid_noise_fold_freqs, squid_noise_fold = (
                 qp.foldpsd(squid_noise, fs_squid)
             )
@@ -1118,7 +1114,7 @@ class NoiseModel(FilterData):
             if lgc_plot:
                 
                 # fold
-                fs =  np.max(np.abs(psd_freqs))*2
+                fs =  utils.estimate_sampling_rate(psd_freqs)
                 psd_fold_freqs, psd_fold = qp.foldpsd(psd, fs)
                 p_psd = psd*np.abs(noise_sim.dPdI)**2
                 _,p_psd_fold  = qp.foldpsd(p_psd, fs)
