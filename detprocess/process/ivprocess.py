@@ -19,7 +19,7 @@ from humanfriendly import parse_size
 from itertools import groupby
 import copy
 import matplotlib.pyplot as plt
-from detprocess.utils import find_linear_segment
+from detprocess.utils import find_linear_segment, unique_list
 from detprocess.core import FilterData
 
 import pytesdaq.io as h5io
@@ -770,10 +770,10 @@ class IVSweepProcessing:
 
 
         # check base_path / group
-        base_path_iv = utils.unique_list(base_path_iv)
-        base_path_didv = utils.unique_list(base_path_didv)
-        group_name_iv = utils.unique_list(group_name_iv)
-        group_name_didv = utils.unique_list(group_name_didv)
+        base_path_iv = unique_list(base_path_iv)
+        base_path_didv = unique_list(base_path_didv)
+        group_name_iv = unique_list(group_name_iv)
+        group_name_didv = unique_list(group_name_didv)
         
         if  (len(base_path_iv)>1 or len(group_name_iv)>1):
             raise ValueError('ERROR: IV data should be in a single directory!')

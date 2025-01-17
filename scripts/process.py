@@ -292,6 +292,12 @@ if __name__ == "__main__":
         print('=====================================')
                 
         myproc = IVSweepProcessing(raw_group_path)
+
+
+        # save data in "filterdata" diretory
+        if '/processed' in save_path:
+            save_path = save_path.replace('/processed', '/filterdata')
+                    
         df = myproc.process(ncores=ncores, lgc_save=True,
                             save_path=save_path)
 
