@@ -351,21 +351,46 @@ class RawData:
         # check series
         data_dict_series = {}
         if series is None:
-            data_dict_series = data_dict
-        else:
             
             if data_type is None:
                 raise ValueError('ERROR: "data_type" required if '
                                  '"series" is not None')
             
+            data_dict_series = data_dict
+            
+        else:
+            
             if not isinstance(series, list):
                 series = [series]
+                
             for it_series in series:
-                if it_series in data_dict:
-                    data_dict_series[it_series] = data_dict[it_series]
+
+                series_file_list = []
+                
+                if data_type is not None:
+                    if it_series in data_dict:
+                        series_file_list = data_dict[it_series]
+                else:
+                
+                    for ftype in data_dict:
+                        
+                        if ftype == 'cont':
+                            for atype in ['open', 'restricted']:
+                                if it_series in data_dict['cont'][atype]:
+                                    series_file_list =  (
+                                        data_dict['cont'][atype][it_series]
+                                    )                                
+                        elif it_series in data_dict[ftype]:
+                            series_file_list =  (
+                                data_dict[ftype][it_series]
+                            )
+
+                if series_file_list:
+                    data_dict_series[it_series] = series_file_list.copy()
                 else:
                     raise ValueError(f'ERROR: series {it_series} not part '
-                                     f'of raw data. Check data!')
+                                     f'of raw data. Check data!')           
+                        
                                 
         # return
         return data_dict_series
@@ -453,18 +478,21 @@ class RawData:
         # double check type and separate based on data type
         file_counter = 0
         file_list_copy =  file_list.copy()
+    
         for file_name in file_list:
 
+            base_name = os.path.basename(file_name)
+                    
             # loop file type
             for ftype in data_types:
                 
                 ftype_ = f'{ftype}_'
-
+              
                 # initialize
                 if ftype not in  separated_file_list:
                     separated_file_list[ftype] = []
 
-                if ftype_ in file_name:
+                if ftype_ in base_name:
                     separated_file_list[ftype].append(file_name)
                     file_list_copy.remove(file_name)
                     
