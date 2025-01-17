@@ -12,15 +12,16 @@ import pytesdaq.io as h5io
 import math
 import array
 from detprocess.core.oftrigger import OptimumFilterTrigger
-from detprocess.process.randoms import Randoms
+from detprocess.process.randoms import Randoms, RawData
 from detprocess.core.filterdata import FilterData
 from qetpy.utils import convert_channel_name_to_list,convert_channel_list_to_name
 from pprint import pprint
-import pyarrow
+import pyarrow as pa
 import warnings
-vx.multithreading.thread_count = 1
 warnings.filterwarnings('ignore')
-
+vx.settings.main.thread_count = 1
+vx.settings.main.thread_count_io = 1
+pa.set_cpu_count(1)
 
 __all__ = [
     'Salting'
@@ -54,8 +55,7 @@ class Salting(FilterData):
         # initialize raw data dictionary
         self._series = None
         self._group_name = None
-        self._raw_group_path = None
-        self._series_list = None
+        self._rawdata_inst = None
         self._detector_config = None
         self._restricted = False
         self._ivdidv_data = dict()
@@ -115,7 +115,7 @@ class Salting(FilterData):
     def _generate_randoms(self, nevents=None,
                           min_separation_msec=20,
                           edge_exclusion_msec=25,
-                          ncores=4):
+                          ncores=1):
         """
         Generate randoms from continuous data
         """
@@ -124,7 +124,7 @@ class Salting(FilterData):
         self._dataframe = None
 
         # generate randoms self._series = series
-        rand_inst = Randoms(self._raw_group_path, series=self._series,
+        rand_inst = Randoms(self._rawdata_inst, series=self._series,
                             verbose=False,
                             restricted=self._restricted,
                             calib=False)
@@ -138,21 +138,56 @@ class Salting(FilterData):
             lgc_output=True,
             ncores=ncores
         )
-        
+
+        print(f'INFO: {len(self._dataframe)} salting events randomly selected!')
+             
         self._injecttimes = self._dataframe
 
             
    
-    def set_raw_data_path(self, group_path, series, restricted=False,
-                          fs=1.25e6):
+    def set_raw_data(self, raw_data, series=None, restricted=False):
         """
         Set raw data path
         """
-        
+
         self._series = series
-        self._raw_group_path = group_path
         self._restricted = restricted
-        self._fs = fs
+        self._rawdata_inst = None
+        
+        if isinstance(raw_data, str):
+            
+            self._rawdata_inst = RawData(raw_data,
+                                         data_type='cont',
+                                         series=series,
+                                         restricted=restricted)
+        else:
+
+            if 'RawData' not in str(type(raw_data)):
+                raise ValueError(
+                    'ERROR: raw data argument should be either '
+                    'a directory or RawData object'
+                )
+            
+            self._rawdata_inst = raw_data
+
+            if self._rawdata_inst.restricted != restricted:
+                raise ValueError(f'ERROR: Unable to use RawData '
+                                 f'object. It needs requirement restricted = '
+                                 f'{self._restricted}!')
+            
+        # sample rate
+        metadata = self._rawdata_inst.get_data_config()
+        for itseries in metadata.keys():
+            self._fs = metadata[itseries]['overall']['sample_rate']
+            break
+            
+     
+        # display
+        if self._verbose:
+            print('INFO: Data used for salting generation:')
+            self._rawdata_inst.describe()
+
+            
     
     def sample_DMpdf(self,function, xrange, nsamples=1000, npoints=10000, normalize_cdf=True):
         """
@@ -305,7 +340,7 @@ class Salting(FilterData):
         sep_time = 1000*nb_samples/self._fs
         if self._dataframe is None:
             self._generate_randoms(nevents=nevents,
-                                min_separation_msec=sep_time)
+                                   min_separation_msec=sep_time)
         nevents = len(self._dataframe)
         # Create channel-specific keys
         for key in base_keys:

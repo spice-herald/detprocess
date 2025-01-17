@@ -750,7 +750,7 @@ class FeatureExtractors:
         trace_fft = of_base.signal_fft(channel)
 
         # sample rate
-        fs = 2*np.max(np.abs(freqs))
+        fs = utils.estimate_sampling_rate(freqs)
         if 'fs' in kwargs:
             fs = kwargs['fs']
 

@@ -18,10 +18,23 @@ import pytesdaq.io as h5io
 import copy
 from humanfriendly import parse_size
 from detprocess.process.processing_data  import ProcessingData
+from detprocess.process.config import YamlConfig
 from detprocess.core.eventbuilder import EventBuilder
 from detprocess.core.oftrigger import OptimumFilterTrigger
 from detprocess.utils import utils
+from detprocess.core.rawdata import RawData
+
+import pyarrow as pa
 warnings.filterwarnings('ignore')
+
+vx.settings.main.thread_count = 1
+vx.settings.main.thread_count_io = 1
+pa.set_cpu_count(1)
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
 
 __all__ = [
@@ -40,7 +53,7 @@ class TriggerProcessing:
 
     """
 
-    def __init__(self, raw_path, config_file,
+    def __init__(self, raw_data, config_data,
                  series=None,
                  processing_id=None,
                  restricted=False,
@@ -53,14 +66,15 @@ class TriggerProcessing:
         Parameters
         ---------
     
-        raw_path : str or list of str 
-           raw data group directory OR full path to HDF5  file 
-           (or list of files). Only a single raw data group 
-           allowed 
-            
-        config_file : str 
+        raw_data : str or RawData object
+           raw data group directory 
+           OR RawData object
+           Only a single raw data group allowed
+
+                 
+        config_data : str  or  YamlConfig object
            Full path and file name to the YAML settings for the
-           processing.
+           processing or YamlConfig object
 
         series : str or list of str, optional
             series to be process, disregard other data from raw_path
@@ -103,39 +117,87 @@ class TriggerProcessing:
         self._restricted = restricted
 
         # calibration data
+        data_type = 'cont'
         self._calib = calib
         if calib:
             self._restricted = False
-        
+            data_type = 'calib'
+
+         
         # extract input file list
-        input_data_dict, input_base_path, group_name = (
-            self._get_file_list(raw_path, series=series,
-                                restricted=restricted,
-                                calib=calib)
+        rawdata_inst = None
+        if isinstance(raw_data, str):
+            
+            rawdata_inst = RawData(raw_data,
+                                   data_type=data_type,
+                                   series=series,
+                                   restricted=self._restricted)
+        else:
+
+            if 'RawData' not in str(type(raw_data)):
+                raise ValueError(
+                    'ERROR: raw data argument should be either '
+                    'a directory or RawData object'
+                )
+            
+            rawdata_inst = raw_data
+
+            if rawdata_inst.restricted != self._restricted:
+                raise ValueError(f'ERROR: Unable to use RawData object.'
+                                 f'It needs requirement restricted = '
+                                 f'{self._restricted}!')
+                
+        # get file list
+        rawdata_files = copy.deepcopy(
+            rawdata_inst.get_data_files(data_type=data_type,
+                                        series=series)
         )
-           
-        if not input_data_dict:
-            raise ValueError('No files were found! Check configuration...')
-
-        self._input_base_path = str(input_base_path)
-        self._input_group_name = str(group_name)
-        self._series_list = list(input_data_dict.keys())
-
         
-        # extract processing configuration
-        if not os.path.exists(config_file):
-            raise ValueError('Configuration file "' + config_file
-                             + '" not found!')
-        available_channels = self._get_channel_list(input_data_dict)
-      
-        trigger_config, evtbuider_config, filter_file, channels = (
-            self._read_config(config_file, available_channels)
-        )
+        if not rawdata_files:
+            raise ValueError('No files were found! Check configuration...')
+                
+        # get metadata list 
+        rawdata_metadata = rawdata_inst.get_data_config(data_type=data_type,
+                                                    series=series)
+        
+        self._series_list = list(rawdata_files.keys())
+        self._input_base_path = rawdata_inst.get_base_path()
+        self._input_group_name = rawdata_inst.get_group_name()
+        
+        # available channels
+        available_channels = None
+        for it, it_config in rawdata_metadata.items():
+            available_channels = it_config['channel_list']
+            break;
+        
+        # config file
+        config_dict = {}
+        if  isinstance(config_data, str):
+            
+            if not os.path.isfile(config_data):
+                raise ValueError(f'ERROR: argument "{config_data}" '
+                                 f'should be a file or YamlConfig object!')
 
-        self._trigger_config = trigger_config
-        self._evtbuilder_config = evtbuider_config
-        self._trigger_channels = channels
+            yaml = YamlConfig(config_data, available_channels)
+            config_dict = yaml.get_config('trigger')
+
+        else:
+            
+            if 'YamlConfig' not in str(type(config_data)):
+                raise ValueError(
+                    'ERROR: raw data argument should be either '
+                    'a directory or YamlConfig object'
+                )
+            
+            config_dict = config_data.get_config('trigger')
+            
+        self._trigger_config = copy.deepcopy(config_dict['channels'])
+        self._evtbuilder_config = copy.deepcopy(config_dict['overall'])
+        self._trigger_channels = copy.deepcopy(config_dict['channel_list'])
       
+        if not 'filter_file' in config_dict['overall']:
+            raise ValueError('ERROR: Filter file missing in yaml file!')
+         
         # check channels to be processed
         if not self._trigger_channels:
             raise ValueError('No trigger channels to be processed! ' +
@@ -146,10 +208,10 @@ class TriggerProcessing:
                   
         # instantiate processing data
         self._processing_data_inst = ProcessingData(
-            input_base_path,
-            input_data_dict,
-            group_name=group_name,
-            filter_file=filter_file,
+            self._input_base_path,
+            rawdata_files,
+            group_name=self._input_group_name,
+            filter_file=config_dict['overall']['filter_file'],
             salting_dataframe=salting_dataframe,
             verbose=verbose
         )
@@ -266,7 +328,13 @@ class TriggerProcessing:
                                       memory_limit)
 
         else:
+
             
+            # disable vaex multi-threading
+            vx.settings.main.thread_count = 1
+            vx.settings.main.thread_count_io = 1
+            pa.set_cpu_count(1)
+                    
             # split data
             series_list_split = self._split_series(ncores)
             
@@ -354,10 +422,12 @@ class TriggerProcessing:
    
         """
 
-        # set vaex single thread
-        vx.multithreading.thread_count = 1
-         
-
+        
+        # disable vaex multi-threading
+        vx.settings.main.thread_count = 1
+        vx.settings.main.thread_count_io = 1
+        pa.set_cpu_count(1)
+               
         # check argument
         if lgc_output and lgc_save:
             raise ValueError('ERROR: Unable to save and output datafame '
@@ -376,17 +446,22 @@ class TriggerProcessing:
         # instantiate event builder
         evtbuilder_inst = EventBuilder()
               
-        # instantiate OF trigger and add to EventBuilder
-        for trig_chan, trig_data in self._trigger_config.items():
+        # instantiate OF trigger and add to EventBuilder'
+        trigger_config = copy.deepcopy(self._trigger_config)
+        nb_trigger_chans = len(list(trigger_config.keys()))
+        for trig_chan, trig_data in trigger_config.items():
 
+            # channel name
+            channel_name = trig_data['channel_name']
+            
             # get template
             template_tag = 'default'
             if 'template_tag' in trig_data:
                 template_tag = trig_data['template_tag']
-            
+
             template, template_metadata = (
                 self._processing_data_inst.get_template(
-                    trig_chan,
+                    channel_name,
                     tag=template_tag)   
             )
 
@@ -417,33 +492,26 @@ class TriggerProcessing:
                 noise_tag = trig_data['csd_tag']
             elif 'psd_tag' in trig_data:
                 noise_tag = trig_data['psd_tag']
-            
 
             csd, csd_freqs, csd_metadata = (
                 self._processing_data_inst.get_noise(
-                    trig_chan,
+                    channel_name,
                     tag=noise_tag)
             )
-
-                    
-            # trigger name
-            trigger_name = trig_chan
-            if 'trigger_name' in trig_data:
-                trigger_name = trig_data['trigger_name']
             
             # sample rate
             fs = self._processing_data_inst.get_sample_rate()
-            
+
             # instantiate optimal filter trigger
             oftrigger_inst = OptimumFilterTrigger(
-                trig_chan, fs, template, csd,
+                channel_name, fs, template, csd,
                 nb_pretrigger_samples,
-                trigger_name=trigger_name
+                trigger_name=trig_chan
             )
 
             # add in EventBuilder
             evtbuilder_inst.add_trigger_object(
-                trigger_name, oftrigger_inst)
+                trig_chan, oftrigger_inst)
             
         # output file name base (if saving data)
         output_base_file = None
@@ -513,7 +581,7 @@ class TriggerProcessing:
                         
                 # -----------------------
                 # Read next event
-                # -----------------------                
+                # -----------------------
                 success = self._processing_data_inst.read_next_event(
                     channels=self._trigger_channels
                 )
@@ -523,7 +591,7 @@ class TriggerProcessing:
                     print('INFO' + node_num_str
                           + ': '
                           + str(trigger_counter) 
-                          + ' events counted, triggering done')
+                          + ' events counted, triggering processing done')
                     do_stop = True
                                            
                 # -----------------------
@@ -556,12 +624,31 @@ class TriggerProcessing:
                         file_name =  (output_base_file + '_F' + dump_str.zfill(4)
                                       + '.hdf5')
                             
-                        # export
-                        process_df.export_hdf5(file_name, mode='w')
-                        
+                        # export to hdf5 
+                        try:
+                            # export
+                            process_df.export_hdf5(file_name, mode='w')
+                            process_df.close()
+                            
+                        except Exception as e:
+                            
+                            print('WARNING: Export failed with error: ', e)
+                            print('Will try again...')
+                            
+                            # let's try one more time
+                            df_pandas = process_df.to_pandas_df()
+                            process_df = vx.from_pandas(
+                                df_pandas,
+                                copy_index=False
+                            )
+                            
+                            # export
+                            process_df.export_hdf5(file_name, mode='w')
+                            process_df.close()
+                            
                         # increment dump
                         dump_counter += 1
-                        if self._verbose:
+                        if self._verbose and not do_stop and not ntriggers_limit_reached:
                             if trigger_counter > 1e5:
                                 print('INFO' + node_num_str
                                       + ': Incrementing dump number, '
@@ -609,18 +696,17 @@ class TriggerProcessing:
 
                 
                 # loop trigger channels
-                for trig_chan, trig_data in self._trigger_config.items():
-                    
-                    # trigger name
-                    trigger_name = trig_chan
-                    if 'trigger_name' in trig_data.keys():
-                        trigger_name = trig_data['trigger_name']
+                for trig_chan, trig_data in trigger_config.items():
 
-                                      
+                    # channel
+                    channel_name =  trig_data['channel_name']
+                 
                     # get threshold
                     threshold = None
                     if 'threshold_sigma' in trig_data.keys():
-                        threshold = trig_data['threshold_sigma']
+                        threshold = float(trig_data['threshold_sigma'])
+                    elif 'threshold' in trig_data.keys():
+                        threshold = float(trig_data['threshold'])
                     else:
                         raise ValueError(
                             'ERROR: "treshold_sigma" missing in '
@@ -629,12 +715,13 @@ class TriggerProcessing:
                     # pileup window
                     pileup_window_msec = None
                     if 'pileup_window_msec' in trig_data.keys():
-                        pileup_window_msec = (
-                            trig_data['pileup_window_msec'])
+                        pileup_window_msec = float(
+                            trig_data['pileup_window_msec']
+                        )
 
                     pileup_window_samples = None
                     if 'pileup_window_samples' in trig_data.keys():
-                        pileup_window_samples = (
+                        pileup_window_samples = int(
                             trig_data['pileup_window_samples'])
 
                     # positive pulse
@@ -642,12 +729,14 @@ class TriggerProcessing:
                     if 'positive_pulses' in trig_data.keys():
                         positive_pulses = trig_data['positive_pulses']
                         
-                    # get trace
-                    trace = self._processing_data_inst.get_channel_trace(trig_chan)
-                                     
+                    # get trace (If multiple channels, need to follow order)
+                    trace = self._processing_data_inst.get_channel_trace(
+                        channel_name
+                    )
+
                     # acquire trigger
                     evtbuilder_inst.acquire_triggers(
-                        trigger_name,
+                        trig_chan,
                         trace,
                         threshold,
                         pileup_window_msec=pileup_window_msec,
@@ -678,7 +767,8 @@ class TriggerProcessing:
                     event_info,
                     fs=fs,
                     coincident_window_msec=coincident_window_msec,
-                    coincident_window_samples=coincident_window_samples
+                    coincident_window_samples=coincident_window_samples,
+                    nb_trigger_channels=nb_trigger_chans
                 )
 
 
@@ -692,6 +782,7 @@ class TriggerProcessing:
                              
                 # increment counter
                 nb_triggers = len(event_df)
+             
                 trigger_counter += nb_triggers
                 
 
@@ -718,341 +809,8 @@ class TriggerProcessing:
                     
         # return features
         return process_df
+
     
-        
-        
-    def _get_file_list(self, file_path, series=None,
-                       restricted=False, calib=False):
-        """
-        Get file list from path. Return as a dictionary
-        with key=series and value=list of files
-
-        Parameters
-        ----------
-
-        file_path : str or list of str 
-           raw data group directory OR full path to HDF5  file 
-           (or list of files). Only a single raw data group 
-           allowed 
-        
-        series : str or list of str, optional
-            series to be process, disregard other data from raw_path
-
-        restricted : boolean
-            if True, use restricted data
-            if False, exclude restricted data
-
-        calib : boolean
-           if True, use only "calib" files
-           if False, no calib files included
-
-        Return
-        -------
-        
-        series_dict : dict 
-          list of files for splitted inot series
-
-        base_path :  str
-           base path of the raw data
-
-        group_name : str
-           group name of raw data
-
-        """
-        
-        # loop file path
-        if not isinstance(file_path, list):
-            file_path = [file_path]
-
-        # initialize
-        file_list = list()
-        base_path = None
-        group_name = None
-
-        # loop files 
-        for a_path in file_path:
-
-                   
-            # case path is a directory
-            if os.path.isdir(a_path):
-
-                if base_path is None:
-                    base_path = str(Path(a_path).parent)
-                    group_name = str(Path(a_path).name)
-                            
-                if series is not None:
-                    if series == 'even' or series == 'odd':
-                        file_name_wildcard = series + '_*.hdf5'
-                        file_list = glob(a_path + '/' + file_name_wildcard)
-                    else:
-                        if not isinstance(series, list):
-                            series = [series]
-                        for it_series in series:
-                            file_name_wildcard = '*' + it_series + '_*.hdf5'
-                            file_list.extend(glob(a_path + '/' + file_name_wildcard))
-                else:
-                    file_list = glob(a_path + '/*.hdf5')
-                    
-                # check a single directory
-                if len(file_path) != 1:
-                    raise ValueError('Only single directory allowed! ' +
-                                     'No combination files and directories')
-                
-                    
-            # case file
-            elif os.path.isfile(a_path):
-
-                if base_path is None:
-                    base_path = str(Path(a_path).parents[1])
-                    group_name = str(Path(Path(a_path).parent).name)
-                    
-                if a_path.find('.hdf5') != -1:
-                    if series is not None:
-                        if series == 'even' or series == 'odd':
-                            if a_path.find(series) != -1:
-                                file_list.append(a_path)
-                        else:
-                            if not isinstance(series, list):
-                                series = [series]
-                            for it_series in series:
-                                if a_path.find(it_series) != -1:
-                                    file_list.append(a_path)
-                    else:
-                        file_list.append(a_path)
-
-            else:
-                raise ValueError('File or directory "' + a_path
-                                 + '" does not exist!')
-            
-        if not file_list:
-            raise ValueError('ERROR: No raw input data found. Check arguments!')
-
-        # sort
-        file_list.sort()
-
-        # get list of files
-        series_dict = dict()
-        h5reader = h5io.H5Reader()
-        series_name = None
-        file_counter = 0
-        for afile in file_list:
-
-            file_name = str(Path(afile).name)
-                   
-            # skip if filter file
-            if 'filter' in file_name:
-                continue
-
-            # skip didv and iv
-            if ('didv_' in file_name
-                or  'iv_' in file_name):
-                continue
-
-            # calibration
-            if (calib
-                and 'calib_' not in file_name):
-                continue
-
-            # not calibration
-            if not calib:
-                
-                if 'calib_' in file_name:
-                    continue
-                            
-                # restricted
-                if (restricted
-                    and 'restricted' not in file_name):
-                    continue
-
-                # not restricted
-                if (not restricted
-                    and 'restricted' in file_name):
-                    continue
-                
-            # case unrecognized
-            if ('calib_' not  in  file_name
-                and 'cont_' not in  file_name):
-                
-                # unknown file -> check trigger type
-                 # check trigger type of first event
-                metadata = h5reader.get_metadata(afile)
-                data_mode = None
-                if 'adc_list' in metadata:
-                    adc_name = metadata['adc_list'][0]
-                    data_mode = metadata['groups'][adc_name]['data_mode']
-
-                if data_mode is not None:
-                    if data_mode != 'cont':
-                        continue
-                else:
-                    print(f'WARNING: file {file_name} not recognized! '
-                          f'Skipping...')
-                    continue            
-            
-            # append file if series already in dictionary
-            if (series_name is not None
-                and series_name in afile
-                and series_name in series_dict.keys()):
-
-                if afile not in series_dict[series_name]:
-                    series_dict[series_name].append(afile)
-                    file_counter += 1
-                continue
-            
-            # get metadata
-            metadata = h5reader.get_metadata(afile)
-            series_name = h5io.extract_series_name(metadata['series_num'])
-            if series_name not in series_dict.keys():
-                series_dict[series_name] = list()
-
-            # append
-            if afile not in series_dict[series_name]:
-                series_dict[series_name].append(afile)
-                file_counter += 1
-                
-
-        if self._verbose:
-            print('INFO: Found total of '
-                  + str(file_counter)
-                  + ' files from ' + str(len(series_dict.keys()))
-                  + ' different series number!')
-
-      
-        return series_dict, base_path, group_name
-    
-    
-    def _read_config(self, yaml_file, available_channels):
-        """
-        Read and check yaml configuration
-        file 
-
-        Parameters
-        ----------
-
-        yaml_file : str
-          yaml configuraton file name (full path)
-
-        available_channels : list
-          list of channels available in the file
-
-
-        Return
-        ------
-        
-        trigger_config : dict 
-           dictionary with  trigger configuration
-           for each trigger configuration
-
-        eventbuilder_config : dict 
-           dictionary with  eventbuilder configuration
-           such as coincident events merging
-
-        filter_file : str
-            filter file name (full path)
-        
-        trigger_channels : list
-            list of all channels used for triggering
-           
-        
-        """
-
-        # initialize output
-        trigger_config = dict()
-        eventbuilder_config = dict()
-        filter_file = None
-        trigger_channels = list()
-
-        
-        # open configuration file
-        yaml_dict = dict()
-        with open(yaml_file) as f:
-            yaml_dict = yaml.safe_load(f)
-        if not yaml_dict:
-            raise ValueError('Unable to read processing configuration!')
-
-
-        # filter file
-        if 'filter_file' not in yaml_dict.keys():
-            raise ValueError('ERROR: Filter file required!')
-        
-        filter_file = yaml_dict['filter_file']
-        
-
-        # trigger/eventbuilder info
-        if 'trigger' not in yaml_dict.keys():
-            raise ValueError('ERROR: Trigger info required!')
-
-        trigger_data = yaml_dict['trigger']
-        
-        
-        # Let's loop through keys and find trigger channels
-        for key,val in trigger_data.items():
-            
-            # case it is not a trigger channel
-            if not isinstance(val, dict):
-                eventbuilder_config[key] = val
-                continue
-
-            # skip if disable
-            if ('run' not in val.keys()
-                or ('run' in val.keys()
-                    and not val['run'])):
-                continue
-            
-            # we need to split if ',' used 
-            if ',' not in key:
-                trigger_config[key] = val
-            else:
-                key_split = key.split(',')
-                for key_sep in key_split:
-                    trigger_config[key_sep] = val
-                    
-            # channel names
-            split_char = None
-            if ',' in key:
-                split_char = ','
-            elif '+' in key:
-                split_char = '+'
-                # elif '-' in key:
-                # split_char = '-'
-            elif '|' in key:
-                split_char = '|'
-
-
-            if split_char is None:
-                trigger_channels.append(key)
-            else: 
-                key_split = key.split(split_char)
-                for key_sep in key_split:
-                    trigger_channels.append(key_sep)
-                    
-        # Let's check that there are no duplicate channels
-        # or channels does not exist 
-        channel_list = list()
-        for trigger_chan in trigger_channels:
-            
-            # check if exist in data
-            if trigger_chan not in available_channels:
-                raise ValueError(
-                    'ERROR: trigger channel ' + trigger_chan
-                    + ' does not exist in data')
-            
-            # check if already trigger 
-            if trigger_chan not in channel_list:
-                channel_list.append(trigger_chan)
-            else:
-                print('WARNING: "' + trigger_chan 
-                      + '" used in multiple trigger channels! Will continue '
-                      + 'processing regardless, however double check '
-                      + 'config file!')
-                                        
-                    
-                    
-        # return
-        return (trigger_config, eventbuilder_config,
-                filter_file, trigger_channels)
-
-
     def _create_output_directory(self, base_path, facility,
                                  output_group_name=None,
                                  restricted=False,

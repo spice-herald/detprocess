@@ -9,7 +9,13 @@ from glob import glob
 from detprocess.utils import utils
 from detprocess.core import FilterData, Salting
 import copy
-vx.multithreading.thread_count = 1
+import pyarrow as pa
+
+vx.settings.main.thread_count = 1
+vx.settings.main.thread_count_io = 1
+pa.set_cpu_count(1)
+
+
 
 __all__ = [
     'ProcessingData'
@@ -128,7 +134,12 @@ class ProcessingData:
 
         if self._salting_dataframe is None:
             return
-
+        
+        # disable vaex multi-threading
+        vx.settings.main.thread_count = 1
+        vx.settings.main.thread_count_io = 1
+        pa.set_cpu_count(1)
+           
         # load
         if isinstance(self._salting_dataframe, str):
             salting_dataframe = vx.open(self._salting_dataframe)
@@ -187,7 +198,7 @@ class ProcessingData:
             # channel list
             chan_list, _ = utils.split_channel_name(
                 chan,
-                self._available_channels,
+                available_channels=self._available_channels,
                 separator='|'
             )
 
@@ -431,7 +442,7 @@ class ProcessingData:
             # check psd / csd tags
             for tag in psd_tags.keys():
                 psd_tags[tag] = (
-                    list(set(psd_tags[tag]))
+                    utils.unique_list(psd_tags[tag])
                 )
                 if len(psd_tags[tag]) != 1:
                     raise ValueError(
@@ -441,8 +452,9 @@ class ProcessingData:
                 
             for tag in csd_tags.keys():
                 csd_tags[tag] = (
-                    list(set(csd_tags[tag]))
+                    utils.unique_list(csd_tags[tag])
                 )
+                
                 if len(csd_tags[tag]) != 1:
                     raise ValueError(
                         f'ERROR: Only a single csd tag '
@@ -465,16 +477,17 @@ class ProcessingData:
                     
         # remove duplicated
         for key in self._OF_base_objs:
-            self._OF_base_objs[key]['channels'] = list(
-                set(self._OF_base_objs[key]['channels'])
+            self._OF_base_objs[key]['channels'] = utils.unique_list(
+                self._OF_base_objs[key]['channels']
             )
             
-            self._OF_base_objs[key]['channels_split'] = list(
-                set(self._OF_base_objs[key]['channels_split'])
+            
+            self._OF_base_objs[key]['channels_split'] =  utils.unique_list(
+                self._OF_base_objs[key]['channels_split']
             )
                     
-            self._OF_base_objs[key]['algorithms'] = list(
-                set(self._OF_base_objs[key]['algorithms'])
+            self._OF_base_objs[key]['algorithms'] = utils.unique_list(
+                self._OF_base_objs[key]['algorithms']
             )
 
     def get_OF_base(self, key_tuple, algo_name):
@@ -526,8 +539,9 @@ class ProcessingData:
 
         """
 
-        # open/set files
-
+        # disable vaex multi-threading
+        vx.settings.main.thread_count_io = 1
+                
         # case dataframe
         if self._is_trigger_dataframe:
             if self._verbose:
@@ -551,7 +565,11 @@ class ProcessingData:
         """
         Read next event
         """
-
+        # disable vaex multi-threading
+        vx.settings.main.thread_count = 1
+        vx.settings.main.thread_count_io = 1
+        pa.set_cpu_count(1)
+                
         # case no trigger dataframe ->
         # read next full trace 
         if not self._is_trigger_dataframe:
@@ -617,16 +635,16 @@ class ProcessingData:
             )
 
             # get event/series number, and trigger index
-            event_number = self._current_dataframe_info['event_number']
-            dump_number = self._current_dataframe_info['dump_number']
-            series_number = self._current_dataframe_info['series_number']
-            trigger_index = self._current_dataframe_info['trigger_index']
-            group_name = self._current_dataframe_info['group_name']
+            event_number = int(self._current_dataframe_info['event_number'])
+            dump_number = int(self._current_dataframe_info['dump_number'])
+            series_number = int(self._current_dataframe_info['series_number'])
+            trigger_index = int(self._current_dataframe_info['trigger_index'])
+            group_name = str(self._current_dataframe_info['group_name'])
 
             # event index in file
             event_index = int(event_number%100000)
 
-            # check if new file need dump needs to be loaded
+            # check if new file needs to be loaded
             if (self._current_series_number is None
                 or series_number != self._current_series_number
                 or dump_number != self._current_dump_number):
@@ -798,7 +816,7 @@ class ProcessingData:
                 # channel list
                 chan_list, _ = utils.split_channel_name(
                     chan,
-                    self._available_channels,
+                    available_channels=self._available_channels,
                     separator='|'
                 )
 
@@ -958,7 +976,8 @@ class ProcessingData:
 
         #  get channels list
         channels, separator = utils.split_channel_name(
-            channel, self._current_admin_info['detector_chans']
+            channel,
+            available_channels=self._current_admin_info['detector_chans']
         )
 
         # fill dictionary
@@ -998,7 +1017,8 @@ class ProcessingData:
 
         #  get channels for case + or | used
         channels, separator = utils.split_channel_name(
-            channel, self._current_admin_info['detector_chans']
+            channel,
+            available_channels=self._current_admin_info['detector_chans']
         )
 
         weights_array = None
@@ -1357,7 +1377,7 @@ class ProcessingData:
             # channel list
             chan_list, _ = utils.split_channel_name(
                 chan,
-                self._available_channels,
+                available_channels=self._available_channels,
                 separator='|'
             )
 

@@ -102,7 +102,7 @@ class FilterDataProcessing:
         available_channels =  (self._channels_notrig
                                + self._channels_exttrig
                                + self._channels_threshtrig)
-        available_channels = list(set(available_channels))
+        available_channels = utils.unique_list(available_channels)
 
         self._processing_config = None
         
@@ -235,7 +235,7 @@ class FilterDataProcessing:
                     tag_list.extend(noise_config[chan]['global_noise_tag_list'])
 
                 # check tags
-                tag_list = list(set(tag_list))
+                tag_list = utils.unique_list(tag_list)
 
                 # check tags
                 for tag in tag_list:
@@ -593,7 +593,7 @@ class FilterDataProcessing:
                     tag_list.extend(chan_config['global_noise_tag_list'])
 
                 # check tags
-                tag_list = list(set(tag_list))
+                tag_list = utils.unique_list(tag_list)
 
                 for tag in tag_list:
 
@@ -1663,7 +1663,7 @@ class FilterDataProcessing:
             raise ValueError('ERROR: No raw input data found. Check arguments!')
 
         # base path
-        base_paths = list(set(base_paths))
+        base_paths = utils.unique_list(base_paths)
         if len(base_paths) != 1:
             raise ValueError('ERROR: Found raw data from multiple directories. '
                              'Only a single base directory allowed!')
@@ -1671,7 +1671,7 @@ class FilterDataProcessing:
         base_path = base_paths[0]
 
         # group name
-        group_names = list(set(group_names))
+        group_names = utils.unique_list(group_names)
         if len(group_names) != 1:
             raise ValueError('ERROR: Found raw data with multiple group name. '
                              'Only a single group allowed!')
