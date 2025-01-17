@@ -611,7 +611,7 @@ class FilterData:
                              'for "psd_freqs" argument')
 
         # add dimension if needed
-        if psd_freqs.ndim == 1:
+        if psd_freqs.ndim == 2:
             psd_freqs = psd_freqs[np.newaxis, :]
 
         # check if folded -> NOT ALLOWED
@@ -620,7 +620,7 @@ class FilterData:
             raise ValueError('ERROR: psd needs to be two-sided!')
 
 
-        sample_rate_array = estimate_sampling_rate(psd_freqs)
+        sample_rate_array = estimate_sampling_rate(psd_freqs[0,:])
         if sample_rate is None:
             sample_rate = sample_rate_array
         elif round(sample_rate_array) != round(sample_rate):
@@ -810,7 +810,7 @@ class FilterData:
         if is_folded:
             raise ValueError('ERROR: dpdi needs to be two-sided!')
 
-        sample_rate_array = estimate_sampling_rate(dpdi_freqs)
+        sample_rate_array = estimate_sampling_rate(dpdi_freqs[0,:])
         if sample_rate is None:
             sample_rate = sample_rate_array
         elif round(sample_rate_array) != round(sample_rate):
