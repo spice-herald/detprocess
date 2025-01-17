@@ -256,7 +256,7 @@ class EventBuilder:
                 
         # string that have name change
         if 'run_type' in event_metadata.keys():
-            val = event_metadata['run_type']
+            val = str(event_metadata['run_type'])
             if '\0' in val:
                 val = val.replace('\0', '')
             metadata_string_dict['data_type'] = pa.array([val]*nb_triggers,
