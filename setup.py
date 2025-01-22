@@ -2,12 +2,28 @@ import os
 import glob
 import shutil
 from setuptools import setup, find_packages, Command
+import codecs
 
 # read the contents of your README file
 from os import path
 this_directory = path.abspath(path.dirname(__file__))
 with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
+
+
+    # set up automated versioning reading    
+def read(rel_path):
+    here = os.path.abspath(os.path.dirname(__file__))
+    with codecs.open(os.path.join(here, rel_path), 'r') as fp:
+        return fp.read()
+
+def get_version(rel_path):
+    for line in read(rel_path).splitlines():
+        if line.startswith('__version__'):
+            delim = '"' if '"' in line else "'"
+            return line.split(delim)[1]
+    else:
+        raise RuntimeError("Unable to find version string.")
 
 class CleanCommand(Command):
     """Custom clean command to tidy up the project root."""
@@ -36,7 +52,7 @@ class CleanCommand(Command):
 
 setup(
     name="detprocess",
-    version="0.5.4",
+    version=get_version('detprocess/_version.py'),
     description="Detector Data Processing Package",
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -54,9 +70,9 @@ setup(
         'scipy',
         'matplotlib',
         'pyyaml',
-        'qetpy>=1.7.7',
+        'qetpy>=1.7.8',
         'pandas',
-        'pytesdaq>=0.4.2',
+        'pytesdaq>=0.4.3',
         'scikit-image',
         'iminuit>=2',
         'seaborn',
