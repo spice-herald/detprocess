@@ -485,6 +485,17 @@ if __name__ == "__main__":
                 noise_tag = chan_config['noise_tag']
                 dpdi_tag = chan_config['dpdi_tag']
                 dpdi_poles = chan_config['dpdi_poles']
+                
+                if (dpdi_tag is None) != (dpdi_poles is None): 
+                    raise ValueError("Both 'dpdi_tag' and 'dpdi_poles' must be either set or None.")
+                
+                if dpdi_tag is None and dpdi_poles is None:
+                    print(f'INFO: dpdi_tag is {dpdi_tag} and dpdi_poles is {dpdi_poles}!'
+                          ' Template is assumed to be in units of energy already! Set energies appropriately!')
+                    
+                if dpdi_tag is not None and dpdi_poles is not None:
+                    print(f'INFO: dpdi_tag is {dpdi_tag} and dpdi_poles is {dpdi_poles}!'
+                          ' Template amplitude is assumed to be 1!')
 
                 pce = 1
                 if 'collection_efficiency' in chan_config:
