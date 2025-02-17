@@ -587,6 +587,7 @@ if __name__ == "__main__":
         myproc.process(random_rate=random_rate,
                        nrandoms=nrandoms,
                        ncores=ncores,
+                       edge_exclusion_msec=101, 
                        lgc_save=True,
                        lgc_output=False,
                        save_path=save_path)
