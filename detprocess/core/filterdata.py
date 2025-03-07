@@ -499,6 +499,7 @@ class FilterData:
                      sample_rate=None,
                      pretrigger_length_msec=None,
                      pretrigger_length_samples=None,
+                     template_time_tags=None,
                      metadata=None,
                      tag='default'):
         """
@@ -527,6 +528,19 @@ class FilterData:
                 'array [nchans, ntemps, nsamples] '
             )
         
+        if template_time_tags is not None:
+            if not isinstance(template_time_tags, np.ndarray):
+                raise ValueError(
+                    'ERROR: Expecting "template_time_tags" to '
+                    'be an array or None'
+                )
+            if template_time_tags.ndim != 1 or \
+                len(template_time_tags) != template.shape[1]:
+                raise ValueError(
+                    'ERROR: Expecting "template_time_tags" to '
+                    'be a 1D array with length = # templates'
+                )
+        
         # sample rate / pretrigger length
         if sample_rate is None:
             raise ValueError('ERROR: "sample_rate" argument required!')
@@ -553,7 +567,8 @@ class FilterData:
             metadata = dict()
         metadata['sample_rate'] =  sample_rate
         metadata['nb_samples'] = template.shape[-1]
-        metadata['nb_pretrigger_samples'] = pretrigger_length_samples    
+        metadata['nb_pretrigger_samples'] = pretrigger_length_samples
+        metadata['template_time_tags'] = template_time_tags
 
         # store
         if channel_name not in self._filter_data.keys():

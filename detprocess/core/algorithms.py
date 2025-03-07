@@ -17,7 +17,133 @@ class FeatureExtractors:
     convenience.
 
     """
-   
+
+    @staticmethod
+    def ofnxmx2(channel,
+                of_base,
+                available_channels=None,
+                feature_base_name='ofnxmx2',
+                template_tag=None,
+                amplitude_names=None,
+                fit_window = None,
+                **kwargs):
+        """
+        Feature extraction for the nxmx2 Optimum Filter.
+        
+        Parameters
+        ----------
+        channel : str
+          channel with format 'chan1|chan2|chan3'
+          (order matter)
+        
+        of_base : OFBase object
+           OFBase QETpy object
+           
+        lowchi2_fcutoff : float, optional
+            The frequency (in Hz) that we should cut off the chi^2 when
+            calculating the low frequency chi^2. Default is 10 kHz. (NOT IMPLEMENTED)
+        
+        available_channels : list
+           list of available channels
+           
+           
+        Returns
+        -------
+        retdict : dict
+            Dictionary containing the various extracted features.
+
+           
+        """
+        debug = True
+        
+        # split channel name into list (same order)
+        channel_list, separator = utils.split_channel_name(
+            channel,
+            available_channels=available_channels,
+            separator='|')
+            
+        nchans = len(channel_list)
+        
+        
+        if  template_tag is None:
+            raise ValueError(f'ERROR: Missing "template_tag" argument '
+                             f'for channel {channel}, '
+                             f'algorithm "{feature_base_name}"')
+        elif template_tag.ndim != 2:
+            raise ValueError(f'ERROR: Expecting a 2D "template_tag" '
+                             f'array  for channel {channel}, '
+                             f'algorithm "{feature_base_name}"')
+                             
+        nchans_array = template_tag.shape[0]
+        ntmps =  template_tag.shape[1]
+                             
+        if nchans != nchans_array:
+            raise ValueError(f'ERROR: Expecting a 2D "template_tag" '
+                             f'with shape[0] = {nchans} '
+                             f'for channel {channel}, '
+                             f'algorithm "{feature_base_name}"')
+                             
+        template_time_tag = of_base.get_template_time_tags(template_tag)
+        
+        if template_time_tag is None:
+            raise ValueError(f'ERROR: Missing "template_time_tag" argument '
+                             f'for channel {channel}, '
+                             f'algorithm "{feature_base_name}"')
+        else:
+            if not isinstance(template_time_tag, np.ndarray):
+                raise ValueError(f'ERROR: Expecting a 1D "template_time_tag" '
+                                 f'array with length = # of templates ({ntmps})')
+        
+            if template_time_tag.ndim != 1 or len(template_time_tag) != ntmps:
+                raise ValueError(f'ERROR: Expecting a 1D "template_time_tag" '
+                                 f'array with length = # of templates ({ntmps})')
+        
+                             
+                
+        if amplitude_names is None:
+            amplitude_names = []
+            for itmp in range(ntmps):
+                amplitude_names.append(f'amp{itmp+1}')
+                
+        else:
+
+            if isinstance(amplitude_names, str):
+                amplitude_names = [amplitude_names]
+
+            if len(amplitude_names) != ntmps:
+                raise ValueError(
+                    f'ERROR: Wrong length for "amplitude_names" '
+                    f'argument. Expecting {ntmps} name '
+                    f'for  channel {channel}, '
+                    f'algorithm "{feature_base_name}"')
+                    
+        # if time_window is not None:
+        #     if time_window.shape != (2,2):
+        #         raise ValueError(
+        #             f'ERROR: Wrong dimensions for "time_window" '
+        #             f'argument. Expecting 2x2 array.' )
+                    
+        # instantiate OF NxM
+        OF = qp.OFnxmx2(of_base=of_base,
+                       channels=channel,
+                       template_tags=template_tag,
+                       template_time_tags = template_time_tag,
+                       fit_window = fit_window,
+                       verbose=False)
+
+        # calc
+        OF.calc()
+        
+        amps, deltat, chi2 = OF.get_fit()
+        
+        retdict = dict()
+        retdict[f'chi2_{feature_base_name}'] = chi2
+        retdict[f'delta_t_{feature_base_name}'] = deltat
+        for iamp, amp_name in enumerate(amplitude_names):
+            retdict[f'{amp_name}_{feature_base_name}'] = amps[iamp]
+
+        return retdict
+
     @staticmethod
     def ofnxm(channel, of_base,
               available_channels=None,
