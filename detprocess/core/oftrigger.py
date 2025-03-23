@@ -447,33 +447,28 @@ class OptimumFilterTrigger:
         # Create an OF Base object to run the OF pre-calculations
         self._of_base = qp.OFBase(fs)
 
-        template_tags = np.full((self._n_channels, self._m_amplitudes), 'default_XX_XX')
-        for i in range(self._n_channels):
-            for j in range(self._m_amplitudes):
-                template_tags[i,j] = f'default_{i}_{j}'
+        # tag 
+        template_tag = 'default'
 
-        self._template_tags = template_tags
-
-        self._of_base.add_template_many_channels(
+        self._of_base.add_template(
             self._trigger_channel,
             self._template,
-            template_tags,
+            template_tag=template_tag,
             pretrigger_samples=self._pretrigger_samples
         )
         
         self._of_base.set_csd(self._trigger_channel, self._noisecsd)
-        self._of_base.calc_phi_matrix(self._trigger_channel, template_tags)
-        self._of_base.calc_weight_matrix(self._trigger_channel, template_tags)
-
-        self._iw_matrix = self._of_base.iw_matrix(self._trigger_channel, template_tags)
+        self._of_base.calc_phi(self._trigger_channel,
+                               template_tag=template_tag,
+                               calc_weight=True)
+        
+        self._iw_matrix = self._of_base.iweight(self._trigger_channel, template_tag)
         self._w_matrix = np.linalg.inv(self._iw_matrix)
 
         # By default, phi is in the order [f_frequencies, n_channels, m_amplitudes]
         # so we transpose. Also we need to make a copy or we accidentally pass phi
         # by reference
-        self._phi_fd = np.copy(self._of_base.phi(self._trigger_channel, template_tags))
-        self._phi_fd = self._phi_fd.transpose(1,2,0)
-
+        self._phi_fd = np.copy(self._of_base.phi(self._trigger_channel, template_tag))
         self._phi_fd[:,:,0] = 0 #ensure we do not use DC information
         self._phi_td = ifft(self._phi_fd, axis=2).real
         
