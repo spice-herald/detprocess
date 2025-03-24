@@ -70,7 +70,8 @@ class YamlConfig:
         self._obsolete_keys = {
             'trigger_name': 'trigger_channel',
             'nb_samples': 'trace_length_samples',
-            'nb_pretrigger_samples': 'pretrigger_length_samples'
+            'nb_pretrigger_samples': 'pretrigger_length_samples',
+            'template_time_tags': 'template_group_ids'
         }
     
         # available channel separators

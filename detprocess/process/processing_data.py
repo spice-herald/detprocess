@@ -257,8 +257,10 @@ class ProcessingData:
                     csd_tag = algo_config['psd_tag']
 
                 if csd_tag is None:
-                    raise ValueError('ERROR: a "csd_tag" is required in yaml '
-                                     'file!')
+                    raise ValueError(f'ERROR: a "csd_tag" (or "psd_tag") is '
+                                     f'required in yaml '
+                                     f'file for channel {chan}, algorithm '
+                                     f'"{algo}" !')
                 
                 # get csd
                 csd, csd_freqs, csd_metadata = (
@@ -311,12 +313,12 @@ class ProcessingData:
                     integralnorm = algo_config['integralnorm']
 
                 if 'template_tag' not in  algo_config:
-                    raise ValueError('ERROR: a "template_tag" in yaml file '
-                                     'is required for optimal filter '
-                                     'algorithm!')
-                
+                    raise ValueError(f'ERROR: a "template_tag" in yaml file '
+                                     f'is required for channel {chan}, '
+                                     f'algorithm "{algo}" !')
+                                
                 template_tag = algo_config['template_tag']
-                                                 
+
                 # get template from filter file
                 template, template_time, template_metadata = (
                     self._filter_data.get_template(
@@ -1243,182 +1245,4 @@ class ProcessingData:
 
         return data_info
 
-    def check_filter_data_tags(self, processing_config,
-                               default_tag='default'):
-        """
-        Filter data tags for OF 
-        """
-
-        # loop channels
-        config = copy.deepcopy(processing_config)
-        for chan, chan_config in config.items():
-                   
-            # skip if filter file
-            if (chan == 'filter_file'
-                or not isinstance(chan_config, dict)):
-                continue
-
-            # channel list
-            chan_list, _ = utils.split_channel_name(
-                chan,
-                available_channels=self._available_channels,
-                separator='|'
-            )
-
-            nb_channels = len(chan_list)
-            
-            # loop configuration
-            for algo, algo_config in chan_config.items():
-
-                # skip if not dictionary
-                if not isinstance(algo_config, dict):
-                    continue
-                
-                # skip if disable
-                if not algo_config['run']:
-                    continue
-
-                # check if algorithm requires OF base
-                is_of_base_used = False
-                for prefix in self._OF_base_algorithms:
-                    algo_base = algo
-                    if 'base_algorithm' in algo_config:
-                        algo_base = algo_config['base_algorithm']
-                    if prefix in algo_base:
-                        is_of_base_used = True
-
-                if not is_of_base_used:
-                    continue
-
-
-                if nb_channels == 1:
-
-                    # single channel
-                    
-                    if 'psd_tag' not in algo_config:
-                        processing_config[chan][algo]['psd_tag'] = (
-                            default_tag
-                        )
-                        
-                    if 'template_tag' not in algo_config:
-                        processing_config[chan][algo]['template_tag'] = (
-                            default_tag
-                        )
-
-                        
-                else:
-
-                    # multi channels
-                    if 'csd_tag' not in algo_config:
-                        processing_config[chan][algo]['csd_tag'] = (
-                            default_tag
-                        )
-
-                    # initialize matrix tag
-                    processing_config[chan][algo]['template_matrix_tag'] = (
-                        None
-                    )
-                        
-                    if 'template_tag' not in algo_config.keys():
-
-                        template_array = None
-                        for ichan, chan_tag in enumerate(chan_list):
-                            
-                            param = f'template_tag_{chan_tag}'
-                            
-                            if param not in algo_config.keys():
-                                raise ValueError(
-                                    f'ERROR in the yaml config: Expecting '
-                                    f'"{param}" or "template_tag" parameter '
-                                    f'for channel {chan}, '
-                                    f'algorithm "{algo}"'
-                                )
-                        
-                            tags = algo_config[param]
-                            if isinstance(tags, str):
-                                tags = [tags]
-                                                      
-                            if template_array is None:
-                                template_array = np.zeros(
-                                    (nb_channels, len(tags)),
-                                    dtype='object'
-                                )
-                    
-                            template_array[ichan,:] = np.array(tags)
-                            
-                            # remove 
-                            processing_config[chan][algo].pop(
-                                param
-                            )
-
-                        processing_config[chan][algo]['template_tag'] = (
-                            template_array
-                        )
-                        
-                    else:
-                        
-                        template_tag = algo_config['template_tag']
-                    
-                        if isinstance(template_tag, list):
-                            
-                            template_tag = np.array(template_tag)
-                            if (template_tag.ndim != 2
-                                or template_tag.shape[0] != nb_channels):
-                                raise ValueError(
-                                    f'ERROR in the yaml config: Expecting '
-                                    f'"template_tag" for channel {chan} '
-                                    f'to be a (Nchan, Mtemplates) array, '
-                                    f'(algorithm "{algo}")'
-                                )
-
-                            processing_config[chan][algo]['template_tag'] = (
-                                template_tag
-                            )
-                        
-                        elif isinstance(template_tag, str):
-
-                            # get template matrix from filter file
-                            template, template_time = (
-                                self._filter_data.get_template(
-                                    chan, tag=template_tag,
-                                    return_metadata=False)
-                            )
-            
-                            if template.ndim != 3:
-                                raise ValueError(
-                                    f'ERROR: Expecting a 3D templates matrix '
-                                    f'for channel {chan}, matrix tag '
-                                    f'{template_tag}, '
-                                    f'algorithm {algo}!')
-                
-                            
-                            if nb_channels != template.shape[0]:
-                                raise ValueError(
-                                    f'ERROR: Expecting a templates matrix to have '
-                                    f'shape[0] = {nb_channels} '
-                                    f'for channel {chan}, '
-                                    f'matrix tag {template_tag}, '
-                                    f'algorithm {algo}!')
-                            
-                            nb_templates = template.shape[1]
-                            
-                            # build tag array
-                            tag_array = np.zeros(
-                                (nb_channels, nb_templates),
-                                dtype='object'
-                            )
-                                
-                            for ichan in range(nb_channels):
-                                for itemp in range(nb_templates):
-                                    mtag = f'{template_tag}_{algo}_{ichan}_{itemp}'
-                                    tag_array[ichan, itemp] = mtag
-
-                            # replace
-                            processing_config[chan][algo]['template_matrix_tag'] = (
-                                template_tag
-                            )
-                            processing_config[chan][algo]['template_tag'] = (
-                                tag_array
-                            )
-        
-        return processing_config
+  

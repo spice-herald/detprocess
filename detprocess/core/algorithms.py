@@ -510,7 +510,7 @@ class FeatureExtractors:
 
         # get OF resolution
         ampres = OF.get_energy_resolution()
-        timeres = OF.get_time_resolution(amp)
+        timeres = OF.get_time_resolution()
 
         retdict = {
             ('amp_' + feature_base_name): amp,
