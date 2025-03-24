@@ -91,7 +91,7 @@ class ProcessingData:
         # initialize OF containers
         self._OF_base_objs = dict()
         self._OF_base_algorithms = [
-            'of1x1', 'of1x2', 'of1x3',
+            'of1x1', 'of1x2x2', 'of1x3x3',
             'ofnxm', 'ofnxmx2', 'psd_amp'
         ]
         
@@ -219,15 +219,17 @@ class ProcessingData:
                     continue
 
                 # check if algorithm requires OF base
-                is_of_base_used = False
+                algo_base = algo
+                if 'base_algorithm' in algo_config:
+                    algo_base = algo_config['base_algorithm']
+                    
+                of_algorithm = None
                 for prefix in self._OF_base_algorithms:
-                    algo_base = algo
-                    if 'base_algorithm' in algo_config:
-                        algo_base = algo_config['base_algorithm']
                     if prefix in algo_base:
-                        is_of_base_used = True
+                        of_algorithm = algo_base
+                        break
 
-                if not is_of_base_used:
+                if  of_algorithm is None:
                     continue
                 
                 # number of samples
@@ -354,6 +356,49 @@ class ProcessingData:
                     overwrite=True,
                 )
 
+                # Calculate optimal filter
+                if (self._OF_base_objs[key_tuple]['OF'].phi(chan, template_tag)
+                    is None):
+                    self._OF_base_objs[key_tuple]['OF'].calc_phi(chan, template_tag)
+
+
+                # For NxMx2 we need to calculate p_matrix
+                if of_algorithm == 'ofnxmx2':
+
+                    # check time constraint available
+                    if ('template_group_ids' not in algo_config
+                        or 'fit_window' not in algo_config):
+                        raise ValueError(
+                            f'ERROR: "template_group_ids" and '
+                            f'"fit_window" required in yaml file '
+                            f'for channel {chan}, algorithm '
+                            f'{algo} !'
+                        )
+
+                    template_group_ids =  np.array(algo_config['template_group_ids'])
+                    fit_window = np.array(algo_config['fit_window'])
+                                        
+                    restrict_time_flag = True
+                    if 'restrict_time_flag' in algo_config:
+                        restrict_time_flag = algo_config['restrict_time_flag']
+                        
+                    # set time constraints
+                    self._OF_base_objs[key_tuple]['OF'].set_time_constraints(
+                        chan,
+                        template_group_ids=template_group_ids,
+                        fit_window=fit_window,
+                        restrict_time_flag=restrict_time_flag,
+                        time_constraints_tag=algo
+                    )
+                    
+                    # calc p_matrix
+                    self._OF_base_objs[key_tuple]['OF'].calc_p_matrix(
+                        chan,
+                        template_tag=template_tag,
+                        time_constraints_tag=algo
+                    )
+                    
+                
             # check csd tags
             for item in csd_tags.keys():
                 csd_tags[item] = (
@@ -366,15 +411,7 @@ class ProcessingData:
                         f'allowed for channel {chan}! '
                     )
 
-                
-            # calculate phi for each OF base
-            for key in self._OF_base_objs.keys():
-
-                if chan not in self._OF_base_objs[key]['channels']:
-                    continue
-                
-                self._OF_base_objs[key]['OF'].calc_phi(chan)
-                
+                       
                     
         # remove duplicated
         for key in self._OF_base_objs:

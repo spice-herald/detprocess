@@ -463,8 +463,8 @@ class OptimumFilterTrigger:
                                calc_weight=True)
         
         self._iw_matrix = self._of_base.iweight(self._trigger_channel, template_tag)
-        self._w_matrix = np.linalg.inv(self._iw_matrix)
-
+        self._w_matrix = self._of_base.weight(self._trigger_channel, template_tag)
+        
         # By default, phi is in the order [f_frequencies, n_channels, m_amplitudes]
         # so we transpose. Also we need to make a copy or we accidentally pass phi
         # by reference
