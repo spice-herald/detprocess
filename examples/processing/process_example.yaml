@@ -13,7 +13,7 @@
 # ==============================================================
 
 # Filter file
-filter_file: /data/users/serfass/run32/ofnxm_test/run32_test_filter.hdf5
+filter_file: /path/to/filter_file.hdf5
 didv_file: /path/to/didv_file.hdf5
 
 
@@ -54,27 +54,21 @@ salting:
 # -------------------------------------------------
 # TRIGGER PROCESSING
 # -------------------------------------------------
+
 trigger:
 
-   coincident_window_msec: 0.01
-        
-   Melange025pcLeft,Melange025pcRight:
-       run: True
-       template_tag: default
-       psd_tag: default
-       pileup_window_msec: 10
-       threshold_sigma: 15
+    coincident_window_msec: 0
 
+    Melange025pcLeft|Melange025pcRight:
 
-   Melange025pcLeft+Melange025pcRight:
-       run: True
-       trigger_name: TotIrPt
-       template_tag: default
-       psd_tag: default
-       pileup_window_msec: 10
-       threshold_sigma: 15
+        trigger_channel: Melange025pc
 
-
+        of2x2_shared:
+            run: True
+            template_tag: shared
+            csd_tag: default
+            pileup_window_msec: 2
+            threshold_sigma: 4.0
 
 
 # -------------------------------------------------
@@ -111,6 +105,7 @@ Melange1pc1ch:
         run: True
         lowchi2_fcutoff: 50000
         template_tag: default
+        csd_tag: default
 
  
     of1x1_constrained:
@@ -119,6 +114,7 @@ Melange1pc1ch:
         window_max_from_trig_usec: 100
         lowchi2_fcutoff: 50000
         template_tag: default
+        csd_tag: default
 
     baseline:
         run: True
@@ -165,10 +161,12 @@ Melange025pcLeft,Melange025pcRight:
         run: True
         lowchi2_fcutoff: 50000
         template_tag: default
+        csd_tag: default
 
     of1x1_unconstrained:
         run: True
         template_tag: default
+        csd_tag: default
 
     of1x1_constrained:
         run: True
@@ -176,6 +174,7 @@ Melange025pcLeft,Melange025pcRight:
         window_max_from_trig_usec: 100
         lowchi2_fcutoff: 50000
         template_tag: default
+        csd_tag: default
 
     baseline:
         run: True
@@ -236,6 +235,7 @@ Melange025pcLeft+Melange025pcRight:
         window_max_from_trig_usec: 100
         lowchi2_fcutoff: 50000
         template_tag: default
+        csd_tag: default
 
     baseline:
         run: True
@@ -263,24 +263,9 @@ Melange025pcLeft|Melange025pcRight:
         # csd
         csd_tag: default
 
-        # templates can be either
-        # 
-        #  1: templates for each channels
-        #       Example 2x2:  template_tag_Melange1pc1ch: [default, None]
-        # 
-        #  2: array of tags (Nchans, Mtemps)
-        #       Examples 2x2:   template_tag: [[default, None],[None, default]]	 
-        #
-        #  3: single tag if stored as (Nchan, Mtemps, samples) in filter file
-        #       Example: template_tag: default
-        #       
-        # Use None if zeros
+        # template tag
+        template_tag: single_025
 
-        template_tag_Melange025pcLeft: [single_025L, None]
-        template_tag_Melange025pcRight: [None, single_025R]
-
-        # cutoff NOT IMPLEMENTED IN QETpy
-        lowchi2_fcutoff: 50000
 
      of2x2_test2:
         run: True
@@ -297,10 +282,8 @@ Melange025pcLeft|Melange025pcRight:
         csd_tag: default
 
         # template tags
-        template_tag: [[default, None], [None, default]]
+        template_tag: default
 
-        # cutoff NOT IMPLEMENTED IN QETpy
-        lowchi2_fcutoff: 50000
 
 
 Melange4pc1ch|Melange025pcLeft|Melange025pcRight:
@@ -344,7 +327,7 @@ Melange4pc1ch|Melange025pcLeft|Melange025pcRight:
         csd_tag: default
 
         # template tags (Nchan, Mtemps) -> (3,1)
-        template_tag: [[None],[shared],[shared]]
+        template_tag: shared
 
         # cutoff NOT IMPLEMENTED IN QETpy
         lowchi2_fcutoff: 50000
