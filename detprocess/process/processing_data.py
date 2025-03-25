@@ -252,7 +252,7 @@ class ProcessingData:
 
 
                 # add csd/psd
-                csd_tag = None
+                csd_tag = 'default'
                 if 'csd_tag' in algo_config:
                     csd_tag = algo_config['csd_tag']
                 elif 'psd_tag' in algo_config:
@@ -260,12 +260,6 @@ class ProcessingData:
                 elif 'noise_tag' in algo_config:
                     csd_tag = algo_config['noise_tag']
 
-                if csd_tag is None:
-                    raise ValueError(f'ERROR: a "csd_tag" (or "psd_tag") is '
-                                     f'required in yaml '
-                                     f'file for channel {chan}, algorithm '
-                                     f'"{algo}" !')
-                
                 # get csd
                 csd, csd_freqs, csd_metadata = (
                     self._filter_data.get_csd(
