@@ -257,6 +257,8 @@ class ProcessingData:
                     csd_tag = algo_config['csd_tag']
                 elif 'psd_tag' in algo_config:
                     csd_tag = algo_config['psd_tag']
+                elif 'noise_tag' in algo_config:
+                    csd_tag = algo_config['noise_tag']
 
                 if csd_tag is None:
                     raise ValueError(f'ERROR: a "csd_tag" (or "psd_tag") is '
