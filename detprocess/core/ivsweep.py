@@ -380,13 +380,14 @@ class IVSweepAnalysis(FilterData):
         if (nsc_current is not None
             and nsc_current !=  nsc_df):
             df.loc[df['state']=='sc', 'state'] = np.nan
-            df.loc[df.index[-nsc:], 'state'] = 'sc'
+            if  nsc_current != 0:
+                df.loc[df.index[-nsc_current:], 'state'] = 'sc'
             do_update = True
             
         if (nnorm_current is not None
             and nnorm_current != nnorm_df):
             df.loc[df['state']=='normal', 'state'] = np.nan
-            df.loc[:nnorm-1, 'state'] = 'normal'
+            df.loc[:nnorm_current-1, 'state'] = 'normal'
             do_update = True
             
         if do_update:
