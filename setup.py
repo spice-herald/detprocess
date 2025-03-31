@@ -70,7 +70,7 @@ setup(
         'scipy',
         'matplotlib',
         'pyyaml',
-        'qetpy>=1.7.8',
+        'qetpy>=1.8.0',
         'pandas',
         'pytesdaq>=0.4.3',
         'scikit-image',
