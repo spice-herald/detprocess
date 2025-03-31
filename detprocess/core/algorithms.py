@@ -54,8 +54,7 @@ class FeatureExtractors:
 
            
         """
-        debug = True
-        
+          
         # split channel name into list (same order)
         channel_list, separator = utils.split_channel_name(
             channel,
@@ -69,37 +68,24 @@ class FeatureExtractors:
             raise ValueError(f'ERROR: Missing "template_tag" argument '
                              f'for channel {channel}, '
                              f'algorithm "{feature_base_name}"')
-        elif template_tag.ndim != 2:
-            raise ValueError(f'ERROR: Expecting a 2D "template_tag" '
-                             f'array  for channel {channel}, '
-                             f'algorithm "{feature_base_name}"')
-                             
-        nchans_array = template_tag.shape[0]
-        ntmps =  template_tag.shape[1]
-                             
-        if nchans != nchans_array:
-            raise ValueError(f'ERROR: Expecting a 2D "template_tag" '
-                             f'with shape[0] = {nchans} '
+
+        # time constraints tag is the name of algorithm
+        time_constraints_tag = feature_base_name
+     
+        # check template available
+        template = of_base.template(channel,
+                                    template_tag=template_tag)
+        if template is None:
+            raise ValueError(f'ERROR: Missing template '
                              f'for channel {channel}, '
+                             f'tag "{template_tag}", '
                              f'algorithm "{feature_base_name}"')
-                             
-        template_time_tag = of_base.get_template_time_tags(template_tag)
+
+
+        ntmps = template.shape[1]
         
-        if template_time_tag is None:
-            raise ValueError(f'ERROR: Missing "template_time_tag" argument '
-                             f'for channel {channel}, '
-                             f'algorithm "{feature_base_name}"')
-        else:
-            if not isinstance(template_time_tag, np.ndarray):
-                raise ValueError(f'ERROR: Expecting a 1D "template_time_tag" '
-                                 f'array with length = # of templates ({ntmps})')
         
-            if template_time_tag.ndim != 1 or len(template_time_tag) != ntmps:
-                raise ValueError(f'ERROR: Expecting a 1D "template_time_tag" '
-                                 f'array with length = # of templates ({ntmps})')
-        
-                             
-                
+        # amplitude names
         if amplitude_names is None:
             amplitude_names = []
             for itmp in range(ntmps):
@@ -116,20 +102,14 @@ class FeatureExtractors:
                     f'argument. Expecting {ntmps} name '
                     f'for  channel {channel}, '
                     f'algorithm "{feature_base_name}"')
-                    
-        # if time_window is not None:
-        #     if time_window.shape != (2,2):
-        #         raise ValueError(
-        #             f'ERROR: Wrong dimensions for "time_window" '
-        #             f'argument. Expecting 2x2 array.' )
-                    
+
+                       
         # instantiate OF NxM
         OF = qp.OFnxmx2(of_base=of_base,
-                       channels=channel,
-                       template_tags=template_tag,
-                       template_time_tags = template_time_tag,
-                       fit_window = fit_window,
-                       verbose=False)
+                        channels=channel,
+                        template_tag=template_tag,
+                        time_constraints_tag=time_constraints_tag,
+                        verbose=False)
 
         # calc
         OF.calc()
@@ -206,20 +186,17 @@ class FeatureExtractors:
             raise ValueError(f'ERROR: Missing "template_tag" argument '
                              f'for channel {channel}, '
                              f'algorithm "{feature_base_name}"')
-        elif template_tag.ndim != 2:
-            raise ValueError(f'ERROR: Expecting a 2D "template_tag" '
-                             f'array  for channel {channel}, '
-                             f'algorithm "{feature_base_name}"')
-        
-        nchans_array = template_tag.shape[0]
-        ntmps =  template_tag.shape[1]
-        
-        if nchans != nchans_array:
-            raise ValueError(f'ERROR: Expecting a 2D "template_tag" '
-                             f'with shape[0] = {nchans} '
+
+        template = of_base.template(channel,
+                                    template_tag=template_tag)
+        if template is None:
+            raise ValueError(f'ERROR: Missing template '
                              f'for channel {channel}, '
+                             f'tag "{template_tag}", '
                              f'algorithm "{feature_base_name}"')
 
+
+        ntmps = template.shape[1]
         
         if amplitude_names is None:
             amplitude_names = []
@@ -240,7 +217,7 @@ class FeatureExtractors:
         # instantiate OF NxM
         OF = qp.OFnxm(of_base=of_base,
                       channels=channel,
-                      template_tags=template_tag,
+                      template_tag=template_tag,
                       verbose=False)
 
         # calc
@@ -273,7 +250,7 @@ class FeatureExtractors:
 
     @staticmethod
     def of1x1_nodelay(channel, of_base,
-                      template_tag='default',
+                      template_tag=None,
                       lowchi2_fcutoff=10000,
                       feature_base_name='of1x1_nodelay',
                       **kwargs):
@@ -289,9 +266,9 @@ class FeatureExtractors:
         of_base : OFBase object
            OFBase QETpy object 
 
-        template_tag : str, option
+        template_tag : str
            tag of the template to be used for OF calculation,
-           Default: 'default'
+        
 
         lowchi2_fcutoff : float, optional
             The frequency (in Hz) that we should cut off the chi^2 when
@@ -307,13 +284,21 @@ class FeatureExtractors:
 
         """
 
+        # check tag
+        if template_tag is None:
+            raise ValueError('ERROR: Template tag required for OF 1x1')
+
+
+        
         # instantiate OF 1x1
         OF = qp.OF1x1(of_base=of_base,
                       channel=channel,
                       template_tag=template_tag)
         
         # calc 
-        OF.calc_nodelay(lowchi2_fcutoff=lowchi2_fcutoff)
+        OF.calc(lgc_fit_withdelay=False,
+                lgc_fit_nodelay=True,
+                lowchi2_fcutoff=lowchi2_fcutoff)
 
         # get results
         amp, t0, chi2, lowchi2 = OF.get_result_nodelay()
@@ -380,6 +365,7 @@ class FeatureExtractors:
         # calc
         OF.calc(lowchi2_fcutoff=lowchi2_fcutoff,
                 interpolate_t0=interpolate,
+                lgc_fit_withdelay=True,
                 lgc_fit_nodelay=False,
                 lgc_plot=False)
 
@@ -491,6 +477,7 @@ class FeatureExtractors:
                 lowchi2_fcutoff=lowchi2_fcutoff,
                 interpolate_t0=interpolate,
                 lgc_outside_window=lgc_outside_window,
+                lgc_fit_withdelay=True,
                 lgc_fit_nodelay=False,
                 lgc_plot=False)
 
@@ -503,7 +490,7 @@ class FeatureExtractors:
 
         # get OF resolution
         ampres = OF.get_energy_resolution()
-        timeres = OF.get_time_resolution(amp)
+        timeres = OF.get_time_resolution()
 
         retdict = {
             ('amp_' + feature_base_name): amp,
@@ -518,11 +505,11 @@ class FeatureExtractors:
         return retdict
     
     @staticmethod
-    def of1x2(channel, of_base,
-              template_tag_1='Scintillation',
-              template_tag_2='Evaporation',
-              feature_base_name='of1x2',
-              **kwargs):
+    def of1x2x2(channel, of_base,
+                template_tag_1='Scintillation',
+                template_tag_2='Evaporation',
+                feature_base_name='of1x2x2',
+                **kwargs):
         """
         Feature extraction for the one channel, two template Optimum Filter.
 

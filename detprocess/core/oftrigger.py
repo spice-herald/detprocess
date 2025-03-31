@@ -343,8 +343,7 @@ class OptimumFilterTrigger:
     def __init__(self, trigger_channel,
                  fs, template, noisecsd,
                  pretrigger_samples,
-                 trigger_name=None,
-                 template_ttl=None):
+                 trigger_name=None):
         """
         Initialization of the FIR filter.
        
@@ -369,10 +368,6 @@ class OptimumFilterTrigger:
             Same shape requirements as "template", though the number of
             samples is replaced by the number of frequencies (which 
             should be equal, anyway).
-         template_ttl : NoneType, ndarray, optional
-            The template for the trigger channel pulse. If left as
-            None, then the trigger channel will not be analyzed.
-        
         """
 
         # save internal variables
@@ -447,33 +442,27 @@ class OptimumFilterTrigger:
         # Create an OF Base object to run the OF pre-calculations
         self._of_base = qp.OFBase(fs)
 
-        template_tags = np.full((self._n_channels, self._m_amplitudes), 'default_XX_XX')
-        for i in range(self._n_channels):
-            for j in range(self._m_amplitudes):
-                template_tags[i,j] = f'default_{i}_{j}'
+        # tag 
+        template_tag = 'default'
 
-        self._template_tags = template_tags
-
-        self._of_base.add_template_many_channels(
+        self._of_base.add_template(
             self._trigger_channel,
             self._template,
-            template_tags,
+            template_tag=template_tag,
             pretrigger_samples=self._pretrigger_samples
         )
         
         self._of_base.set_csd(self._trigger_channel, self._noisecsd)
-        self._of_base.calc_phi_matrix(self._trigger_channel, template_tags)
-        self._of_base.calc_weight_matrix(self._trigger_channel, template_tags)
-
-        self._iw_matrix = self._of_base.iw_matrix(self._trigger_channel, template_tags)
-        self._w_matrix = np.linalg.inv(self._iw_matrix)
-
-        # By default, phi is in the order [f_frequencies, n_channels, m_amplitudes]
-        # so we transpose. Also we need to make a copy or we accidentally pass phi
-        # by reference
-        self._phi_fd = np.copy(self._of_base.phi(self._trigger_channel, template_tags))
-        self._phi_fd = self._phi_fd.transpose(1,2,0)
-
+        self._of_base.calc_phi(self._trigger_channel,
+                               template_tag=template_tag,
+                               calc_weight=True)
+        
+        self._iw_matrix = self._of_base.iweight(self._trigger_channel, template_tag)
+        self._w_matrix = self._of_base.weight(self._trigger_channel, template_tag)
+        
+        # Get phi then take inverse fourier transform
+        # phi shape in OF base (n_channels, m_amplitudes, f_frequencies)      
+        self._phi_fd = np.copy(self._of_base.phi(self._trigger_channel, template_tag))
         self._phi_fd[:,:,0] = 0 #ensure we do not use DC information
         self._phi_td = ifft(self._phi_fd, axis=2).real
         
@@ -483,13 +472,7 @@ class OptimumFilterTrigger:
         # calculate the expected energy resolution for each amplitude
         self._resolution = np.sqrt(np.diag(self._iw_matrix))
                             
-        # TTL template and norm
-        self._template_ttl = template_ttl
-        self._norm_ttl = None
-        if template_ttl is not None:
-            self._norm_ttl = np.dot(template_ttl, template_ttl)
-    
-
+     
     def get_filtered_trace(self):
         """
         Get current filtered trace
@@ -505,15 +488,6 @@ class OptimumFilterTrigger:
 
         return self._delta_chi2_trace
     
-
-    def get_filtered_trace_ttl(self):
-        """
-        Get current filtered trace
-        """
-
-        return self._filtered_trace_ttl
-
-
     
     def get_trigger_data(self):
         """
@@ -561,7 +535,7 @@ class OptimumFilterTrigger:
 
             
     def update_trace(self, trace=None, filtered_trace=None,
-                     filtered_trace_ttl=None, padding=True):
+                     padding=True):
         """
         Method to apply the FIR filter the inputted traces with
         specified times.
@@ -581,12 +555,6 @@ class OptimumFilterTrigger:
             OF filtered channel trace(s)
             units: Amps
             Shape: 2D array [M_amplitudes, samples] 
-
-        filtered_trace_ttl: ndarray, optional
-            OF filtered trigger channel trace(s) with TTL template
-            units: Amps
-            1D array or 2D array [#channels, #samples]
-            For single pulse channel: #channels=1
             
         padding : bool
             if True, set the filtered values to zero near the edges
@@ -599,7 +567,7 @@ class OptimumFilterTrigger:
                 'ERROR: "trace" or "filtered_trace required!'
             )
 
-        # update the traces, times, and ttl attributes
+        # reshape if needed
         if (trace is not None) and (trace.ndim == 1):
             self._raw_trace = np.reshape(trace, (1, len(trace)))
         else:
@@ -607,10 +575,15 @@ class OptimumFilterTrigger:
 
         self._raw_trace_LPF_50kHz = np.copy(self._raw_trace)
         for ich in range(self._n_channels):            
-            self._raw_trace_LPF_50kHz[ich] = qp.utils.lowpassfilter(self._raw_trace[ich], cut_off_freq=50e3, fs=self._fs)
+            self._raw_trace_LPF_50kHz[ich] = qp.utils.lowpassfilter(
+                self._raw_trace[ich],
+                cut_off_freq=50e3,
+                fs=self._fs
+            )
 
         if (filtered_trace is not None) and (filtered_trace.ndim == 1):
-            self._filtered_trace = np.reshape(filtered_trace, (1, len(filtered_trace)))
+            self._filtered_trace = np.reshape(filtered_trace,
+                                              (1, len(filtered_trace)))
         else:
             self._filtered_trace = filtered_trace
 
@@ -621,7 +594,8 @@ class OptimumFilterTrigger:
                 f'but we have {self._n_channels} channels!'
             )
 
-        if filtered_trace is not None and self._filtered_trace.shape[0] != self._m_amplitudes:
+        if (filtered_trace is not None
+            and self._filtered_trace.shape[0] != self._m_amplitudes):
             raise ValueError(
                 f'ERROR: "filtered_trace" has shape {filtered_trace.shape}, ' + 
                 f'but we have {self._m_amplitudes} channels!'
@@ -633,13 +607,18 @@ class OptimumFilterTrigger:
             # V is the vector of convolutions; equivalently, the element in WA = V
             V_td = np.zeros((self._m_amplitudes, self._raw_trace.shape[-1]))
             for theta in range(self._m_amplitudes):
-                V_td_per_channel = oaconvolve(self._raw_trace, self._phi_td[theta,:], mode='same', axes=-1)
+                V_td_per_channel = oaconvolve(self._raw_trace,
+                                              self._phi_td[:,theta,:],
+                                              mode='same', axes=-1)
                 V_td[theta,:] = np.sum(V_td_per_channel, axis=0)
 
             self._filtered_trace = np.einsum('ij,jz->iz', self._iw_matrix, V_td).real
             
         # Calculate chi2 for the filtered trace(s)
-        self._delta_chi2_trace = np.einsum('iz,ij,jz->z', self._filtered_trace, self._w_matrix, self._filtered_trace)
+        self._delta_chi2_trace = np.einsum('iz,ij,jz->z',
+                                           self._filtered_trace,
+                                           self._w_matrix,
+                                           self._filtered_trace)
         
         # set the filtered values to zero near the edges,
         # so as not to use the padded values in the analysis
@@ -648,23 +627,8 @@ class OptimumFilterTrigger:
             self._delta_chi2_trace[:cut_len] = 0.0
             self._delta_chi2_trace[-(cut_len)+(cut_len+1)%2:] = 0.0
         
-        # filtered with ttl template
-        self._filtered_trace_ttl = filtered_trace_ttl
-        if self._template_ttl is not None:
-            self._filtered_trace_ttl = correlate(
-                trace,
-                self._template_ttl,
-                mode="same",
-                method='fft')/self._norm_ttl      
-
-            self._filtered_trace_ttl[:cut_len] = 0.0
-            self._filtered_trace_ttl[-(cut_len)
-                                     + (cut_len+1)%2:] = 0.0
-         
-            
-            
-
-    def find_triggers(self, thresh, thresh_ttl=None,
+      
+    def find_triggers(self, thresh, 
                       pileup_window_msec=None, pileup_window_samples=None,
                       positive_pulses=True, dynamic=False,
                       dynamic_threshold_function=None, residual=False,
@@ -692,8 +656,6 @@ class OptimumFilterTrigger:
         ----------
                 
         thresh : float
-            See find_triggers_once() for documentation.
-        thresh_ttl : NoneType, float, optional
             See find_triggers_once() for documentation.
         pileup_window_msec : float, optional
             See find_triggers_once() for documentation.
@@ -741,9 +703,9 @@ class OptimumFilterTrigger:
                     saturation_amplitudes_LPF_50kHz = [-1 * np.inf for _ in self._n_channels]
 
             # Do first pass of triggers
-            self.find_triggers_once(thresh, thresh_ttl,
-                      pileup_window_msec, pileup_window_samples,
-                      dynamic, dynamic_threshold_function)
+            self.find_triggers_once(thresh,
+                                    pileup_window_msec, pileup_window_samples,
+                                    dynamic, dynamic_threshold_function)
 
             # Save the first-pass triggers so we don't lose them
             original_triggers = np.copy(self._trigger_data[self._trigger_name]['trigger_index'])
@@ -780,23 +742,29 @@ class OptimumFilterTrigger:
 
                 V_td = np.zeros((self._m_amplitudes, self._t_times))
                 for theta in range(self._m_amplitudes):
-                    V_td_per_channel = oaconvolve(trigger_trace, self._phi_td[theta,:], mode='same', axes=-1)
+                    V_td_per_channel = oaconvolve(trigger_trace, self._phi_td[theta,:],
+                                                  mode='same', axes=-1)
                     V_td[theta,:] = np.sum(V_td_per_channel, axis=0)
 
                 filtered_trace = np.einsum('ij,jz->iz', self._iw_matrix, V_td).real
             
-                delta_chi2_trace = np.einsum('iz,ij,jz->z', filtered_trace, self._w_matrix, filtered_trace)
+                delta_chi2_trace = np.einsum('iz,ij,jz->z',
+                                             filtered_trace,
+                                             self._w_matrix,
+                                             filtered_trace)
                 
                 # Subtract delta_chi2_trace for this trigger from the original
                 # full self._delta_chi2_trace.
                 j_samples = np.argmax(delta_chi2_trace)
-                self._delta_chi2_trace[trigger_index - j_samples : trigger_index - j_samples + self._t_times] -= delta_chi2_trace
+                self._delta_chi2_trace[trigger_index - j_samples : trigger_index - j_samples + self._t_times] -= (
+                    delta_chi2_trace
+                )
 
             # Retrigger on the residual self._delta_chi2_trace
-            self.find_triggers_once(thresh, thresh_ttl,
-                      pileup_window_msec, pileup_window_samples,
-                      dynamic, dynamic_threshold_function)
-
+            self.find_triggers_once(thresh,
+                                    pileup_window_msec, pileup_window_samples,
+                                    dynamic, dynamic_threshold_function)
+            
             # Save our second-pass triggers so we don't lose them
             new_triggers = np.copy(self._trigger_data[self._trigger_name]['trigger_index'])
             new_trigger_data = copy.deepcopy(self._trigger_data)
@@ -820,14 +788,14 @@ class OptimumFilterTrigger:
         else:
             
             # If residual algorithm is disabled, just run find_triggers_once()
-            self.find_triggers_once(thresh, thresh_ttl,
+            self.find_triggers_once(thresh,
                       pileup_window_msec, pileup_window_samples,
                       dynamic, dynamic_threshold_function)
 
 
 
             
-    def find_triggers_once(self, thresh, thresh_ttl=None,
+    def find_triggers_once(self, thresh,
                       pileup_window_msec=None, pileup_window_samples=None,
                       dynamic=False,
                       dynamic_threshold_function=None):
@@ -843,11 +811,6 @@ class OptimumFilterTrigger:
             The number of standard deviations of the energy resolution
             to use as the threshold for which events will be detected
             as a pulse.
-        thresh_ttl : NoneType, float, optional
-            The threshold value (in units of the ttl channel) such
-            that any amplitudes higher than this will be detected as
-            ttl trigger event. If left as None, then only the pulses
-            are analyzed.
         pileup_window_msec : float, optional
             A static pileup window that coalesces regions of time with
             delta chi2 above threshold into a single trigger, as long
@@ -886,19 +849,7 @@ class OptimumFilterTrigger:
             trigger_data[f'trigger_amplitude_{iamp}'] = list()
         if self._m_amplitudes == 1:
             trigger_data[f'trigger_amplitude'] = list()
-        
-        # Extra parameters if TTL trigger used
-        if (self._filtered_trace_ttl is not None
-            and thresh_ttl is not None):
-            trigger_data.update(
-                {'trigger_time_ttl': list(),
-                 'trigger_index_ttl': list(),
-                 'trigger_amplitude_ttl': list(),
-                 'trigger_time_pulse': list(),
-                 'trigger_index_pulse': list(),
-                 'trigger_amplitude_pulse': list()}
-            )
-               
+                       
         # merge window
         pileup_window = 0
         if pileup_window_msec is not None:
@@ -951,46 +902,6 @@ class OptimumFilterTrigger:
         # set the trigger type to pulses
         rangetypes = np.zeros((len(trigger_ranges), 3), dtype=bool)
         rangetypes[:,1] = True
-        
-
-        # TTL trigger
-        if (self._filtered_trace_ttl is not None
-            and thresh_ttl is not None):
-            
-            # make a boolean mask of the ranges of the events in the trace
-            # from the pulse triggering
-            pulse_mask = np.zeros(self._filtered_trace.shape, dtype=bool)
-            for evt_range in trigger_ranges:
-                if evt_range[1]>evt_range[0]:
-                    trigger_inds = triggers[evt_range[0]:evt_range[1]]
-                    pulse_mask[trigger_inds] = True
-                    
-            # find where the ttl trigger has an optimum amplitude
-            # greater than the specified threshold
-            triggers_mask_ttl = self._filtered_trace_ttl>thresh_ttl
-
-            # get the mask of the total events, taking the
-            # or of the pulse and ttl trigger events
-            tot_mask = np.logical_or(triggers_mask_ttl, pulse_mask)
-            triggers = np.where(tot_mask)[0]
-            trigger_ranges, trigger_vals = _getchangeslessthanthresh(
-                triggers,  pileup_window)
-            
-            tot_types = np.zeros(len(tot_mask), dtype=int)
-            tot_types[triggers_mask] = 1
-            tot_types[triggers_mask_ttl] = 2
-            
-            # given the ranges, determine the trigger type based on if
-            # the total ranges overlap with
-            # the pulse events and/or the ttl trigger events
-            rangetypes = np.zeros((len(trigger_ranges), 3), dtype=bool)
-            for ival, vals in enumerate(trigger_vals):
-                if np.any(tot_types[vals[0]:vals[1]]==1):
-                    rangetypes[ival, 1] = True
-                if np.any(tot_types[vals[0]:vals[1]]==2):
-                    rangetypes[ival, 2] = True
-
-
                     
         # for each range with changes less than the merge_windw
         # keep only the bin with the largest amplitude
@@ -1003,81 +914,19 @@ class OptimumFilterTrigger:
                 # find index maximum amplitude
                 evt_ind = None
                 evt_ind = evt_inds[np.argmax(self._delta_chi2_trace[evt_inds])]
-
                 evt_ind_shift = evt_ind + self._trigger_index_shift
 
+                # fill dictionary
+                trigger_data['trigger_index'].extend([evt_ind_shift])
+                trigger_data['trigger_time'].extend([evt_ind_shift/self._fs])
+                trigger_data['trigger_delta_chi2'].extend([self._delta_chi2_trace[evt_ind]])
+                trigger_data['trigger_type'].extend([4])
+                for iamp in range(self._m_amplitudes):
+                    trigger_data[f'trigger_amplitude_{iamp}'].extend([self._filtered_trace[iamp][evt_ind]])
+                if self._m_amplitudes == 1:
+                    trigger_data[f'trigger_amplitude'].extend([self._filtered_trace[0][evt_ind]])
                     
-                # Case TTL is used
-                if (self._filtered_trace_ttl is not None
-                    and thresh_ttl is not None):
-
-                    # TTL index
-                    ttl_ind = evt_inds[np.argmax(self._filtered_trace_ttl[evt_inds])]
-                    ttl_ind_shift = ttl_ind + self._trigger_index_shift
-                        
-                    # case trigger TTL -> primary
-                    if rangetypes[irange][2]:
-
-                        # primary = TTL
-                        trigger_data['trigger_index'].extend([ttl_ind_shift])
-                        trigger_data['trigger_time'].extend([ttl_ind_shift/self._fs])
-                        trigger_data['trigger_amplitude'].extend(
-                            [self._filtered_trace[ttl_ind]])
-                        trigger_data['trigger_type'].extend([5])
-
-                        
-                        # TTL                    
-                        trigger_data['trigger_index_ttl'].extend([ttl_ind_shift])
-                        trigger_data['trigger_time_ttl'].extend([ttl_ind_shift/self._fs])
-                        trigger_data['trigger_amplitude_ttl'].extend(
-                            [self._filtered_trace_ttl[ttl_ind]])
-                        
-                        # pulse
-                        if rangetypes[irange][1]:
-                            # pulse also triggered
-                            trigger_data['trigger_index_pulse'].extend([evt_ind_shift])
-                            trigger_data['trigger_time_pulse'].extend([evt_ind_shift/self._fs])
-                            trigger_data['trigger_amplitude_pulse'].extend(
-                                [self._filtered_trace[evt_ind]])
-                        else:
-                            # no trigger
-                            trigger_data['trigger_index_pulse'].extend([np.nan])
-                            trigger_data['trigger_time_pulse'].extend([np.nan])
-                            trigger_data['trigger_amplitude_pulse'].extend([np.nan])
-
-                    # case only pulse triggered
-                    else:
-                        # primary = pulse
-                        trigger_data['trigger_index'].extend([evt_ind_shift])
-                        trigger_data['trigger_time'].extend([evt_ind_shift/self._fs])
-                        trigger_data['trigger_amplitude'].extend(
-                            [self._filtered_trace[evt_ind]])
-                        trigger_data['trigger_type'].extend([4])
-
-                        
-                        # pulse also triggered
-                        trigger_data['trigger_index_pulse'].extend([evt_ind_shift])
-                        trigger_data['trigger_time_pulse'].extend([evt_ind_shift/self._fs])
-                        trigger_data['trigger_amplitude_pulse'].extend(
-                            [self._filtered_trace[evt_ind]])
-                        
-                        #ttl
-                        trigger_data['trigger_index_ttl'].extend([np.nan])
-                        trigger_data['trigger_time_ttl'].extend([np.nan])
-                        trigger_data['trigger_amplitude_ttl'].extend([np.nan])
-
-                # Case no TTL
-                else:
-                    trigger_data['trigger_index'].extend([evt_ind_shift])
-                    trigger_data['trigger_time'].extend([evt_ind_shift/self._fs])
-                    trigger_data['trigger_delta_chi2'].extend([self._delta_chi2_trace[evt_ind]])
-                    trigger_data['trigger_type'].extend([4])
-                    for iamp in range(self._m_amplitudes):
-                        trigger_data[f'trigger_amplitude_{iamp}'].extend([self._filtered_trace[iamp][evt_ind]])
-                    if self._m_amplitudes == 1:
-                        trigger_data[f'trigger_amplitude'].extend([self._filtered_trace[0][evt_ind]])
-                    
-                # extra parameter both TTL and pulse threshold
+                # extra parameters 
                 trigger_data['trigger_threshold_sigma'].extend([thresh])
                 trigger_data['trigger_pileup_window'].extend([pileup_window])
 

@@ -370,7 +370,8 @@ class FilterData:
         ----------
 
         channels :  str or list 
-           channel list or channel string with "|" separation
+           channel string (multi-channels use "|" separation) 
+            or list
         
         tag : str, optional
             psd tag, default: No tag
@@ -439,7 +440,7 @@ class FilterData:
            channel name
         
         tag : str, optional
-            psd tag, default: No tag
+            template tag, default: No tag
 
         Return
         ------

@@ -276,14 +276,7 @@ class FeatureProcessing:
             available_channels=self._available_channels,
             salting_dataframe=salting_dataframe,
             verbose=verbose)
-
-        # cleaup filter data tags 
-        self._processing_config = (
-            self._processing_data_inst.check_filter_data_tags(
-                self._processing_config,
-                default_tag='default'
-            )
-        )
+        
         
     def process(self,
                 nevents=-1,
