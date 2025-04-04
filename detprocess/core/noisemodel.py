@@ -700,6 +700,50 @@ class NoiseModel(FilterData):
         s_isquid = (squiddc * (1.0 + (squidpole / freqs)**squidn))**2.0
         return  s_isquid
 
+    
+    def get_noise_data(self, channel=None, mode='transition'):
+        '''
+        Gets a dictionary with all relevant noise parameters fit at
+        the bias point(s).
+        
+        Parameters
+        ----------
+        channel : str, optional
+        The channel name of the data to be fetched.
+        
+        mode : str, optional, default='transition'
+        The bias mode type to indicate the range of bias
+        indices to return noise fit arrays for. 
+        Options are: 'transition', 'normal', or 'sc'.
+        
+        Returns
+        -------
+        noise_dict : dict
+        A dictionary with the following keys:
+        's_ites', 's_iload', 's_itfn', 's_isquid', 's_itot',
+        's_ptes', 's_pload', 's_ptfn', 's_psquid', 's_ptot',
+        'freqs'
+        '''
+        if channel is None:
+            raise ValueError("You must specify a channel.")
+        
+        valid_modes = ['transition', 'normal', 'sc']
+        if mode not in valid_modes:
+            raise ValueError(
+                f"'{mode}' is not a valid mode. "
+                f"Valid options are: {'transition',' normal',' sc'}.")
+        
+        if channel not in self._noise_data:
+            raise ValueError(f"Channel '{channel}' not found in noise data.")
+        
+        if 'sim' not in self._noise_data[channel] or mode not in self._noise_data[channel]['sim']:
+            raise ValueError(
+                f"Noise data for mode '{mode}' not available for channel '{channel}'. "
+                f"Have you run analyze_noise()?")
+        
+        noise_dict = self._noise_data[channel]['sim'][mode]
+        return noise_dict
+
             
     def fit_sc_noise(self, channels=None,
                      fit_range=(100, 1e5),
