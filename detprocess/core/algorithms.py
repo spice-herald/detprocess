@@ -860,7 +860,12 @@ class FeatureExtractors:
 
         # get OF base data
         freqs = of_base.fft_freqs()
-        trace_fft = of_base.signal_fft(channel)
+        trace_fft = of_base.signal_fft(channel, squeeze_array=True)
+        if trace_fft.ndim != 1:
+            # multi-channels, not implemented
+            raise ValueError(f'ERROR: "psd_amp" not implemented for '
+                             f'multi-channel. Remove algorithm for '
+                             f'channel {channel}!')
 
         # sample rate
         fs = utils.estimate_sampling_rate(freqs)
@@ -873,8 +878,8 @@ class FeatureExtractors:
         # fold
         freqs_fold, psd_fold = qp.utils.fold_spectrum(psd, fs)
 
-        # remove DC, make 1D array
-        psd_fold =  psd_fold[0,1:]
+        # remove DC
+        psd_fold =  psd_fold[1:]
         freqs_fold = freqs_fold[1:]
     
         # index ranges
@@ -900,6 +905,6 @@ class FeatureExtractors:
                     
             # parameter name
             psd_amp_name = f'{feature_base_name}_{name_list[it]}'
-            retdict[psd_amp_name ] = psd_avg
+            retdict[psd_amp_name] = psd_avg
         
         return retdict
