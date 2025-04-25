@@ -309,9 +309,10 @@ class Salting(FilterData):
         # get dpdi for each individual channels
         
         dpdi_dict = {}
-        for chan in channel_list:
-            dpdi, _= self.get_dpdi(chan, poles = dpdi_poles, tag=dpdi_tag)
-            dpdi_dict[chan] = dpdi
+        if dpdi_tag and dpdi_poles:
+            for chan in channel_list:
+                dpdi, _= self.get_dpdi(chan, poles = dpdi_poles, tag=dpdi_tag)
+                dpdi_dict[chan] = dpdi
         if pdf_file and energies:
             raise ValueError('Only pass either list of energies or DM PDFs, not both!')
 
@@ -353,10 +354,12 @@ class Salting(FilterData):
             #get the template to use for the salt
             salts = [[] for _ in range(nevents)]
             for i,chan in enumerate(channel_list):
-                dpdi = dpdi_dict[chan]
                 temp = template[i]
-                norm_energy = qp.get_energy_normalization(time_array, temp[0], dpdi=dpdi[0], lgc_ev=True)
-                scaled_template = temp[0]/norm_energy
+                if dpdi_dict:
+                    dpdi = dpdi_dict[chan]
+                    norm_energy = qp.get_energy_normalization(time_array, temp[0], dpdi=dpdi[0], lgc_ev=True)
+                    scaled_template = temp[0]/norm_energy
+                else: scaled_template = temp[0]
                 for n in range(nevents):
                     fullyscaled_template = scaled_template * DM_energies[n]*PCE[i]
                     salts[n].append([fullyscaled_template])   
@@ -377,9 +380,11 @@ class Salting(FilterData):
                         salt_var_dict[f'salting_type'][n] = f'energy_{DM_energies[n]}_eV'
         else: 
             salts = []
-            dpdi = dpdi_dict[chan]
-            norm_energy = qp.get_energy_normalization(time_array, template, dpdi = dpdi[0], lgc_ev=True)
-            scaled_template = template/norm_energy
+            if dpdi_dict:
+                dpdi = dpdi_dict[chan]
+                norm_energy = qp.get_energy_normalization(time_array, template, dpdi = dpdi[0], lgc_ev=True)
+                scaled_template = template/norm_energy
+            else: scaled_template = template
             for n in range(nevents):
                 fullyscaled_template = scaled_template * DM_energies[n]*PCE
                 salts.append(fullyscaled_template)
