@@ -873,8 +873,8 @@ class FeatureExtractors:
         # fold
         freqs_fold, psd_fold = qp.utils.fold_spectrum(psd, fs)
 
-        # remove DC
-        psd_fold =  psd_fold[1:]
+        # remove DC, make 1D array
+        psd_fold =  psd_fold[0,1:]
         freqs_fold = freqs_fold[1:]
     
         # index ranges
@@ -901,5 +901,5 @@ class FeatureExtractors:
             # parameter name
             psd_amp_name = f'{feature_base_name}_{name_list[it]}'
             retdict[psd_amp_name ] = psd_avg
-
+        
         return retdict
