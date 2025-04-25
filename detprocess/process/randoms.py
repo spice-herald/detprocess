@@ -144,6 +144,7 @@ class Randoms:
               f'{self._duration/60} minutes ({self._nb_events} events)')
         
         # initialize output path
+        self._output_group_path = None
     
     @property
     def verbose(self):
