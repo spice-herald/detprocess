@@ -587,7 +587,7 @@ if __name__ == "__main__":
         yaml_config = yaml_obj.get_config()
         pretrigger_window_samples = int(yaml_config['feature']['overall']['pretrigger_length_samples'])
         trace_length_samples = int(yaml_config['feature']['overall']['trace_length_samples'])
-        edge_exclusion_length = max([pretrigger_window_samples * 1.25, trace_length_samples*1.25/2])
+        edge_exclusion_length = max([trace_length_samples*1.25/2, pretrigger_window_samples*1.25])
             
         myproc.process(random_rate=random_rate,
                        nrandoms=nrandoms,
