@@ -144,7 +144,6 @@ class Randoms:
               f'{self._duration/60} minutes ({self._nb_events} events)')
         
         # initialize output path
-        self._output_group_path = None
     
     @property
     def verbose(self):
@@ -175,6 +174,7 @@ class Randoms:
                 nrandoms=None,
                 min_separation_msec=20,
                 edge_exclusion_msec=20,
+                edge_exclusion_samples=None,
                 ncores=1,
                 lgc_save=False,
                 lgc_output=False,
@@ -195,7 +195,14 @@ class Randoms:
             if self._verbose:
                 print('INFO: Changing number cores to '
                       + str(ncores) + ' (maximum possible)')
-
+        
+        #get sampling_rate
+        series_metadata = self._series_metadata_dict
+        metadata_keys = list(series_metadata.keys())
+        sample_rate = series_metadata[metadata_keys[0]]['overall']['sample_rate']
+        if edge_exclusion_samples is not None:
+            edge_exclusion_sec = edge_exclusion_samples/sample_rate
+        
         # convert to seconds
         min_separation_sec = min_separation_msec/1000
         edge_exclusion_sec = edge_exclusion_msec/1000
