@@ -175,6 +175,7 @@ class Randoms:
                 nrandoms=None,
                 min_separation_msec=20,
                 edge_exclusion_msec=20,
+                edge_exclusion_samples=None,
                 ncores=1,
                 lgc_save=False,
                 lgc_output=False,
@@ -195,10 +196,19 @@ class Randoms:
             if self._verbose:
                 print('INFO: Changing number cores to '
                       + str(ncores) + ' (maximum possible)')
-
-        # convert to seconds
+        
+        if edge_exclusion_samples is not None:
+            #get sampling_rate
+            series_metadata = self._series_metadata_dict
+            metadata_keys = list(series_metadata.keys())
+            sample_rate = series_metadata[metadata_keys[0]]['overall']['sample_rate']
+            
+            edge_exclusion_sec = edge_exclusion_samples/sample_rate
+        else:
+            # convert to seconds
+            edge_exclusion_sec = edge_exclusion_msec/1000
+            
         min_separation_sec = min_separation_msec/1000
-        edge_exclusion_sec = edge_exclusion_msec/1000
 
         # random rate
         if (random_rate is not None
