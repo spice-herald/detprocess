@@ -6,10 +6,13 @@ import pytesdaq.io as h5io
 import qetpy as qp
 from glob import glob
 import vaex as vx
+import copy
 from pathlib import Path
 from detprocess.process.randoms import Randoms
 from detprocess.core.filterdata import FilterData
 from detprocess.utils import utils
+from detprocess.core.rawdata import RawData
+
 
 class Noise(FilterData):
     """
@@ -112,11 +115,12 @@ class Noise(FilterData):
         
     def set_randoms(self, raw_path, series=None,
                     dataframe=None,
-                    event_list=None):
+                    event_list=None,
+                    restricted=False,
+                    data_type=None):
         """
-        Set raw data path and vaex dataframe 
-        with randoms events (either dataframe directly
-        or path to vaex hdf5 files)
+        Set raw data with randoms events (either full trace or 
+        using a dataframe)
         """
         
         # initialize data
@@ -129,21 +133,24 @@ class Noise(FilterData):
             raise ValueError('ERROR: choose between "dataframe" and '
                              '"event_list", not both')
         
+        # file list
+        rawdata_inst = RawData(raw_path,
+                               data_type=data_type,
+                               series=series,
+                               restricted=restricted)
+
         # get file list
-        raw_data, output_base_path, group_name = (
-            self._get_file_list(raw_path,
-                                series=series)
-        )
-        
-        if not raw_data:
-            raise ValueError('No raw data files were found! '
-                             + 'Check configuration...')
-        
-        # store as internal data
-        self._raw_base_path = output_base_path
-        self._raw_data = raw_data
-        self._group_name = group_name
-        self._series_list = list(raw_data.keys())
+        data_dict = rawdata_inst.get_data_files(data_type=data_type,
+                                                series=series)
+        if not data_dict:
+            raise ValueError(f'No files with data type "{data_type}" '
+                             f'were found! Check raw data path...')
+
+        # save info
+        self._raw_data = copy.deepcopy(data_dict)
+        self._raw_base_path = rawdata_inst.get_base_path()
+        self._group_name = rawdata_inst.get_group_name()
+        self._series_list = list(self._raw_data.keys())
         self._detector_config = dict()
 
         # check dataframe
@@ -183,27 +190,33 @@ class Noise(FilterData):
         self.clear_randoms()
 
         # get file list
-        raw_data, output_base_path, group_name = (
-            self._get_file_list(raw_path,
-                                series=series,
-                                restricted=restricted,
-                                calib=calib)
-        )
-        
-        if not raw_data:
-            raise ValueError('No raw data files were found! '
-                             + 'Check configuration...')
-        
-        # store as internal data
-        self._raw_data = raw_data
-        self._group_name = group_name
-        self._raw_base_path = output_base_path
-        self._series_list = list(raw_data.keys())
+        data_type = 'cont'
+        if calib:
+            restricted = False
+            data_type = 'calib'
+            
+        rawdata_inst = RawData(raw_path,
+                               data_type=data_type,
+                               series=series,
+                               restricted=restricted)
+
+        # get file list
+        data_dict = rawdata_inst.get_data_files(data_type=data_type,
+                                                series=series)
+        if not data_dict:
+            raise ValueError(f'No files with data type "{data_type}" '
+                             f'were found! Check raw data path...')
+
+        # save info
+        self._raw_data = copy.deepcopy(data_dict)
+        self._raw_base_path = rawdata_inst.get_base_path()
+        self._group_name = rawdata_inst.get_group_name()
+        self._series_list = list(self._raw_data.keys())
         self._detector_config = dict()
 
-             
+                       
         # generate randoms
-        rand_inst = Randoms(raw_path, series=series,
+        rand_inst = Randoms(rawdata_inst, series=series,
                             verbose=self._verbose,
                             restricted=restricted,
                             calib=calib)

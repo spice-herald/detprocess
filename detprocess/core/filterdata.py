@@ -9,7 +9,7 @@ from qetpy.utils import convert_channel_name_to_list, convert_channel_list_to_na
 import qetpy.plotting as plotting
 from qetpy import calc_corrcoeff_from_csd
 import copy
-
+from detprocess.utils import estimate_sampling_rate
 
 class FilterData:
     """
@@ -224,6 +224,18 @@ class FilterData:
                   + file_name)
             
         # update
+        self.set_data(data, overwrite=overwrite)
+                                
+    def set_data(self, data, overwrite=False):
+        """
+        Set data directly
+        """
+
+        if not isinstance(data, dict):
+            raise ValueError('ERROR: filter data should be a '
+                             'dictionary!')
+
+        # update
         if overwrite or not self._filter_data:
             self._filter_data.update(data)
         else:
@@ -236,7 +248,7 @@ class FilterData:
                         self._filter_data[key][par_name] = (
                             data[key][par_name]
                         )
-
+                        
                         
                         
     def save_hdf5(self, file_name, overwrite=False):
@@ -316,7 +328,7 @@ class FilterData:
                 if 'sample_rate' in metadata:
                     sample_rate = float(metadata['sample_rate'])
                 else:
-                    sample_rate = 2*np.max(np.abs(psd_freqs))
+                    sample_rate = estimate_sampling_rate(psd_freqs)
 
                 psd_freqs, psd = fold_spectrum(psd, sample_rate)
                 
@@ -358,7 +370,8 @@ class FilterData:
         ----------
 
         channels :  str or list 
-           channel list or channel string with "|" separation
+           channel string (multi-channels use "|" separation) 
+            or list
         
         tag : str, optional
             psd tag, default: No tag
@@ -382,11 +395,11 @@ class FilterData:
         channel_name = convert_channel_list_to_name(channels)
         nb_channels = len(channel_list)
 
-        if nb_channels < 2:
-            raise ValueError(
-                'ERROR: At least 2 channels required to calculate csd'
-            )
-        
+        if nb_channels == 1:
+            return self.get_psd(channel_name, tag=tag,
+                                fold=fold,
+                                return_metadata=return_metadata)
+                
         # get values
         output_metadata = dict()
         csd, csd_freqs, metadata = (
@@ -405,7 +418,7 @@ class FilterData:
             if 'sample_rate' in metadata:
                 sample_rate = float(metadata['sample_rate'])
             else:
-                sample_rate = 2*np.max(np.abs(csd_freqs))
+                sample_rate = estimate_sampling_rate(csd_freqs)
                 
             csd_freqs, csd = fold_spectrum(csd, sample_rate)
 
@@ -413,8 +426,8 @@ class FilterData:
             return csd, csd_freqs, output_metadata
         else:
             return csd, csd_freqs
-            
-    
+
+      
     def get_template(self, channel, tag='default',
                      return_metadata=False):
         """
@@ -427,7 +440,7 @@ class FilterData:
            channel name
         
         tag : str, optional
-            psd tag, default: No tag
+            template tag, default: No tag
 
         Return
         ------
@@ -487,6 +500,7 @@ class FilterData:
                      sample_rate=None,
                      pretrigger_length_msec=None,
                      pretrigger_length_samples=None,
+                     template_time_tags=None,
                      metadata=None,
                      tag='default'):
         """
@@ -515,6 +529,19 @@ class FilterData:
                 'array [nchans, ntemps, nsamples] '
             )
         
+        if template_time_tags is not None:
+            if not isinstance(template_time_tags, np.ndarray):
+                raise ValueError(
+                    'ERROR: Expecting "template_time_tags" to '
+                    'be an array or None'
+                )
+            if template_time_tags.ndim != 1 or \
+                len(template_time_tags) != template.shape[1]:
+                raise ValueError(
+                    'ERROR: Expecting "template_time_tags" to '
+                    'be a 1D array with length = # templates'
+                )
+        
         # sample rate / pretrigger length
         if sample_rate is None:
             raise ValueError('ERROR: "sample_rate" argument required!')
@@ -541,7 +568,8 @@ class FilterData:
             metadata = dict()
         metadata['sample_rate'] =  sample_rate
         metadata['nb_samples'] = template.shape[-1]
-        metadata['nb_pretrigger_samples'] = pretrigger_length_samples    
+        metadata['nb_pretrigger_samples'] = pretrigger_length_samples
+        metadata['template_time_tags'] = template_time_tags
 
         # store
         if channel_name not in self._filter_data.keys():
@@ -599,7 +627,7 @@ class FilterData:
                              'for "psd_freqs" argument')
 
         # add dimension if needed
-        if psd_freqs.ndim == 1:
+        if psd_freqs.ndim == 2:
             psd_freqs = psd_freqs[np.newaxis, :]
 
         # check if folded -> NOT ALLOWED
@@ -608,10 +636,10 @@ class FilterData:
             raise ValueError('ERROR: psd needs to be two-sided!')
 
 
-        sample_rate_array = 2*np.max(np.abs(psd_freqs))
+        sample_rate_array = estimate_sampling_rate(psd_freqs[0,:])
         if sample_rate is None:
             sample_rate = sample_rate_array
-        elif sample_rate_array != sample_rate:
+        elif round(sample_rate_array) != round(sample_rate):
             raise ValueError('ERROR: sample_rate is inconsistent with '
                              'frequency array!')
         
@@ -729,10 +757,10 @@ class FilterData:
             raise ValueError('ERROR: psd needs to be two-sided!')
 
 
-        sample_rate_array = 2*np.max(np.abs(csd_freqs))
+        sample_rate_array = estimate_sampling_rate(csd_freqs)
         if sample_rate is None:
             sample_rate = sample_rate_array
-        elif sample_rate_array != sample_rate:
+        elif round(sample_rate_array) != round(sample_rate):
             raise ValueError('ERROR: sample_rate is inconsistent with '
                              'frequency array!')
                 
@@ -798,10 +826,10 @@ class FilterData:
         if is_folded:
             raise ValueError('ERROR: dpdi needs to be two-sided!')
 
-        sample_rate_array = 2*np.max(np.abs(dpdi_freqs))
+        sample_rate_array = estimate_sampling_rate(dpdi_freqs[0,:])
         if sample_rate is None:
             sample_rate = sample_rate_array
-        elif sample_rate_array != sample_rate:
+        elif round(sample_rate_array) != round(sample_rate):
             raise ValueError(f'ERROR: sample rate ({sample_rate}) '
                              f'is inconsistent with sample rate from '
                              f'frequency array ({sample_rate_array})!')

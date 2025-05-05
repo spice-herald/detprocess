@@ -17,7 +17,113 @@ class FeatureExtractors:
     convenience.
 
     """
-   
+
+    @staticmethod
+    def ofnxmx2(channel,
+                of_base,
+                available_channels=None,
+                feature_base_name='ofnxmx2',
+                template_tag=None,
+                amplitude_names=None,
+                fit_window = None,
+                **kwargs):
+        """
+        Feature extraction for the nxmx2 Optimum Filter.
+        
+        Parameters
+        ----------
+        channel : str
+          channel with format 'chan1|chan2|chan3'
+          (order matter)
+        
+        of_base : OFBase object
+           OFBase QETpy object
+           
+        lowchi2_fcutoff : float, optional
+            The frequency (in Hz) that we should cut off the chi^2 when
+            calculating the low frequency chi^2. Default is 10 kHz. (NOT IMPLEMENTED)
+        
+        available_channels : list
+           list of available channels
+           
+           
+        Returns
+        -------
+        retdict : dict
+            Dictionary containing the various extracted features.
+
+           
+        """
+          
+        # split channel name into list (same order)
+        channel_list, separator = utils.split_channel_name(
+            channel,
+            available_channels=available_channels,
+            separator='|')
+            
+        nchans = len(channel_list)
+        
+        
+        if  template_tag is None:
+            raise ValueError(f'ERROR: Missing "template_tag" argument '
+                             f'for channel {channel}, '
+                             f'algorithm "{feature_base_name}"')
+
+        # time constraints tag is the name of algorithm
+        time_constraints_tag = feature_base_name
+     
+        # check template available
+        template = of_base.template(channel,
+                                    template_tag=template_tag)
+        if template is None:
+            raise ValueError(f'ERROR: Missing template '
+                             f'for channel {channel}, '
+                             f'tag "{template_tag}", '
+                             f'algorithm "{feature_base_name}"')
+
+
+        ntmps = template.shape[1]
+        
+        
+        # amplitude names
+        if amplitude_names is None:
+            amplitude_names = []
+            for itmp in range(ntmps):
+                amplitude_names.append(f'amp{itmp+1}')
+                
+        else:
+
+            if isinstance(amplitude_names, str):
+                amplitude_names = [amplitude_names]
+
+            if len(amplitude_names) != ntmps:
+                raise ValueError(
+                    f'ERROR: Wrong length for "amplitude_names" '
+                    f'argument. Expecting {ntmps} name '
+                    f'for  channel {channel}, '
+                    f'algorithm "{feature_base_name}"')
+
+                       
+        # instantiate OF NxM
+        OF = qp.OFnxmx2(of_base=of_base,
+                        channels=channel,
+                        template_tag=template_tag,
+                        time_constraints_tag=time_constraints_tag,
+                        verbose=False)
+
+        # calc
+        OF.calc()
+        
+        amps, deltat, chi2 = OF.get_fit()
+        
+        retdict = dict()
+        retdict[f'chi2_{feature_base_name}'] = chi2
+        retdict[f'delta_t_{feature_base_name}'] = deltat
+        for iamp, amp_name in enumerate(amplitude_names):
+            retdict[f'{amp_name}_{feature_base_name}'] = amps[iamp]
+
+        return retdict
+
     @staticmethod
     def ofnxm(channel, of_base,
               available_channels=None,
@@ -80,20 +186,17 @@ class FeatureExtractors:
             raise ValueError(f'ERROR: Missing "template_tag" argument '
                              f'for channel {channel}, '
                              f'algorithm "{feature_base_name}"')
-        elif template_tag.ndim != 2:
-            raise ValueError(f'ERROR: Expecting a 2D "template_tag" '
-                             f'array  for channel {channel}, '
-                             f'algorithm "{feature_base_name}"')
-        
-        nchans_array = template_tag.shape[0]
-        ntmps =  template_tag.shape[1]
-        
-        if nchans != nchans_array:
-            raise ValueError(f'ERROR: Expecting a 2D "template_tag" '
-                             f'with shape[0] = {nchans} '
+
+        template = of_base.template(channel,
+                                    template_tag=template_tag)
+        if template is None:
+            raise ValueError(f'ERROR: Missing template '
                              f'for channel {channel}, '
+                             f'tag "{template_tag}", '
                              f'algorithm "{feature_base_name}"')
 
+
+        ntmps = template.shape[1]
         
         if amplitude_names is None:
             amplitude_names = []
@@ -114,7 +217,7 @@ class FeatureExtractors:
         # instantiate OF NxM
         OF = qp.OFnxm(of_base=of_base,
                       channels=channel,
-                      template_tags=template_tag,
+                      template_tag=template_tag,
                       verbose=False)
 
         # calc
@@ -147,7 +250,7 @@ class FeatureExtractors:
 
     @staticmethod
     def of1x1_nodelay(channel, of_base,
-                      template_tag='default',
+                      template_tag=None,
                       lowchi2_fcutoff=10000,
                       feature_base_name='of1x1_nodelay',
                       **kwargs):
@@ -163,9 +266,9 @@ class FeatureExtractors:
         of_base : OFBase object
            OFBase QETpy object 
 
-        template_tag : str, option
+        template_tag : str
            tag of the template to be used for OF calculation,
-           Default: 'default'
+        
 
         lowchi2_fcutoff : float, optional
             The frequency (in Hz) that we should cut off the chi^2 when
@@ -181,13 +284,21 @@ class FeatureExtractors:
 
         """
 
+        # check tag
+        if template_tag is None:
+            raise ValueError('ERROR: Template tag required for OF 1x1')
+
+
+        
         # instantiate OF 1x1
         OF = qp.OF1x1(of_base=of_base,
                       channel=channel,
                       template_tag=template_tag)
         
         # calc 
-        OF.calc_nodelay(lowchi2_fcutoff=lowchi2_fcutoff)
+        OF.calc(lgc_fit_withdelay=False,
+                lgc_fit_nodelay=True,
+                lowchi2_fcutoff=lowchi2_fcutoff)
 
         # get results
         amp, t0, chi2, lowchi2 = OF.get_result_nodelay()
@@ -254,6 +365,7 @@ class FeatureExtractors:
         # calc
         OF.calc(lowchi2_fcutoff=lowchi2_fcutoff,
                 interpolate_t0=interpolate,
+                lgc_fit_withdelay=True,
                 lgc_fit_nodelay=False,
                 lgc_plot=False)
 
@@ -365,6 +477,7 @@ class FeatureExtractors:
                 lowchi2_fcutoff=lowchi2_fcutoff,
                 interpolate_t0=interpolate,
                 lgc_outside_window=lgc_outside_window,
+                lgc_fit_withdelay=True,
                 lgc_fit_nodelay=False,
                 lgc_plot=False)
 
@@ -377,7 +490,7 @@ class FeatureExtractors:
 
         # get OF resolution
         ampres = OF.get_energy_resolution()
-        timeres = OF.get_time_resolution(amp)
+        timeres = OF.get_time_resolution()
 
         retdict = {
             ('amp_' + feature_base_name): amp,
@@ -392,11 +505,11 @@ class FeatureExtractors:
         return retdict
     
     @staticmethod
-    def of1x2(channel, of_base,
-              template_tag_1='Scintillation',
-              template_tag_2='Evaporation',
-              feature_base_name='of1x2',
-              **kwargs):
+    def of1x2x2(channel, of_base,
+                template_tag_1='Scintillation',
+                template_tag_2='Evaporation',
+                feature_base_name='of1x2x2',
+                **kwargs):
         """
         Feature extraction for the one channel, two template Optimum Filter.
 
@@ -747,10 +860,15 @@ class FeatureExtractors:
 
         # get OF base data
         freqs = of_base.fft_freqs()
-        trace_fft = of_base.signal_fft(channel)
+        trace_fft = of_base.signal_fft(channel, squeeze_array=True)
+        if trace_fft.ndim != 1:
+            # multi-channels, not implemented
+            raise ValueError(f'ERROR: "psd_amp" not implemented for '
+                             f'multi-channel. Remove algorithm for '
+                             f'channel {channel}!')
 
         # sample rate
-        fs = 2*np.max(np.abs(freqs))
+        fs = utils.estimate_sampling_rate(freqs)
         if 'fs' in kwargs:
             fs = kwargs['fs']
 
@@ -787,6 +905,6 @@ class FeatureExtractors:
                     
             # parameter name
             psd_amp_name = f'{feature_base_name}_{name_list[it]}'
-            retdict[psd_amp_name ] = psd_avg
-
+            retdict[psd_amp_name] = psd_avg
+        
         return retdict

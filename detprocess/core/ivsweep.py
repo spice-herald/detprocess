@@ -62,6 +62,7 @@ class IVSweepAnalysis(FilterData):
         self._tc = dict()
         self._gta = dict()
         self._tload_guess = None
+        self._noisedict = dict()
     
         # save results
         self._save_hdf5 = auto_save_hdf5
@@ -380,13 +381,14 @@ class IVSweepAnalysis(FilterData):
         if (nsc_current is not None
             and nsc_current !=  nsc_df):
             df.loc[df['state']=='sc', 'state'] = np.nan
-            df.loc[df.index[-nsc:], 'state'] = 'sc'
+            if  nsc_current != 0:
+                df.loc[df.index[-nsc_current:], 'state'] = 'sc'
             do_update = True
             
         if (nnorm_current is not None
             and nnorm_current != nnorm_df):
             df.loc[df['state']=='normal', 'state'] = np.nan
-            df.loc[:nnorm-1, 'state'] = 'normal'
+            df.loc[:nnorm_current-1, 'state'] = 'normal'
             do_update = True
             
         if do_update:
@@ -1322,7 +1324,7 @@ class IVSweepAnalysis(FilterData):
                 
         # Loop channels and do noise analysis
         for chan in channels:
-            
+            self._noisedict[chan] = {'transition': {}, 'sc': {}, 'normal': {}}
             # get dataframe
             df = self.get_ivsweep_data(chan, tag=tag)
 
@@ -1357,6 +1359,7 @@ class IVSweepAnalysis(FilterData):
 
             # loop normal noise
             for bias, obj in  didv_normal_objs.items():
+                self._noisedict[chan]['normal'][bias] = {}
 
                 # get normal psd 
                 df_bias = df[df.tes_bias_uA==bias]
@@ -1412,6 +1415,7 @@ class IVSweepAnalysis(FilterData):
                 )
 
                 squid_noise_list.append(squid_noise)
+                self._noisedict[chan]['normal'][bias] = noise_sim.get_noise_data(chan, 'normal')
 
                 
             # take average
@@ -1441,6 +1445,7 @@ class IVSweepAnalysis(FilterData):
             
             lgc_plot_once = lgc_plot
             for bias, obj in  didv_sc_objs.items():
+                self._noisedict[chan]['sc'][bias] = {}
 
                 # get normal psd 
                 df_bias = df[df.tes_bias_uA==bias]
@@ -1495,6 +1500,7 @@ class IVSweepAnalysis(FilterData):
                 tload_list.append(
                     noise_sim._noise_data[chan]['sc']['fit']['tload']
                 )
+                self._noisedict[chan]['sc'][bias] = noise_sim.get_noise_data(chan, 'sc')
 
 
             # take median and replace fit value
@@ -1519,6 +1525,7 @@ class IVSweepAnalysis(FilterData):
             gta_list = []
             
             for bias, obj in  didv_transition_objs.items():
+                self._noisedict[chan]['transition'][bias] = {}
 
                 # get normal psd 
                 df_bias = df[df.tes_bias_uA==bias]
@@ -1564,10 +1571,13 @@ class IVSweepAnalysis(FilterData):
                                         xlims=xlims,
                                         ylims_current=ylims_current,
                                         ylims_power=ylims_power)
+                # power and current noise in transition at the bias point(s)
+                self._noisedict[chan]['transition'][bias] = noise_sim.get_noise_data(chan, 'transition')
 
             tbath = np.median(tbath_list)
             ivsweep_result['noise_model_tbath'] = tbath
             ivsweep_result['noise_model_tc']  = self._tc[chan]
+            ivsweep_result['noise_dict'] = self._noisedict[chan]
             
             # save ivsweep
             self.set_ivsweep_results(chan, ivsweep_result, 'noise')
