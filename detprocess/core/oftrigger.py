@@ -420,7 +420,7 @@ class OptimumFilterTrigger:
                     'Should be (N, M, frequencies) or (frequencies,) or ' + 
                     '(1, frequencies) or (frequencies, 1).'
                 )
-        elif n_dims_template == 3:
+        elif n_dims_csd == 3:
             self._noisecsd = noisecsd
 
         # Save the number of channels, amplitudes, and frequencies/times
@@ -471,6 +471,9 @@ class OptimumFilterTrigger:
         
         # calculate the expected energy resolution for each amplitude
         self._resolution = np.sqrt(np.diag(self._iw_matrix))
+
+        # Variable to store the chi2 threshold (set when running the trigger)
+        self.chi2_threshold = None
                             
      
     def get_filtered_trace(self):
@@ -487,6 +490,14 @@ class OptimumFilterTrigger:
         """
 
         return self._delta_chi2_trace
+
+
+    def get_chi2_threshold(self):
+        """
+        Get current chi2 threshold (varies based on sigma level)
+        """
+
+        return self.chi2_threshold
     
     
     def get_trigger_data(self):
@@ -698,9 +709,9 @@ class OptimumFilterTrigger:
             # Set the saturation amplitude to +/- infinity if not given
             if saturation_amplitudes_LPF_50kHz is None:
                 if positive_pulses:
-                    saturation_amplitudes_LPF_50kHz = [np.inf for _ in self._n_channels]
+                    saturation_amplitudes_LPF_50kHz = [np.inf for _ in range(self._n_channels)]
                 else:
-                    saturation_amplitudes_LPF_50kHz = [-1 * np.inf for _ in self._n_channels]
+                    saturation_amplitudes_LPF_50kHz = [-1 * np.inf for _ in range(self._n_channels)]
 
             # Do first pass of triggers
             self.find_triggers_once(thresh,
@@ -883,6 +894,8 @@ class OptimumFilterTrigger:
                         'calculate the equivalent chi2 threshold. We are ' + 
                         'going to use the result for M = 1, which is a ' +
                         f'threshold of chi2 = {chi2_threshold}.')
+
+        self.chi2_threshold = chi2_threshold
         
         triggers_mask = self._delta_chi2_trace > chi2_threshold
 
