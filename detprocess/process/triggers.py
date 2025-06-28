@@ -23,7 +23,7 @@ from detprocess.core.eventbuilder import EventBuilder
 from detprocess.core.oftrigger import OptimumFilterTrigger
 from detprocess.utils import utils
 from detprocess.core.rawdata import RawData
-
+from distutils.util import strtobool
 import pyarrow as pa
 warnings.filterwarnings('ignore')
 
@@ -724,6 +724,12 @@ class TriggerProcessing:
                         pileup_window_samples = int(
                             trig_data['pileup_window_samples'])
 
+                    # residual triggering
+                    run_residual = False
+                    if 'run_residual' in trig_data.keys():
+                        run_residual = bool(
+                            trig_data['run_residual'])
+
                     # positive pulse
                     positive_pulses = True
                     if 'positive_pulses' in trig_data.keys():
@@ -741,7 +747,9 @@ class TriggerProcessing:
                         threshold,
                         pileup_window_msec=pileup_window_msec,
                         pileup_window_samples=pileup_window_samples,
-                        positive_pulses=positive_pulses)
+                        positive_pulses=positive_pulses,
+                        run_residual=run_residual
+                        )
 
 
                 # -----------------------

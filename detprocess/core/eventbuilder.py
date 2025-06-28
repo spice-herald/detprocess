@@ -126,7 +126,8 @@ class EventBuilder:
     def acquire_triggers(self, trigger_name, trace, thresh,
                          pileup_window_msec=None,
                          pileup_window_samples=None,
-                         positive_pulses=True):
+                         positive_pulses=True,
+                         run_residual=False):
         """
         calc
         """
@@ -148,7 +149,9 @@ class EventBuilder:
             thresh,
             pileup_window_msec=pileup_window_msec,
             pileup_window_samples=pileup_window_samples,
-            positive_pulses=positive_pulses)
+            positive_pulses=positive_pulses,
+            residual=run_residual
+        )
 
         # append trigger data to event dataframe
         # sort by trigger index
