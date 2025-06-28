@@ -294,15 +294,28 @@ def combine_trigger_data(
 
     # Loop through each key in the inner dictionaries
     for key in new_inner_dict.keys():
+        
         # Keys that are named similarly are identical
         # in reference, not just in value. I.e. trigger_index and
         # trigger_index_ch1|ch2 are the same object.
         if ('_' + trigger_name) in key:
             continue
+        
+        # Convert pyarrow string arrays to lists if necessary
+        revert_to_arrow = False
+        if isinstance(appended_inner_dict[key], pa.lib.StringArray):
+            appended_inner_dict[key] = appended_inner_dict[key].to_pylist()
+            new_inner_dict[key] = new_inner_dict[key].to_pylist()
+            revert_to_arrow = True
+        
         # Append values corresponding to unique triggers from new_trigger_data
         for idx, trigger in enumerate(new_triggers):
             if trigger in unique_new_triggers:
                 appended_inner_dict[key].append(new_inner_dict[key][idx])
+                
+        # Convert back to pyarrow arrays if they were originally in that format
+        if revert_to_arrow:
+            appended_inner_dict[key] = pa.array(appended_inner_dict[key], type=pa.string())
 
     return {trigger_name: appended_inner_dict}
 
