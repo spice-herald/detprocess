@@ -127,7 +127,8 @@ class EventBuilder:
                          pileup_window_msec=None,
                          pileup_window_samples=None,
                          positive_pulses=True,
-                         run_residual=False):
+                         run_residual=False,
+                         sat_amps_50kHz=None):
         """
         calc
         """
@@ -150,7 +151,8 @@ class EventBuilder:
             pileup_window_msec=pileup_window_msec,
             pileup_window_samples=pileup_window_samples,
             positive_pulses=positive_pulses,
-            residual=run_residual
+            residual=run_residual,
+            saturation_amplitudes_LPF_50kHz=sat_amps_50kHz
         )
 
         # append trigger data to event dataframe

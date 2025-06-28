@@ -726,9 +726,13 @@ class TriggerProcessing:
 
                     # residual triggering
                     run_residual = False
+                    sat_amps_50kHz = None
                     if 'run_residual' in trig_data.keys():
                         run_residual = bool(
                             trig_data['run_residual'])
+                        if 'sat_amps_50kHz' in trig_data.keys():
+                            sat_amps_50kHz = trig_data['sat_amps_50kHz']
+                            sat_amps_50kHz = [float(amp) for amp in sat_amps_50kHz]
 
                     # positive pulse
                     positive_pulses = True
@@ -748,7 +752,8 @@ class TriggerProcessing:
                         pileup_window_msec=pileup_window_msec,
                         pileup_window_samples=pileup_window_samples,
                         positive_pulses=positive_pulses,
-                        run_residual=run_residual
+                        run_residual=run_residual,
+                        sat_amps_50kHz=sat_amps_50kHz
                         )
 
 

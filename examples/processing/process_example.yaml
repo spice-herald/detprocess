@@ -63,12 +63,19 @@ trigger:
 
         trigger_channel: Melange025pc
 
-        of2x2_shared:
+        of2x1_shared:
             run: True
             template_tag: shared
             csd_tag: default
             pileup_window_msec: 2
             threshold_sigma: 4.0
+            run_residual: True
+            sat_amps_50kHz: [inf]
+               # Saturation amplitude in amps, after applying a 50 kHz LPF.
+               # This should be an array with length M_amplitudes.
+               # Example: [1.5e-7, 0.5e-7]
+               # To disable, use [inf, inf, ...] or comment out.
+               # This is only used if run_residual is True.
 
 
 # -------------------------------------------------
