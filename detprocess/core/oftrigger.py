@@ -204,7 +204,7 @@ def shift_templates_to_match_chi2(fs, primary_template, secondary_templates, noi
         elif n_dims_template == 2:
             if secondary_template.shape[0] == 1:
                 s_template = np.reshape(secondary_template, (1, 1, secondary_template.shape[1]))
-            elif template.shape[1] == 1:
+            elif secondary_template.shape[1] == 1:
                 s_template = np.reshape(secondary_template, (1, 1, secondary_template.shape[0]))
             else:
                 raise ValueError(
@@ -294,15 +294,28 @@ def combine_trigger_data(
 
     # Loop through each key in the inner dictionaries
     for key in new_inner_dict.keys():
+        
         # Keys that are named similarly are identical
         # in reference, not just in value. I.e. trigger_index and
         # trigger_index_ch1|ch2 are the same object.
         if ('_' + trigger_name) in key:
             continue
+        
+        # Convert pyarrow string arrays to lists if necessary
+        revert_to_arrow = False
+        if isinstance(appended_inner_dict[key], pa.lib.StringArray):
+            appended_inner_dict[key] = appended_inner_dict[key].to_pylist()
+            new_inner_dict[key] = new_inner_dict[key].to_pylist()
+            revert_to_arrow = True
+        
         # Append values corresponding to unique triggers from new_trigger_data
         for idx, trigger in enumerate(new_triggers):
             if trigger in unique_new_triggers:
                 appended_inner_dict[key].append(new_inner_dict[key][idx])
+                
+        # Convert back to pyarrow arrays if they were originally in that format
+        if revert_to_arrow:
+            appended_inner_dict[key] = pa.array(appended_inner_dict[key], type=pa.string())
 
     return {trigger_name: appended_inner_dict}
 
@@ -783,6 +796,7 @@ class OptimumFilterTrigger:
             # Return self._delta_chi2_trace to its original value
             # because right now, it is saving the residual trace.
             self._residual_delta_chi2_trace = np.copy(self._delta_chi2_trace)
+            new_delta_chi2_trace = np.copy(self._delta_chi2_trace)
             self._delta_chi2_trace = np.copy(original_delta_chi2_trace)
             
             # Combine all triggers into a single dictionary

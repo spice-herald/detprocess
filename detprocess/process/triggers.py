@@ -23,7 +23,7 @@ from detprocess.core.eventbuilder import EventBuilder
 from detprocess.core.oftrigger import OptimumFilterTrigger
 from detprocess.utils import utils
 from detprocess.core.rawdata import RawData
-
+from distutils.util import strtobool
 import pyarrow as pa
 warnings.filterwarnings('ignore')
 
@@ -724,6 +724,16 @@ class TriggerProcessing:
                         pileup_window_samples = int(
                             trig_data['pileup_window_samples'])
 
+                    # residual triggering
+                    run_residual = False
+                    sat_amps_50kHz = None
+                    if 'run_residual' in trig_data.keys():
+                        run_residual = bool(
+                            trig_data['run_residual'])
+                        if 'sat_amps_50kHz' in trig_data.keys():
+                            sat_amps_50kHz = trig_data['sat_amps_50kHz']
+                            sat_amps_50kHz = [float(amp) for amp in sat_amps_50kHz]
+
                     # positive pulse
                     positive_pulses = True
                     if 'positive_pulses' in trig_data.keys():
@@ -741,7 +751,10 @@ class TriggerProcessing:
                         threshold,
                         pileup_window_msec=pileup_window_msec,
                         pileup_window_samples=pileup_window_samples,
-                        positive_pulses=positive_pulses)
+                        positive_pulses=positive_pulses,
+                        run_residual=run_residual,
+                        sat_amps_50kHz=sat_amps_50kHz
+                        )
 
 
                 # -----------------------
