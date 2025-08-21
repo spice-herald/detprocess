@@ -170,8 +170,7 @@ class FeatureExtractors:
 
         """
         
-        debug = True
-
+        debug = False
         
         # split channel name into list (same order)
         channel_list, separator = utils.split_channel_name(
@@ -213,7 +212,22 @@ class FeatureExtractors:
                     f'argument. Expecting {ntmps} name '
                     f'for  channel {channel}, '
                     f'algorithm "{feature_base_name}"')
-                                
+
+        # Initialize output
+        retdict = dict()
+        retdict[f'chi2_{feature_base_name}_constrained'] = -999999.0
+        retdict[f't0_{feature_base_name}_constrained'] = -999999.0
+        for iamp, amp_name in enumerate(amplitude_names):
+            retdict[f'{amp_name}_{feature_base_name}_constrained'] = -999999.0    
+        retdict[f'chi2_{feature_base_name}_nodelay'] = -999999.0
+        for iamp, amp_name in enumerate(amplitude_names):
+            retdict[f'{amp_name}_{feature_base_name}_nodelay'] = -999999.0
+
+        # check if signal stored
+        if not of_base.is_signal_stored(channel):
+            return retdict
+
+            
         # instantiate OF NxM
         OF = qp.OFnxm(of_base=of_base,
                       channels=channel,
@@ -235,7 +249,6 @@ class FeatureExtractors:
         amps_nodelay, t0_nodelay, chi2_nodelay = OF.get_fit_nodelay()
         
         # store
-        retdict = dict()
         retdict[f'chi2_{feature_base_name}_constrained'] = chi2_constrained
         retdict[f't0_{feature_base_name}_constrained'] = t0_constrained
         for iamp, amp_name in enumerate(amplitude_names):
@@ -824,7 +837,7 @@ class FeatureExtractors:
 
         return retdict
 
-
+    
     @staticmethod
     def psd_amp(channel, of_base,
                 f_lims=[],
@@ -857,9 +870,24 @@ class FeatureExtractors:
             Dictionary containing the various extracted features.
 
         """
-
-        # get OF base data
+        
+        # get OF base freqs
         freqs = of_base.fft_freqs()
+    
+        # get ranges 
+        range_names, freq_ranges, ind_ranges = utils.get_ind_freq_ranges(f_lims, freqs)
+
+        # initialize output
+        retdict = {}
+        for var_base in range_names:
+            var_name = f'{feature_base_name}_{var_base}'
+            retdict[var_name] = -999999.0
+
+        # check if signal available
+        if not of_base.is_signal_stored(channel):
+            return retdict
+       
+        # get fft 
         trace_fft = of_base.signal_fft(channel, squeeze_array=True)
         if trace_fft.ndim != 1:
             # multi-channels, not implemented
@@ -880,14 +908,11 @@ class FeatureExtractors:
 
         # remove DC
         psd_fold =  psd_fold[1:]
+        psd_fold =  np.sqrt(psd_fold)
         freqs_fold = freqs_fold[1:]
-    
-        # index ranges
-        name_list, ind_range_list = utils.get_indices_from_freq_ranges(
-            freqs_fold, f_lims)
-        
+          
         retdict = {}
-        for it, ind_range in enumerate(ind_range_list):
+        for it, ind_range in enumerate(ind_ranges):
 
             ind_low = ind_range[0]
             ind_high = ind_range[1]
@@ -901,10 +926,116 @@ class FeatureExtractors:
             #                                mode='valid')
             # 
             psd_avg = np.average(psd_chunk)
-            psd_avg = np.sqrt(psd_avg)
-                    
+                           
             # parameter name
-            psd_amp_name = f'{feature_base_name}_{name_list[it]}'
+            psd_amp_name = f'{feature_base_name}_{range_names[it]}'
             retdict[psd_amp_name] = psd_avg
         
         return retdict
+
+
+    @staticmethod
+    def psd_peaks(channel, of_base,
+                  f_lims=[],
+                  npeaks=1,
+                  min_separation_hz=1.0,
+                  feature_base_name='psd_peaks',
+                  **kwargs):
+        """
+        Feature extraction for finding peaks of a psd
+        in a range of frequencies. Rather than recalculating
+        the fft, this feature references the pre-calculated OF class.
+      
+        Parameters
+        ----------
+        of_base : OFBase object, optional
+            OFBase  if it has been instantiated independently
+
+        f_lims : list of list of floats
+            A list of [f_low, f_high]s between which the averaged PSD is
+            calculated. For example, [[45.0, 65.0], [120.0, 130.0]]
+
+        npeaks : number of peaks to search. Default=1
+
+        min_separation_hz : minimum separation between peaks
+
+        feature_base_name : str, option
+            output feature base name
+
+        Returns
+        -------
+        retdict : dict
+            Dictionary containing the various extracted features.
+
+        """
+        
+        # get ranges 
+        range_names, freq_ranges,_ = utils.get_ind_freq_ranges(f_lims)
+
+        # initialize output
+        retdict = {}
+        for i in range(1, npeaks + 1):
+            for var_base in range_names:
+                var_name_amp = f'{feature_base_name}_{var_base}_amp_{i}'
+                var_name_freq = f'{feature_base_name}_{var_base}_freq_{i}'
+                retdict[var_name_amp] = -999999.0
+                retdict[var_name_freq] = -999999.0
+                
+        # check if signal stored
+        if not of_base.is_signal_stored(channel):
+            return retdict
+        
+        trace_fft = of_base.signal_fft(channel, squeeze_array=True)
+        freqs = of_base.fft_freqs()
+        nbins = of_base.nb_samples()
+
+        if trace_fft.ndim != 1:
+            # multi-channels, not implemented
+            raise ValueError(f'ERROR: "psd_amp" not implemented for '
+                             f'multi-channel. Remove algorithm for '
+                             f'channel {channel}!')
+
+        # sample rate
+        fs = utils.estimate_sampling_rate(freqs)
+        if 'fs' in kwargs:
+            fs = kwargs['fs']
+
+        # calculate psd
+        psd = (np.abs(trace_fft)**2.0)*nbins/fs
+        
+        # fold
+        freqs_fold, psd_fold = qp.utils.fold_spectrum(psd, fs)
+        
+        # remove DC
+        psd_fold =  psd_fold[1:]
+        psd_fold =  1e12*np.sqrt(psd_fold)
+        freqs_fold = freqs_fold[1:]
+              
+        # loop range and find peaks
+        for it, freq_range in enumerate(freq_ranges):
+
+            # find peaks within interval
+            result_list = utils.find_psd_peaks(
+                freqs_fold, psd_fold,
+                fmin=freq_range[0], fmax=freq_range[1],
+                npeaks=npeaks,
+                min_separation_hz=min_separation_hz,
+                min_prominence=None)
+
+            if len(result_list) == 0:
+                continue
+            
+            # var base name
+            var_base = range_names[it]
+            
+            # loop peaks
+            for i in range(npeaks):
+                result = result_list[i]
+                var_name_amp = f'{feature_base_name}_{var_base}_amp_{i+1}'
+                var_name_freq = f'{feature_base_name}_{var_base}_freq_{i+1}'
+                retdict[var_name_amp] = result['amplitude']
+                retdict[var_name_freq] =  result['freq']
+            
+        # done
+        return retdict
+    

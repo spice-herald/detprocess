@@ -92,7 +92,8 @@ class ProcessingData:
         self._OF_base_objs = dict()
         self._OF_base_algorithms = [
             'of1x1', 'of1x2x2', 'of1x3x3',
-            'ofnxm', 'ofnxmx2', 'psd_amp'
+            'ofnxm', 'ofnxmx2', 'psd_amp',
+            'psd_peaks'
         ]
         
         # initialize raw data reader
@@ -108,7 +109,7 @@ class ProcessingData:
         self._current_series_number = None
         self._current_trigger_index = None
         self._current_salting_info = None
-        
+             
         # get ADC and file info
         self._data_info = self._extract_data_info()
             
@@ -251,6 +252,12 @@ class ProcessingData:
                     self._OF_base_objs[key_tuple]['algorithms'].append(algo)
 
 
+                # no template/csd for psd_amp
+                if (algo_base == 'psd_amp' or algo_base == 'psd_peaks'):
+                    self._OF_base_objs[key_tuple]['OF']._nbins = nb_samples
+                    continue
+
+                    
                 # add csd/psd
                 csd_tag = 'default'
                 if 'csd_tag' in algo_config:
@@ -600,7 +607,7 @@ class ProcessingData:
     
             # intialize
             self._current_truncated_traces_data = dict()
-            
+                    
             # case salting
             if self._salting_inst is not None:
 
@@ -714,6 +721,11 @@ class ProcessingData:
 
             # clear
             self._OF_base_objs[key_tuple]['OF'].clear_signal()
+
+            # check if signal extracted
+            if (self._current_truncated_traces_data is not None
+                and self._current_truncated_traces_data[key_tuple]['traces'] is None):
+                continue
             
             nb_samples = int(key_tuple[0])
             nb_pretrigger_samples = int(key_tuple[1])
@@ -989,10 +1001,14 @@ class ProcessingData:
                 )
 
             # get array
-            array = self._current_truncated_traces_data[key]['traces'][channel_indices,:]
-
-
+            if (self._current_truncated_traces_data[key]['traces'] is not None):
+                array = self._current_truncated_traces_data[key]['traces'][channel_indices,:]
+           
         # Build output
+        if array is None:
+            return array
+
+        
         if separator == '+':
             if weights is not None:
                 weights_array = weights_array[:, np.newaxis]
