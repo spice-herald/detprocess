@@ -2,7 +2,7 @@ import numpy as np
 import qetpy as qp
 from detprocess.utils import utils
 import random
-
+from pprint import pprint
 
 __all__ = [
     'FeatureExtractors',
@@ -938,7 +938,7 @@ class FeatureExtractors:
     def psd_peaks(channel, of_base,
                   f_lims=[],
                   npeaks=1,
-                  min_separation_hz=1.0,
+                  min_separation_hz=0.0,
                   feature_base_name='psd_peaks',
                   **kwargs):
         """
@@ -1021,21 +1021,22 @@ class FeatureExtractors:
                 npeaks=npeaks,
                 min_separation_hz=min_separation_hz,
                 min_prominence=None)
-
-            if len(result_list) == 0:
-                continue
-            
+                     
             # var base name
             var_base = range_names[it]
             
             # loop peaks
             for i in range(npeaks):
-                result = result_list[i]
                 var_name_amp = f'{feature_base_name}_{var_base}_amp_{i+1}'
                 var_name_freq = f'{feature_base_name}_{var_base}_freq_{i+1}'
-                retdict[var_name_amp] = result['amplitude']
-                retdict[var_name_freq] =  result['freq']
-            
+                if i < len(result_list):
+                    result = result_list[i]
+                    retdict[var_name_amp] = result['amplitude']
+                    retdict[var_name_freq] =  result['freq']
+                else:
+                    retdict[var_name_amp] = 0
+                    retdict[var_name_freq] = -999999.
+                    
         # done
         return retdict
     

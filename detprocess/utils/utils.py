@@ -557,7 +557,7 @@ def estimate_sampling_rate(freq_array):
 def find_psd_peaks(
         f, psd,
         fmin=100.0, fmax=1000.0,
-        npeaks=2,
+        npeaks=1,
         min_separation_hz=0.0,
         min_prominence=None):
     
@@ -591,28 +591,89 @@ def find_psd_peaks(
 
     # Restrict to search band
     band_mask = (f >= fmin) & (f <= fmax)
+    
     if not np.any(band_mask):
-        return []
+        # No bins fall strictly inside the band: choose the closest bin
+        # Strategy: compute distance to the interval [fmin, fmax]
+        # If f[i] < fmin -> distance = fmin - f[i]
+        # If f[i] > fmax -> distance = f[i] - fmax
+        # If f[i] inside -> distance = 0 (but this case is already excluded here)
+        distances = np.where(f < fmin, fmin - f,
+                             np.where(f > fmax, f - fmax, 0.0))
+        idx = np.argmin(distances)
+        f_band = np.array([f[idx]])
+        y_band = np.array([y[idx]])
+        return [{
+            "freq": float(f_band[0]),
+            "amplitude": float(y_band[0]),
+            "prominence": None,
+            "left_base_freq": None,
+            "right_base_freq": None,
+            "index": int(idx),
+        }]
 
+        
     f_band = f[band_mask]
     y_band = y[band_mask]
-
+    base = int(np.where(band_mask)[0][0])
+    
+    # Case only one bin in range
+    if len(f_band) == 1:
+        return [{
+            "freq": float(f_band[0]),
+            "amplitude": float(y_band[0]),
+            "prominence": None,
+            "left_base_freq": None,
+            "right_base_freq": None,
+            "index": int(base),
+        }]
+    
     # Frequency resolution -> convert min separation (Hz) to bins
-    if len(f_band) > 1:
-        df = np.median(np.diff(f_band))
-        df = df if df > 0 else (f_band[-1] - f_band[0]) / max(1, len(f_band) - 1)
+    df = np.median(np.diff(f_band)) if len(f_band) > 1 else np.inf
+    if np.isfinite(df) and min_separation_hz > 0:
+        distance_bins = max(1, int(np.ceil(min_separation_hz / df)))
     else:
-        df = np.inf
-        
-    distance_bins = int(np.ceil(min_separation_hz / df)) if np.isfinite(df) else 0
-    distance_bins = max(distance_bins, 1) if min_separation_hz > 0 else None
+        distance_bins = 0   # safe default
+
 
     # Peak finding
     # Prominence is given in the same units as y_band (linear or dB)
-    peaks_idx, props = find_peaks(y_band, prominence=min_prominence, distance=distance_bins)
+    distance_arg = distance_bins if distance_bins >= 1 else None
+    peaks_idx, props = find_peaks(y_band, prominence=min_prominence, distance=distance_arg)
 
     if peaks_idx.size == 0:
-        return []
+
+        # Fallback: take up to `npeaks` largest bins, optionally separated by `distance_bins`
+        y_work = y_band.copy()
+        picked = []
+
+        for _ in range(min(npeaks, len(y_work))):
+            j = int(np.nanargmax(y_work))
+            if not np.isfinite(y_work[j]):
+                break
+            picked.append(j)
+
+            # Suppress neighbors so we don;t pick adjacent bins of the same line
+            if distance_bins > 0:
+                lo = max(0, j - distance_bins)
+                hi = min(len(y_work), j + distance_bins + 1)
+                y_work[lo:hi] = -np.inf
+            else:
+                y_work[j] = -np.inf  # just exclude the chosen bin
+
+        # Build results, ordered by amplitude (desc)
+        results = [{
+            "freq": float(f_band[j]),
+            "amplitude": float(y_band[j]),
+            "prominence": None,
+            "left_base_freq": None,
+            "right_base_freq": None,
+            "index": int(base + j),
+        } for j in picked]
+
+        results.sort(key=lambda d: d["amplitude"], reverse=True)
+        return results
+
 
     # Sort by height (amplitude) descending and take top-N
     sort_order = np.argsort(y_band[peaks_idx])[::-1]
@@ -641,7 +702,7 @@ def find_psd_peaks(
             'prominence': prom,
             'left_base_freq':left_base_freq,
             'right_base_freq': right_base_freq,
-            'index': int(np.where(band_mask)[0][0] + idx)  # index in original arrays
+            'index': int(base + idx)  # index in original arrays
         })
     # Sort the returned list by frequency 
     # results.sort(key=lambda d: d['freq'])
