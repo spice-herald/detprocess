@@ -980,6 +980,10 @@ class FeatureExtractors:
                 var_name_freq = f'{feature_base_name}_{var_base}_freq_{i}'
                 retdict[var_name_amp] = -999999.0
                 retdict[var_name_freq] = -999999.0
+        # DC
+        retdict[f'{feature_base_name}_dc_amp'] = -999999.0
+
+
                 
         # check if signal stored
         if not of_base.is_signal_stored(channel):
@@ -1005,7 +1009,10 @@ class FeatureExtractors:
         
         # fold
         freqs_fold, psd_fold = qp.utils.fold_spectrum(psd, fs)
-        
+
+        # store DC amp
+        retdict[f'{feature_base_name}_dc_amp'] = 1e12*np.sqrt(psd_fold[0])
+
         # remove DC
         psd_fold =  psd_fold[1:]
         psd_fold =  1e12*np.sqrt(psd_fold)
