@@ -74,7 +74,7 @@ def split_channel_name(channel_name,
     Split channel name after various checks and return
     list of individual channels and separator(s)
     """
-
+    
     # allowed separators
     allowed_separators = [',', '|', '+' ,'-']
 
@@ -147,17 +147,9 @@ def split_channel_name(channel_name,
         if sep not in allowed_separators:
             non_separator_list.append(sep)
     if non_separator_list:
-        if label is None:
-            raise ValueError(
-                f'ERROR: Unidentified channel(s) in yaml file! '
-                f'Perhaps not in raw data... or misspelled?'
-            )
-        else:
-            raise ValueError(
-                f'ERROR: Unidentified channel(s) in yaml file '
-                f'({label}) '
-                f'Perhaps not in raw data... or misspelled?'
-            )
+        raise ValueError(
+            f'ERROR: Unidentified channel "{channel_name}" in yaml file! '
+            f'Perhaps not in raw data? Available channels = {available_channels}')
 
     # if no separator 
     if separator is None:

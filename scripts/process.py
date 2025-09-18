@@ -598,8 +598,12 @@ if __name__ == "__main__":
 
         # find trace length and pretrigger for estimation of
         # exclusion
-        pretrigger_length_samples = None
-        trace_length_samples = None
+
+        # let do a default of 50ms, with 25ms pretrigger
+        pretrigger_length_samples = int(sample_rate*50*1e-3)
+        trace_length_samples = int(sample_rate*25*1e-3)
+
+        # get from global parameters if exist
         feature_config = yaml_obj.get_config('feature')['overall']
          
         if 'pretrigger_length_samples' in feature_config:
@@ -623,7 +627,7 @@ if __name__ == "__main__":
         myproc.process(random_rate=random_rate,
                        nrandoms=nrandoms,
                        ncores=ncores,
-                       edge_exclusion_samples=int(edge_exclusion_samples),
+                       edge_exclusion_samples=edge_exclusion_samples,
                        lgc_save=True,
                        lgc_output=False,
                        save_path=save_path)

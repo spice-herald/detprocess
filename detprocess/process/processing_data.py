@@ -683,14 +683,18 @@ class ProcessingData:
                         'traces': traces,
                         'channels': info['detector_chans']
                     }
-                    
+
                     if self._current_admin_info is None:
                         self._current_admin_info = info
                     else:
                         self._current_admin_info['detector_config'].update(
                             info['detector_config']
                         )
-
+                        
+                    self._current_admin_info['detector_config'] = copy.deepcopy(
+                        self._current_admin_info['detector_config']
+                    )
+                    
             # update info
             self._current_event_number = event_number
             self._current_series_number = series_number
@@ -906,9 +910,13 @@ class ProcessingData:
             return admin_dict
 
         #  get channels list
+        available_channels = self._available_channels
+        if available_channels is None:
+            available_channels = self._current_admin_info['detector_chans']
+               
         channels, separator = utils.split_channel_name(
             channel,
-            available_channels=self._current_admin_info['detector_chans']
+            available_channels=available_channels
         )
 
         # fill dictionary
@@ -947,9 +955,13 @@ class ProcessingData:
         array = None
 
         #  get channels for case + or | used
+        available_channels = self._available_channels
+        if available_channels is None:
+            available_channels = self._current_admin_info['detector_chans']
+            
         channels, separator = utils.split_channel_name(
             channel,
-            available_channels=self._current_admin_info['detector_chans']
+            available_channels=available_channels
         )
 
         weights_array = None
