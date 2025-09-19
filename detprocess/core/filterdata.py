@@ -736,7 +736,7 @@ class FilterData:
             or csd.ndim != 3):
             raise ValueError('ERROR: Expecting a 3D numpy array!')
         
-        if (len(channels) != csd.shape[0]
+        if (nb_channels != csd.shape[0]
             or csd.shape[0] != csd.shape[1]):
             raise ValueError('ERROR: Array shape not consistent with '
                              'number of channels!')

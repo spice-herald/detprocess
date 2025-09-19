@@ -3,6 +3,7 @@ import sys
 import numpy as np
 from pathlib import Path
 from scipy.optimize import curve_fit
+from scipy.signal import find_peaks
 import yaml
 import copy
 from yaml.loader import SafeLoader
@@ -18,8 +19,8 @@ from glob import glob
 
 __all__ = ['split_channel_name', 'extract_window_indices',
            'find_linear_segment', 'create_directory', 'create_series_name',
-           'get_dataframe_series_list', 'get_indices_from_freq_ranges',
-           'is_empty','unique_list','estimate_sampling_rate']
+           'get_dataframe_series_list', 'get_ind_freq_ranges',
+           'is_empty','unique_list','estimate_sampling_rate' ,'find_psd_peaks']
 
 
     
@@ -73,7 +74,7 @@ def split_channel_name(channel_name,
     Split channel name after various checks and return
     list of individual channels and separator(s)
     """
-
+    
     # allowed separators
     allowed_separators = [',', '|', '+' ,'-']
 
@@ -146,17 +147,9 @@ def split_channel_name(channel_name,
         if sep not in allowed_separators:
             non_separator_list.append(sep)
     if non_separator_list:
-        if label is None:
-            raise ValueError(
-                f'ERROR: Unidentified channel(s) in yaml file! '
-                f'Perhaps not in raw data... or misspelled?'
-            )
-        else:
-            raise ValueError(
-                f'ERROR: Unidentified channel(s) in yaml file '
-                f'({label}) '
-                f'Perhaps not in raw data... or misspelled?'
-            )
+        raise ValueError(
+            f'ERROR: Unidentified channel "{channel_name}" in yaml file! '
+            f'Perhaps not in raw data? Available channels = {available_channels}')
 
     # if no separator 
     if separator is None:
@@ -440,17 +433,25 @@ def unique_list(alist):
     return unique_items
 
 
-def get_indices_from_freq_ranges(freqs, freq_ranges):
+def get_ind_freq_ranges(freq_ranges, freqs=None):
     """
-    convert frequency ranges to index ranges. Return 
-    also name freq[0]_freq[1]
+    Return name/frequency/index  list
     """
 
     name_list = list()
-    index_ranges = list()
-        
+    freq_range_list = list()
+    ind_range_list = list()
+
+    if len(freq_ranges)<1:
+        return
+
+    if (len(freq_ranges)== 2
+        and (isinstance(freq_ranges[0], float)
+             or isinstance(freq_ranges[0], int))):
+        freq_ranges = [freq_ranges]
+            
     for it, freq_range in enumerate(freq_ranges):
-                        
+        
         # ignore if not a range
         if len(freq_range) != 2:
             continue
@@ -462,31 +463,35 @@ def get_indices_from_freq_ranges(freqs, freq_ranges):
         if f_low > f_high:
             f_low = abs(freq_range[1])
             f_high = abs(freq_range[0])
-                
-                    
-        # indices
-        ind_low = np.argmin(np.abs(freqs - f_low))
-        ind_high = np.argmin(np.abs(freqs - f_high))
-
-        # check if proper range
-        if ind_low == ind_high:
-            if ind_low < len(freqs)-2:
-                ind_high = ind_low + 1
-            else:
-                continue
-            
-                
-        # store
+                                
+        # check if duplicate
         name = f'{round(f_low)}_{round(f_high)}'
-        
         if name in name_list:
             continue
-            
-        name_list.append(name)
-        index_ranges.append((ind_low, ind_high))
 
+        # get indicies
+        ind_low = None
+        ind_high = None
+        
+        if freqs is not None:
+            ind_low = np.argmin(np.abs(freqs - f_low))
+            ind_high = np.argmin(np.abs(freqs - f_high))
+
+            # check if proper range
+            if ind_low == ind_high:
+                if ind_low < len(freqs)-2:
+                    ind_high = ind_low + 1
+                else:
+                    continue
+        
+        
+        # store
+        name_list.append(name)
+        freq_range_list.append((f_low, f_high))
+        if freqs is not None:
+            ind_range_list.append((ind_low, ind_high))
             
-    return name_list, index_ranges
+    return name_list, freq_range_list, ind_range_list
 
 
 def estimate_sampling_rate(freq_array):
@@ -539,3 +544,158 @@ def estimate_sampling_rate(freq_array):
     
     fs = N * df
     return fs
+
+
+def find_psd_peaks(
+        f, psd,
+        fmin=100.0, fmax=1000.0,
+        npeaks=1,
+        min_separation_hz=0.0,
+        min_prominence=None):
+    
+    """
+    Find up to `npeaks` highest peaks in a PSD between fmin and fmax.
+    
+    Parameters
+    ----------
+    f : array-like
+        Frequency array (Hz).
+    psd : array-like
+        PSD values. Linear units by default. If `use_db=True`, provide in dB.
+    fmin, fmax : float
+        Frequency search band (Hz).
+    npeaks : int
+        Number of peaks to return (top-N by amplitude within band).
+    min_separation_hz : float
+        Enforce a minimum separation between detected peaks (in Hz).
+    min_prominence : float or None
+        Minimum prominence (same units as `Pxx`, or dB if `use_db=True`).
+        Leave None to let `find_peaks` decide automatically.
+     
+    Returns
+    -------
+    peaks : list of dict
+        Each dict has: 'freq', 'amplitude', 'prominence', 'left_base_freq', 'right_base_freq', 'index'
+    """
+    
+    f = np.asarray(f)
+    y = np.asarray(psd)
+
+    # Restrict to search band
+    band_mask = (f >= fmin) & (f <= fmax)
+    
+    if not np.any(band_mask):
+        # No bins fall strictly inside the band: choose the closest bin
+        # Strategy: compute distance to the interval [fmin, fmax]
+        # If f[i] < fmin -> distance = fmin - f[i]
+        # If f[i] > fmax -> distance = f[i] - fmax
+        # If f[i] inside -> distance = 0 (but this case is already excluded here)
+        distances = np.where(f < fmin, fmin - f,
+                             np.where(f > fmax, f - fmax, 0.0))
+        idx = np.argmin(distances)
+        f_band = np.array([f[idx]])
+        y_band = np.array([y[idx]])
+        return [{
+            "freq": float(f_band[0]),
+            "amplitude": float(y_band[0]),
+            "prominence": None,
+            "left_base_freq": None,
+            "right_base_freq": None,
+            "index": int(idx),
+        }]
+
+        
+    f_band = f[band_mask]
+    y_band = y[band_mask]
+    base = int(np.where(band_mask)[0][0])
+    
+    # Case only one bin in range
+    if len(f_band) == 1:
+        return [{
+            "freq": float(f_band[0]),
+            "amplitude": float(y_band[0]),
+            "prominence": None,
+            "left_base_freq": None,
+            "right_base_freq": None,
+            "index": int(base),
+        }]
+    
+    # Frequency resolution -> convert min separation (Hz) to bins
+    df = np.median(np.diff(f_band)) if len(f_band) > 1 else np.inf
+    if np.isfinite(df) and min_separation_hz > 0:
+        distance_bins = max(1, int(np.ceil(min_separation_hz / df)))
+    else:
+        distance_bins = 0   # safe default
+
+
+    # Peak finding
+    # Prominence is given in the same units as y_band (linear or dB)
+    distance_arg = distance_bins if distance_bins >= 1 else None
+    peaks_idx, props = find_peaks(y_band, prominence=min_prominence, distance=distance_arg)
+
+    if peaks_idx.size == 0:
+
+        # Fallback: take up to `npeaks` largest bins, optionally separated by `distance_bins`
+        y_work = y_band.copy()
+        picked = []
+
+        for _ in range(min(npeaks, len(y_work))):
+            j = int(np.nanargmax(y_work))
+            if not np.isfinite(y_work[j]):
+                break
+            picked.append(j)
+
+            # Suppress neighbors so we don;t pick adjacent bins of the same line
+            if distance_bins > 0:
+                lo = max(0, j - distance_bins)
+                hi = min(len(y_work), j + distance_bins + 1)
+                y_work[lo:hi] = -np.inf
+            else:
+                y_work[j] = -np.inf  # just exclude the chosen bin
+
+        # Build results, ordered by amplitude (desc)
+        results = [{
+            "freq": float(f_band[j]),
+            "amplitude": float(y_band[j]),
+            "prominence": None,
+            "left_base_freq": None,
+            "right_base_freq": None,
+            "index": int(base + j),
+        } for j in picked]
+
+        results.sort(key=lambda d: d["amplitude"], reverse=True)
+        return results
+
+
+    # Sort by height (amplitude) descending and take top-N
+    sort_order = np.argsort(y_band[peaks_idx])[::-1]
+    top = sort_order[:npeaks]
+
+    results = []
+    for i in top:
+        idx = peaks_idx[i]
+        amp = float(y_band[idx])
+        freq = float(f_band[idx])
+        prom = None
+        left_base_freq = None
+        right_base_freq = None
+        if props:
+            if 'prominence' in props:
+                prom = float(props['prominence'][i])
+            if 'left_bases' in props:
+                lb = props['left_bases'][i]
+                left_base_freq = float(f_band[lb])
+            if 'right_bases' in  props:
+                rb = props['right_bases'][i]
+                right_base_freq = float(f_band[rb])
+        results.append({
+            'freq': freq,
+            'amplitude': amp,
+            'prominence': prom,
+            'left_base_freq':left_base_freq,
+            'right_base_freq': right_base_freq,
+            'index': int(base + idx)  # index in original arrays
+        })
+    # Sort the returned list by frequency 
+    # results.sort(key=lambda d: d['freq'])
+    return results
