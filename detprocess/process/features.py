@@ -794,9 +794,27 @@ class FeatureProcessing:
                         extracted_features = dict()
                         
                         # For OF algorithms, get OB base object
-                        key_tuple = (nb_samples_algorithm,
-                                     nb_pretrigger_samples_algorithm)
+                        of_tuple_tag = 'default'
+                        if 'csd_tag' in algorithm_params:
+                            of_tuple_tag = algorithm_params['csd_tag']
+
+                        coupling = 'AC'
+                        if 'coupling' in  algorithm_params:
+                            coupling = algorithm_params['coupling']    
+                        of_tuple_tag = f'{of_tuple_tag}_{coupling}'
+
+                        if 'ignored_frequency_peaks' in algorithm_params:
+                            freqs = algorithm_params['ignored_frequency_peaks']
+                            if not isinstance(freqs, list):
+                                freqs = [freqs]
+                            freqs_string = "_".join(map(str, freqs))
+                            of_tuple_tag = f'{of_tuple_tag}_{freqs_string}'
+
                         
+                        key_tuple = (nb_samples_algorithm,
+                                     nb_pretrigger_samples_algorithm,
+                                     of_tuple_tag)
+          
                         OF_base = self._processing_data_inst.get_OF_base(
                             key_tuple, algorithm)
                                                   

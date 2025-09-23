@@ -356,6 +356,7 @@ class OptimumFilterTrigger:
     def __init__(self, trigger_channel,
                  fs, template, noisecsd,
                  pretrigger_samples,
+                 ignored_frequency_peaks=None,
                  trigger_name=None):
         """
         Initialization of the FIR filter.
@@ -381,6 +382,14 @@ class OptimumFilterTrigger:
             Same shape requirements as "template", though the number of
             samples is replaced by the number of frequencies (which 
             should be equal, anyway).
+
+        ignored_frequency_peaks : float or list of float [default=None] 
+            frequencies that are ignored in optimal filter
+            calculation. The nearest bin (both positive/negative frequencies) from
+            given frequency is selected and CSD frequency set to infinity.
+
+
+
         """
 
         # save internal variables
@@ -464,8 +473,9 @@ class OptimumFilterTrigger:
             template_tag=template_tag,
             pretrigger_samples=self._pretrigger_samples
         )
-        
-        self._of_base.set_csd(self._trigger_channel, self._noisecsd)
+
+        self._of_base.set_csd(self._trigger_channel, self._noisecsd,
+                              ignored_frequency_peaks=ignored_frequency_peaks)
         self._of_base.calc_phi(self._trigger_channel,
                                template_tag=template_tag,
                                calc_weight=True)
