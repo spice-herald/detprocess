@@ -205,9 +205,6 @@ class ProcessingData:
 
             nb_channels = len(chan_list)
                     
-            # intialize dictionary to store list of csd_tags
-            csd_tags = dict()
-            
             # loop configuration and get list of templates
             for algo, algo_config in chan_config.items():
 
@@ -237,8 +234,33 @@ class ProcessingData:
                 nb_samples = algo_config['nb_samples']
                 nb_pretrigger_samples =  algo_config['nb_pretrigger_samples']
 
+
+                # csd tag
+                csd_tag = 'default'
+                if 'csd_tag' in algo_config:
+                    csd_tag = algo_config['csd_tag']
+
+                # tag of the key OF base objects
+                of_tuple_tag = csd_tag
+                    
+                # check if csd is modified
+                coupling = 'AC'
+                if 'coupling' in  algo_config:
+                    coupling = algo_config['coupling']    
+                of_tuple_tag = f'{of_tuple_tag}_{coupling}'
+
+
+                ignored_frequency_peaks = None
+                if 'ignored_frequency_peaks' in algo_config:
+                    freqs = algo_config['ignored_frequency_peaks']
+                    if not isinstance(freqs, list):
+                        freqs = [freqs]
+                    ignored_frequency_peaks = freqs
+                    freqs_string = "_".join(map(str, freqs))
+                    of_tuple_tag = f'{of_tuple_tag}_{freqs_string}'
+                
                 # instantiate OF base if needed
-                key_tuple = (nb_samples, nb_pretrigger_samples)
+                key_tuple = (nb_samples, nb_pretrigger_samples, of_tuple_tag)
                 if key_tuple not in self._OF_base_objs:
                     self._OF_base_objs[key_tuple] = {
                         'OF': qp.OFBase(sample_rate, verbose=True),
@@ -257,15 +279,6 @@ class ProcessingData:
                     self._OF_base_objs[key_tuple]['OF']._nbins = nb_samples
                     continue
 
-                    
-                # add csd/psd
-                csd_tag = 'default'
-                if 'csd_tag' in algo_config:
-                    csd_tag = algo_config['csd_tag']
-                elif 'psd_tag' in algo_config:
-                    csd_tag = algo_config['psd_tag']
-                elif 'noise_tag' in algo_config:
-                    csd_tag = algo_config['noise_tag']
 
                 # get csd
                 csd, csd_freqs, csd_metadata = (
@@ -275,11 +288,7 @@ class ProcessingData:
                         fold=False,
                         return_metadata=True)
                 )
-                
-                if nb_samples not in csd_tags:
-                    csd_tags[nb_samples] = list()  
-                csd_tags[nb_samples].append(csd_tag)
-                    
+                                    
                 # check sample rate
                 if 'sample_rate' in csd_metadata:
                     fs = csd_metadata['sample_rate']
@@ -297,16 +306,12 @@ class ProcessingData:
                             f'and csd (={csd.shape[-1]})for channel {chan}, '
                             f'algorithm {algo}!'
                         )
-                
-                # coupling
-                coupling = 'AC'
-                if 'coupling' in algo_config.keys():
-                    coupling = algo_config['coupling']
                     
                 # add in OF base
                 if self._OF_base_objs[key_tuple]['OF'].csd(chan) is None:
                     self._OF_base_objs[key_tuple]['OF'].set_csd(
-                        chan, csd, coupling=coupling
+                        chan, csd, coupling=coupling,
+                        ignored_frequency_peaks=ignored_frequency_peaks
                     )
                      
 
@@ -400,21 +405,6 @@ class ProcessingData:
                         template_tag=template_tag,
                         time_constraints_tag=algo
                     )
-                    
-                
-            # check csd tags
-            for item in csd_tags.keys():
-                csd_tags[item] = (
-                    utils.unique_list(csd_tags[item])
-                )
-                
-                if len(csd_tags[item]) != 1:
-                    raise ValueError(
-                        f'ERROR: Only a single csd tag '
-                        f'allowed for channel {chan}! '
-                    )
-
-                       
                     
         # remove duplicated
         for key in self._OF_base_objs:
@@ -723,12 +713,12 @@ class ProcessingData:
         # loop keys
         for key_tuple, key_dict in self._OF_base_objs.items():
 
-            # clear
+            # clear signal
             self._OF_base_objs[key_tuple]['OF'].clear_signal()
-
+            
             # check if signal extracted
             if (self._current_truncated_traces_data is not None
-                and self._current_truncated_traces_data[key_tuple]['traces'] is None):
+                and self._current_truncated_traces_data[key_tuple[0:2]]['traces'] is None):
                 continue
             
             nb_samples = int(key_tuple[0])

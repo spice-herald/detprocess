@@ -485,19 +485,23 @@ class TriggerProcessing:
                                  '"nb_pretrigger_samples" value')
 
             # Get noise spectrum (CSD/PSD)
-            noise_tag = 'default'
-            if 'noise_tag' in trig_data:
-                noise_tag = trig_data['noise_tag']
-            elif 'csd_tag' in trig_data:
-                noise_tag = trig_data['csd_tag']
-            elif 'psd_tag' in trig_data:
-                noise_tag = trig_data['psd_tag']
-
+            csd_tag = 'default'
+            if 'csd_tag' in trig_data:
+                csd_tag = trig_data['csd_tag']
+          
             csd, csd_freqs, csd_metadata = (
                 self._processing_data_inst.get_noise(
                     channel_name,
-                    tag=noise_tag)
+                    tag=csd_tag)
             )
+
+            # ignored frequency peaks
+            frequency_peaks = None
+            if 'ignored_frequency_peaks' in trig_data:
+                frequency_peaks = trig_data['ignored_frequency_peaks']
+                if not isinstance(frequency_peaks, list):
+                    frequency_peaks = [frequency_peaks]
+            
             
             # sample rate
             fs = self._processing_data_inst.get_sample_rate()
@@ -506,6 +510,7 @@ class TriggerProcessing:
             oftrigger_inst = OptimumFilterTrigger(
                 channel_name, fs, template, csd,
                 nb_pretrigger_samples,
+                ignored_frequency_peaks=frequency_peaks,
                 trigger_name=trig_chan
             )
 
