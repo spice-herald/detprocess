@@ -952,7 +952,7 @@ class FeatureExtractors:
             OFBase  if it has been instantiated independently
 
         f_lims : list of list of floats
-            A list of [f_low, f_high]s between which the averaged PSD is
+            A list of [f_low, f_high]s between which the PSD peak is
             calculated. For example, [[45.0, 65.0], [120.0, 130.0]]
 
         npeaks : number of peaks to search. Default=1
@@ -995,7 +995,7 @@ class FeatureExtractors:
 
         if trace_fft.ndim != 1:
             # multi-channels, not implemented
-            raise ValueError(f'ERROR: "psd_amp" not implemented for '
+            raise ValueError(f'ERROR: "psd_peaks" not implemented for '
                              f'multi-channel. Remove algorithm for '
                              f'channel {channel}!')
 
@@ -1047,3 +1047,131 @@ class FeatureExtractors:
         # done
         return retdict
     
+    @staticmethod
+    def phase(channel, of_base,
+              f_lims=[],
+              npeaks=1,
+              min_separation_hz=0.0,
+              threshold_factor=1e-3
+              feature_base_name='phase',
+              **kwargs):
+        """
+        Feature extraction for finding the phase signal for peaks of the psd
+        in a range of frequencies. Rather than recalculating
+        the fft, this feature references the pre-calculated OF class.
+      
+        Parameters
+        ----------
+        of_base : OFBase object, optional
+            OFBase  if it has been instantiated independently
+
+        f_lims : list of list of floats
+            A list of [f_low, f_high]s that will be used to search for peaks in the PSD.
+            The phase will be calculated and returned for frequencies 
+            associated with those peaks.
+            Example: [[45.0, 65.0], [120.0, 130.0]].
+
+        npeaks : number of peaks to search. Default=1
+
+        min_separation_hz : minimum separation between peaks
+
+        threshold_factor : a threshold factor that will be applied in FFT units to avoid calculating the phase for noisy garbage.
+
+        feature_base_name : str, option
+            output feature base name
+
+        Returns
+        -------
+        retdict : dict
+            Dictionary containing the various extracted features.
+
+            Phase will be returned in radians.
+        """
+        
+        # get ranges 
+        range_names, freq_ranges,_ = utils.get_ind_freq_ranges(f_lims)
+
+        # initialize output
+        retdict = {}
+        for i in range(1, npeaks + 1):
+            for var_base in range_names:
+                var_name_amp = f'{feature_base_name}_{var_base}_phase_{i}'
+                var_name_freq = f'{feature_base_name}_{var_base}_freq_{i}'
+                retdict[var_name_amp] = -999999.0
+                retdict[var_name_freq] = -999999.0
+
+                
+        # check if signal stored
+        if not of_base.is_signal_stored(channel):
+            return retdict
+        
+        trace_fft = of_base.signal_fft(channel, squeeze_array=True)
+        freqs = of_base.fft_freqs()
+        nbins = of_base.nb_samples()
+
+        if trace_fft.ndim != 1:
+            # multi-channels, not implemented
+            raise ValueError(f'ERROR: "phase" not implemented for '
+                             f'multi-channel. Remove algorithm for '
+                             f'channel {channel}!')
+
+        # sample rate
+        fs = utils.estimate_sampling_rate(freqs)
+        if 'fs' in kwargs:
+            fs = kwargs['fs']
+
+        # calculate psd
+        psd = (np.abs(trace_fft)**2.0)*nbins/fs
+        
+        # fold
+        freqs_fold, psd_fold = qp.utils.fold_spectrum(psd, fs)
+
+        # remove DC
+        psd_fold =  psd_fold[1:]
+        psd_fold =  1e12*np.sqrt(psd_fold)
+        freqs_fold = freqs_fold[1:]
+              
+        # calculate phase(f) from FFT(f)
+        mag = np.abs(trace_fft)
+        fft_w_threshold = np.copy(trace_fft)
+        # Apply phase shift to calculate phase relative to the trigger time, not the beginning of the trace.
+        pretrigger_length_msec = nbins / fs * 1e3
+        fft_w_threshold = fft_w_threshold * np.exp(1j * 2.0 * np.pi * freqs * pretrigger_length_msec*1e-3) # Apply phase shift for given pretrigger length
+        fft_w_threshold[mag < mag.max()*threshold_factor] = 0   # round off very small values to avoid weird phase behavior. Can adjust using threshold_factor argument
+        phase = np.angle(fft_w_threshold) # phase in radians
+        
+        # fold phase
+        num_freqs = phase.shape[-1]
+        num_positive_freqs = num_freqs // 2 + 1
+        phase_fold = np.copy(phase[:, :num_positive_freqs])
+        # remove DC
+        phase_fold = phase_fold[1:]
+
+        # loop range and find peaks
+        for it, freq_range in enumerate(freq_ranges):
+
+            # find peaks within interval
+            result_list = utils.find_psd_peaks(
+                freqs_fold, psd_fold,
+                fmin=freq_range[0], fmax=freq_range[1],
+                npeaks=npeaks,
+                min_separation_hz=min_separation_hz,
+                min_prominence=None)
+                     
+            # var base name
+            var_base = range_names[it]
+            
+            # loop peaks
+            for i in range(npeaks):
+                var_name_phase = f'{feature_base_name}_{var_base}_phase_{i+1}'
+                var_name_freq = f'{feature_base_name}_{var_base}_freq_{i+1}'
+                if i < len(result_list):
+                    result = result_list[i]
+                    retdict[var_name_freq] =  result['freq']
+                    retdict[var_name_phase] = phase_fold[result['index']]
+                else:
+                    retdict[var_name_phase] = 0
+                    retdict[var_name_freq] = -999999.
+                    
+        # done
+        return retdict
