@@ -2,7 +2,6 @@ import numpy as np
 import qetpy as qp
 from detprocess.utils import utils
 import random
-from pprint import pprint
 
 __all__ = [
     'FeatureExtractors',
@@ -1052,14 +1051,15 @@ class FeatureExtractors:
               f_lims=[],
               npeaks=1,
               min_separation_hz=0.0,
-              threshold_factor=1e-3
+              threshold_factor=1e-3,
               feature_base_name='phase',
               **kwargs):
         """
         Feature extraction for finding the phase signal for peaks of the psd
         in a range of frequencies. Rather than recalculating
         the fft, this feature references the pre-calculated OF class.
-      
+        Phase is returned in units of radians.
+        
         Parameters
         ----------
         of_base : OFBase object, optional
@@ -1131,21 +1131,26 @@ class FeatureExtractors:
         psd_fold =  1e12*np.sqrt(psd_fold)
         freqs_fold = freqs_fold[1:]
               
-        # calculate phase(f) from FFT(f)
+        # calculate phase from FFT
         mag = np.abs(trace_fft)
-        fft_w_threshold = np.copy(trace_fft)
+        fft_cpy = np.copy(trace_fft)
         # Apply phase shift to calculate phase relative to the trigger time, not the beginning of the trace.
-        pretrigger_length_msec = nbins / fs * 1e3
-        fft_w_threshold = fft_w_threshold * np.exp(1j * 2.0 * np.pi * freqs * pretrigger_length_msec*1e-3) # Apply phase shift for given pretrigger length
-        fft_w_threshold[mag < mag.max()*threshold_factor] = 0   # round off very small values to avoid weird phase behavior. Can adjust using threshold_factor argument
-        phase = np.angle(fft_w_threshold) # phase in radians
+        nb_samples_pretrigger = 0
+        if 'nb_samples_pretrigger' in kwargs:
+            nb_samples_pretrigger = kwargs['nb_samples_pretrigger']
+        pretrigger_length_msec = nb_samples_pretrigger / fs * 1e3
+        fft_cpy = fft_cpy * np.exp(1j * 2.0 * np.pi * freqs * pretrigger_length_msec*1e-3) # Apply phase shift for given pretrigger length
+        fft_cpy[mag < mag.max()*float(threshold_factor)] = 0   # round off very small values to avoid weird phase behavior. Can adjust using threshold_factor argument
+        phase = np.angle(fft_cpy) # phase in radians
         
         # fold phase
+        # we have to do this manually, since phase is not symmetric. We simply take only the positive frequencies.
         num_freqs = phase.shape[-1]
         num_positive_freqs = num_freqs // 2 + 1
-        phase_fold = np.copy(phase[:, :num_positive_freqs])
+        phase_fold = np.copy(phase[:num_positive_freqs])
         # remove DC
         phase_fold = phase_fold[1:]
+
 
         # loop range and find peaks
         for it, freq_range in enumerate(freq_ranges):
