@@ -804,10 +804,17 @@ class FeatureProcessing:
                         of_tuple_tag = f'{of_tuple_tag}_{coupling}'
 
                         if 'ignored_frequency_peaks' in algorithm_params:
+
                             freqs = algorithm_params['ignored_frequency_peaks']
                             if not isinstance(freqs, list):
                                 freqs = [freqs]
                             freqs_string = "_".join(map(str, freqs))
+
+                            if 'ignore_harmonics' in  algorithm_params:
+                                ignore_harmonics = algorithm_params['ignore_harmonics']
+                                if ignore_harmonics:
+                                    freqs_string += '_harmonics'
+                            
                             of_tuple_tag = f'{of_tuple_tag}_{freqs_string}'
 
                         
