@@ -251,12 +251,19 @@ class ProcessingData:
 
 
                 ignored_frequency_peaks = None
+                ignore_harmonics = False
                 if 'ignored_frequency_peaks' in algo_config:
                     freqs = algo_config['ignored_frequency_peaks']
                     if not isinstance(freqs, list):
                         freqs = [freqs]
                     ignored_frequency_peaks = freqs
                     freqs_string = "_".join(map(str, freqs))
+
+                    if 'ignore_harmonics' in  algorithm_params:
+                        ignore_harmonics = algorithm_params['ignore_harmonics']
+                        if ignore_harmonics:
+                            freqs_string += '_harmonics'
+                    
                     of_tuple_tag = f'{of_tuple_tag}_{freqs_string}'
                 
                 # instantiate OF base if needed
@@ -311,7 +318,8 @@ class ProcessingData:
                 if self._OF_base_objs[key_tuple]['OF'].csd(chan) is None:
                     self._OF_base_objs[key_tuple]['OF'].set_csd(
                         chan, csd, coupling=coupling,
-                        ignored_frequency_peaks=ignored_frequency_peaks
+                        ignored_frequency_peaks=ignored_frequency_peaks,
+                        ignore_harmonics=ignore_harmonics
                     )
                      
 

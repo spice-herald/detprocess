@@ -811,8 +811,8 @@ class FeatureProcessing:
                             freqs_string = "_".join(map(str, freqs))
 
                             if 'ignore_harmonics' in  algorithm_params:
-                                harmonics = algorithm_params['ignore_harmonics']
-                                if harmonics:
+                                ignore_harmonics = algorithm_params['ignore_harmonics']
+                                if ignore_harmonics:
                                     freqs_string += '_harmonics'
                             
                             of_tuple_tag = f'{of_tuple_tag}_{freqs_string}'
