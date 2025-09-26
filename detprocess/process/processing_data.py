@@ -93,7 +93,7 @@ class ProcessingData:
         self._OF_base_algorithms = [
             'of1x1', 'of1x2x2', 'of1x3x3',
             'ofnxm', 'ofnxmx2', 'psd_amp',
-            'psd_peaks'
+            'psd_peaks', 'phase'
         ]
         
         # initialize raw data reader
@@ -275,7 +275,7 @@ class ProcessingData:
 
 
                 # no template/csd for psd_amp
-                if (algo_base == 'psd_amp' or algo_base == 'psd_peaks'):
+                if (algo_base == 'psd_amp' or algo_base == 'psd_peaks' or algo_base == 'phase'):
                     self._OF_base_objs[key_tuple]['OF']._nbins = nb_samples
                     continue
 
