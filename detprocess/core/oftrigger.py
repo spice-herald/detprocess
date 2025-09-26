@@ -357,6 +357,7 @@ class OptimumFilterTrigger:
                  fs, template, noisecsd,
                  pretrigger_samples,
                  ignored_frequency_peaks=None,
+                 ignore_harmonics=False,
                  trigger_name=None):
         """
         Initialization of the FIR filter.
@@ -475,7 +476,8 @@ class OptimumFilterTrigger:
         )
 
         self._of_base.set_csd(self._trigger_channel, self._noisecsd,
-                              ignored_frequency_peaks=ignored_frequency_peaks)
+                              ignored_frequency_peaks=ignored_frequency_peaks,
+                              ignore_harmonics=ignore_harmonics)
         self._of_base.calc_phi(self._trigger_channel,
                                template_tag=template_tag,
                                calc_weight=True)

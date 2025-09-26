@@ -497,11 +497,13 @@ class TriggerProcessing:
 
             # ignored frequency peaks
             frequency_peaks = None
+            ignore_harmonics = False
             if 'ignored_frequency_peaks' in trig_data:
                 frequency_peaks = trig_data['ignored_frequency_peaks']
                 if not isinstance(frequency_peaks, list):
                     frequency_peaks = [frequency_peaks]
-            
+                if 'ignore_harmonics' in trig_data:
+                    ignore_harmonics = trig_data['ignore_harmonics']
             
             # sample rate
             fs = self._processing_data_inst.get_sample_rate()
@@ -511,6 +513,7 @@ class TriggerProcessing:
                 channel_name, fs, template, csd,
                 nb_pretrigger_samples,
                 ignored_frequency_peaks=frequency_peaks,
+                ignore_harmonics=ignore_harmonics,
                 trigger_name=trig_chan
             )
 

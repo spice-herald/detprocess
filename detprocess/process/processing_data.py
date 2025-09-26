@@ -259,8 +259,8 @@ class ProcessingData:
                     ignored_frequency_peaks = freqs
                     freqs_string = "_".join(map(str, freqs))
 
-                    if 'ignore_harmonics' in  algorithm_params:
-                        ignore_harmonics = algorithm_params['ignore_harmonics']
+                    if 'ignore_harmonics' in  algo_config:
+                        ignore_harmonics = algo_config['ignore_harmonics']
                         if ignore_harmonics:
                             freqs_string += '_harmonics'
                     
