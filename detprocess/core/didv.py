@@ -10,6 +10,9 @@ from pathlib import Path
 from scipy.signal import unit_impulse
 from datetime import datetime
 from detprocess.core.filterdata import FilterData
+from pytesdaq.io.hdf5 import H5Reader
+import pytesdaq.io.hdf5 as h5io
+h5 = h5io.H5Reader()
 import stat
 
 
@@ -392,6 +395,109 @@ class DIDVAnalysis(FilterData):
         
             
         
+    def set_iv_bor_data(self, base_path, bor_series_number, channel):
+        """
+        Set IV from bor series taken during continous data taking.
+        The function will use the bor series provided to calculate 
+        the needed bias params for didv ssp calculation.
+        """ 
+
+        # get info for normal data
+        if (self._verbose):
+            print(f'INFO: Calculating IV bor data for channel {channel}')
+        norm_avs = []
+        norm_errs = []
+        ibias_norms = []
+        path_to_data = self._get_file_list(base_path)
+
+        names_bor_iv = []
+        bor_set = []
+        i = 0
+        while i < len(path_to_data[0]):
+            if 'iv_bor' in path_to_data[0][i]:
+                bor_set.append(path_to_data[0][i])
+            if (len(bor_set) == 4) and (i != 0):
+                names_bor_iv.append(bor_set)
+                bor_set = []
+            i += 1
+        bor_set.append(path_to_data[0][-1])
+        names_bor_iv.append(bor_set)
+
+
+        path_to_data = names_bor_iv[bor_series_number]
+
+        i = 0
+        while i < len(path_to_data) - 1:
+            print(f'INFO: Using data from {path_to_data[i]} for normal point {i}')
+            h5read = H5Reader()
+            traces, metadata = h5read.read_many_events(
+                filepath = path_to_data[i],
+                nevents=-1, #this tells read_many_events to read all the events in the file
+                output_format=2,
+                detector_chans=channel,
+                include_metadata=True, #we want the metadata to look at e.g. the device bias current
+                adctoamp = True
+            )
+
+            traces = np.asarray(traces)
+            
+            ibias_norms.append(float(metadata[0]['detector_config'][channel]['tes_bias']))
+            
+            means = np.zeros(len(traces))
+            j = 0
+            while j < len(traces):
+                means[j] = np.average(traces[j,0,:])
+                j += 1
+            
+            norm_avs.append(np.average(means))
+            norm_errs.append(np.std(means)/np.sqrt(len(means)))
+            
+            print("Done with normal point " + str(i))
+            i += 1
+
+        #get values for transition data
+        print(f'INFO: Using data from {path_to_data[-1]} for transition point')
+        h5read = H5Reader()
+        traces, metadata = h5read.read_many_events(
+            filepath = path_to_data[-1],
+            nevents=-1, #this tells read_many_events to read all the events in the file
+            output_format=2,
+            detector_chans=channel,
+            include_metadata=True, #we want the metadata to look at e.g. the device bias current
+            adctoamp = True
+        )
+
+        fs = metadata[0]['sample_rate']
+        cut = qp.autocuts_noise(traces[:,0,:],fs=fs)
+        traces_ = traces #[cut]
+        means = np.zeros(len(traces_))
+        
+        j = 0
+        while j < len(traces_):
+            means[j] = np.average(traces_[j,0,:])
+            j += 1
+        trans_av = np.average(means)
+        trans_err = np.std(means)/np.sqrt(len(means))
+        ibias_trans = float(metadata[0]['detector_config'][channel]['tes_bias'])
+        print("Done with transition point")
+        
+        if 'rp' not in self._didv_data[channel]['data_config']:
+            raise ValueError('ERROR: Unable to find rp!'
+                             'use "set_ivsweep_results()"  first')
+
+        rp = self._didv_data[channel]['data_config']['rp']
+        rsh = self._didv_data[channel]['data_config']['rshunt']
+        rl = rp + rsh
+        
+        print("Calculating bias params")
+        biasparams = qp.core._biasparams.get_biasparams_normal_iv(norm_avs, norm_errs, trans_av, trans_err,
+                                                    ibias_norms, ibias_trans,
+                                                    rl=rl, rl_err = 0.0, rsh=rsh)
+        
+        self._didv_data[channel]['ivbor_results'] = biasparams.copy()
+
+
+
     
     def dofit(self, list_of_poles, channels=None,
               fcutoff=np.inf, bounds=None, guess_params=None,
@@ -469,6 +575,7 @@ class DIDVAnalysis(FilterData):
     def calc_smallsignal_params(self,
                                 channels=None,
                                 poles=None,
+                                use_iv_bor = False,
                                 priors_fit_method=False,
                                 lgc_diagnostics=False):
         """
@@ -476,7 +583,7 @@ class DIDVAnalysis(FilterData):
         (optionally) using current from IV sweep.
         
         """
-
+        print('Calculating small signal parameters...')
         # check channels
         if channels is None:
             channels = self._didv_data.keys()
@@ -502,18 +609,49 @@ class DIDVAnalysis(FilterData):
             # get didvobj
             didvobj = self._didv_data[chan]['didvobj']
             
-            # IV sweep result
-            ivsweep_results = self._didv_data[chan]['ivsweep_results']
-            if (ivsweep_results is not None
-                and 'ibias' not in ivsweep_results):
-                ivsweep_results['ibias'] = tes_bias
-                        
-            # calc small signal parameters
-            didvobj.calc_smallsignal_params(
-                biasparams=ivsweep_results,
-                poles=poles,
-                lgc_diagnostics=lgc_diagnostics
-            )
+            # IV bor
+            if use_iv_bor:
+                if 'ivsweep_results' not in self._didv_data[chan]:
+                    raise ValueError(f'ERROR: No IV sweep results found '
+                                     f'for channel {chan}! Use '
+                                     f'"set_ivsweep_results()" first.')
+                if 'ivbor_results' not in self._didv_data[chan]:
+                    raise ValueError(f'ERROR: No IV bor results found '
+                                     f'for channel {chan}! Use '
+                                     f'"set_iv_bor_data()" first.')
+                ivbor_results = self._didv_data[chan]['ivbor_results']
+                if 'ibias' not in ivbor_results:
+                    raise ValueError(f'ERROR: Unable to get ibias from '
+                                        f'IV bor for channel {chan}!')
+                tes_bias = ivbor_results['ibias']
+                didvobj.calc_smallsignal_params(
+                    biasparams=ivbor_results,
+                    poles=poles,
+                    lgc_diagnostics=lgc_diagnostics
+                )
+                print(f'INFO: Using ibias={tes_bias:.3e} A from '
+                        f'IV bor for channel {chan}')
+            else:
+                if ('ivsweep_results' in self._didv_data[chan]
+                    and self._didv_data[chan]['ivsweep_results'] is not None):
+                    ivsweep_results = self._didv_data[chan]['ivsweep_results']
+                    if ('ibias' in ivsweep_results
+                        and tes_bias != ivsweep_results['ibias']):
+                        tes_bias = ivsweep_results['ibias']
+                        didvobj.calc_smallsignal_params(
+                        biasparams=ivsweep_results,
+                        poles=poles,
+                        lgc_diagnostics=lgc_diagnostics
+                        )
+                        if self._verbose:
+                            print(f'INFO: Using ibias={tes_bias:.3e} A from '
+                                  f'IV sweep for channel {chan}')
+                            
+            # IV sweep result - KEPT FOR BRUNO TO REVIEW
+            #ivsweep_results = self._didv_data[chan]['ivsweep_results']
+            #if (ivsweep_results is not None
+            #    and 'ibias' not in ivsweep_results):
+            #    ivsweep_results['ibias'] = tes_bias
 
             # replace
             self._didv_data[chan]['didvobj'] = didvobj
@@ -1649,6 +1787,7 @@ class DIDVAnalysis(FilterData):
                                     'series_name': data_config['series_name'],
                                     'base_path': None,
                                     'ivsweep_results': None,
+                                    'ivbor_results': None,
                                     'data_config': data_config,
                                     'resolution': None}
         
