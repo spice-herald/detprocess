@@ -935,9 +935,7 @@ class FeatureExtractors:
 
     @staticmethod
     def psd_peaks(channel, of_base,
-                  f_lims=[],
-                  npeaks=1,
-                  min_separation_hz=0.0,
+                  frequencies=[],
                   feature_base_name='psd_peaks',
                   **kwargs):
         """
@@ -950,13 +948,9 @@ class FeatureExtractors:
         of_base : OFBase object, optional
             OFBase  if it has been instantiated independently
 
-        f_lims : list of list of floats
-            A list of [f_low, f_high]s between which the PSD peak is
-            calculated. For example, [[45.0, 65.0], [120.0, 130.0]]
-
-        npeaks : number of peaks to search. Default=1
-
-        min_separation_hz : minimum separation between peaks
+        frequencies : list of floats
+            A list of target frequencies which the PSD peak is
+            calculated. For example, [60, 120.6, ...]
 
         feature_base_name : str, option
             output feature base name
@@ -969,24 +963,12 @@ class FeatureExtractors:
         """
         
         # get ranges 
-        range_names, freq_ranges,_ = utils.get_ind_freq_ranges(f_lims)
-
-        # initialize output
-        retdict = {}
-        for i in range(1, npeaks + 1):
-            for var_base in range_names:
-                var_name_amp = f'{feature_base_name}_{var_base}_amp_{i}'
-                var_name_freq = f'{feature_base_name}_{var_base}_freq_{i}'
-                retdict[var_name_amp] = -999999.0
-                retdict[var_name_freq] = -999999.0
-        # DC
-        retdict[f'{feature_base_name}_dc_amp'] = -999999.0
-
+        #  range_names, freq_ranges,_ = utils.get_ind_freq_ranges(f_lims)
 
                 
         # check if signal stored
-        if not of_base.is_signal_stored(channel):
-            return retdict
+        # if not of_base.is_signal_stored(channel):
+        #     return retdict
         
         trace_fft = of_base.signal_fft(channel, squeeze_array=True)
         freqs = of_base.fft_freqs()
@@ -1009,39 +991,42 @@ class FeatureExtractors:
         # fold
         freqs_fold, psd_fold = qp.utils.fold_spectrum(psd, fs)
 
-        # store DC amp
-        retdict[f'{feature_base_name}_dc_amp'] = 1e12*np.sqrt(psd_fold[0])
+        DC_value = np.sqrt(psd_fold[0])
 
         # remove DC
         psd_fold =  psd_fold[1:]
-        psd_fold =  1e12*np.sqrt(psd_fold)
+        psd_fold =  np.sqrt(psd_fold)
         freqs_fold = freqs_fold[1:]
-              
-        # loop range and find peaks
-        for it, freq_range in enumerate(freq_ranges):
 
-            # find peaks within interval
-            result_list = utils.find_psd_peaks(
-                freqs_fold, psd_fold,
-                fmin=freq_range[0], fmax=freq_range[1],
-                npeaks=npeaks,
-                min_separation_hz=min_separation_hz,
-                min_prominence=None)
-                     
-            # var base name
-            var_base = range_names[it]
+
+        ### INITIALIZE OUTPUT
+        retdict = {}
+        for i in range(len(frequencies)):
+            freq_ind = np.argmin(np.abs(freqs_fold - frequencies[i])) # find closest frequency to target
+            var_base = f'{round(frequencies[i])}' # base name of frequency
+            var_name_amp = f'{feature_base_name}_{var_base}_amp'
+            var_name_freq = f'{feature_base_name}_{var_base}_freq'
+            retdict[var_name_amp] = -999999.0
+            retdict[var_name_freq] = -999999.0
+        # DC
+        retdict[f'{feature_base_name}_dc_amp'] = -999999.0
+
+
+        # store DC amp
+        retdict[f'{feature_base_name}_dc_amp'] = DC_value
+
+        # POPULATE OUTPUT
+        # loop frequency targets and find peaks
+        for i, freq_target in enumerate(frequencies):
+            freq_ind = np.argmin(np.abs(freqs_fold - freq_target)) # find closest frequency to target
+            var_base = f'{round(freq_target)}' # base name of frequency
             
-            # loop peaks
-            for i in range(npeaks):
-                var_name_amp = f'{feature_base_name}_{var_base}_amp_{i+1}'
-                var_name_freq = f'{feature_base_name}_{var_base}_freq_{i+1}'
-                if i < len(result_list):
-                    result = result_list[i]
-                    retdict[var_name_amp] = result['amplitude']
-                    retdict[var_name_freq] =  result['freq']
-                else:
-                    retdict[var_name_amp] = 0
-                    retdict[var_name_freq] = -999999.
+            var_name_amp = f'{feature_base_name}_{var_base}_amp'
+            var_name_freq = f'{feature_base_name}_{var_base}_freq'
+
+            retdict[var_name_amp] = float(psd_fold[freq_ind])
+            retdict[var_name_freq] = float(freqs_fold[freq_ind])
+
                     
         # done
         return retdict

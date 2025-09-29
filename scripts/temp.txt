@@ -1,0 +1,1000 @@
+    7  cd run47/non-linearity/
+    8  touch run47_nonlinearity.ipynb
+    9  top
+   10  cd ..
+   11  cd analysis
+   12  ls
+   13  git clone https://github.com/Ivar-Rydstrom/pylelab_local.git
+   14  gh
+   15  git clone git@github.com:Ivar-Rydstrom/pylelab_local.git
+   16  ls
+   17  cd pylelab_local/
+   18  ls
+   19  cd ..
+   20  ls
+   21  cd pylelab_local/
+   22  git pull
+   23  cd ..
+   24  cp -r run46/ pylelab_local/
+   25  ls
+   26  cd pylelab_local/
+   27  git pull
+   28  git add .
+   29  git commit -m "run46"
+   30  git config --global user.email "ivar369@gmail.com"
+   31  git config --global user.email "ivar.rydstrom@berkeley.edu"
+   32  git config --global user.name "Ivar Rydstrom"
+   33  git commit -m "run46"
+   34  git push
+   35  ls
+   36  git add .
+   37  git commit -m "run46"
+   38  git pusgh
+   39  git push
+   40  git add .
+   41  git commit -m "run46"
+   42  git push
+   43  git add *.ipynb
+   44  git commit -m "ipynb"
+   45  git pull
+   46  ls
+   47  cd run46/pylelab_run46_analysis/
+   48  ls -la
+   49  ls -l
+   50  ls -a
+   51  cd ..
+   52  ls -a
+   53  =pwd
+   54  pwd
+   55  cd pylelab_run46_analysis/
+   56  rm .git
+   57  ls
+   58  rm -r git/
+   59  rm -r .git
+   60  ls
+   61  pwd
+   62  ls -a
+   63  cd ..
+   64  ls
+   65  cd ..
+   66  ls
+   67  git add .
+   68  git commit -m "something"
+   69  git push
+   70  git update-ref -d HEAD
+   71  git status
+   72  ls
+   73  git add *.ipynb
+   74  git commit -m "ipynb"
+   75  git push
+   76  git pull
+   77  git config pull.ff only
+   78  git pull
+   79  ls
+   80  git config pull.rebase true
+   81  git pull
+   82  git push
+   83  git pull
+   84  git pull .rebase false
+   85  git pull.rebase false
+   86  git config pull.rebase false
+   87  git pull
+   88  git push
+   89  cd ..
+   90  rm -r pylelab_local
+   91  y
+   92  ls
+   93  git clone git@github.com:Ivar-Rydstrom/pylelab_local.git
+   94  cd pylelab_local/
+   95  ls
+   96  cd ..
+   97  ls
+   98  cp -r run46/*.ipynb pylelab_local/
+   99  ls
+  100  cd pylelab_local/
+  101  ls
+  102  git add .
+  103  git commit -m "ipynb"
+  104  git push
+  105  ls
+  106  cd ../run46
+  107  ls
+  108  cd pylelab_run46_analysis/
+  109  ls
+  110  cd ..
+  111  ls
+  112  cd ..
+  113  cd pylelab_local/
+  114  git pull
+  115  git add .
+  116  git commit -m "generated filter file"
+  117  git push
+  118  git pull
+  119  git add .
+  120  git commit -m "run notebooks"
+  121  git push
+  122  git pull
+  123  git add .
+  124  git commit -m "200ms"
+  125  git push
+  126  git pull
+  127  git add .
+  128  git commit -m "vib analysis until dpdi"
+  129  git push
+  130  git pull
+  131  git add .
+  132  git commit -m "didv"
+  133  git add .
+  134  git commit -m "didv"
+  135  git push
+  136  git pull
+  137  git add .
+  138  git commit -m "analysis progress"
+  139  git push
+  140  git pull
+  141  git add .
+  142  git commit -m "trace-by-trace somewhat"
+  143  git push
+  144  git add .
+  145  git commit -m "psdamp custom!"
+  146  git push
+  147  ls
+  148  git add .
+  149  git commit -m "boom"
+  150  git push
+  151  git add .
+  152  git commit -m "considerable progress
+  153  "
+  154  git add .
+  155  git commit -m "local update"
+  156  git push
+  157  jupyter notebook list
+  158  cd ..
+  159  cd analysis/
+  160  cd
+  161  cd analysis
+  162  ls
+  163  cd run47
+  164  cd ..
+  165  cd run46
+  166  .s
+  167  ls
+  168  pwd
+  169  cd ../run47
+  170  cp ../run46/run46.yaml .
+  171  ls
+  172  rm run46.yaml
+  173  cp ../run46/run46.yaml run47.yaml
+  174  gedit run47.yaml
+  175  pwd
+  176  cd ..
+  177  cd ~/analysis
+  178  ls
+  179  cd run47
+  180  ls
+  181  cd ..
+  182  cd run46
+  183  ls
+  184  cd pylelab_run46_analysis/
+  185  ls
+  186  cd ..
+  187  jupyter-notebook
+  188  exit
+  189  vncserver :2 -geometry 2560x1600
+  190  exit
+  191  vncserver
+  192  cd ~
+  193  mkdir -p ~/miniconda3
+  194  wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -0 ~/miniconda3/miniconda.sh
+  195  wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o ~/miniconda3/miniconda.sh
+  196  bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3
+  197  rm -rf ~/miniconda3/miniconda.sh
+  198  ~miniconda3/bin/conda init bash
+  199  ~/miniconda3/bin/conda init bash
+  200  ls
+  201  cd miniconda3
+  202  ls
+  203  cd ..
+  204  wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh
+  205  bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3
+  206  rm -rf ~/miniconda3/miniconda.sh
+  207  ~/miniconda3/bin/conda init bash
+  208  cd ~
+  209  conda deactivate
+  210  conda create -n py3_10 python=3.10
+  211  conda activate py3_10
+  212  gedit /.bashrc
+  213  gedit ~/.bashrc
+  214  conda install -c conda-forge vaex
+  215  conda install jupyter
+  216  ls
+  217  cd packages
+  218  ls
+  219  cd detanalysis
+  220  ls
+  221  pip install .
+  222  git pull
+  223  pip install .
+  224  cd ..
+  225  ls
+  226  cd detprocess/
+  227  ls
+  228  git pull
+  229  pip install .
+  230  ls
+  231  cd ..
+  232  ls
+  233  cd pytesdaq/
+  234  git pull
+  235  pip install .
+  236  cd .
+  237  cd ..
+  238  ls
+  239  cd QETpy/
+  240  ls
+  241  git pull
+  242  pip install .
+  243  cd ..
+  244  ls
+  245  cd run62
+  246  ls
+  247  gedit process_r62_051025_noise.yaml 
+  248  python --version
+  249  ls
+  250  jupyter-notebook
+  251  jupyter-lab
+  252  ls
+  253  cd ..
+  254  ls
+  255  cd run63
+  256  cd run62
+  257  ls
+  258  cd ..
+  259  juypyter-notebook
+  260  ls
+  261  cd ..
+  262  ls
+  263  cd analysis
+  264  jupyter-notebook
+  265  jupyter-notebook
+  266  cd analysis/pylelab_local/
+  267  ls
+  268  git pull
+  269  cd run46
+  270  ls
+  271  cd analysis/run46
+  272  ls
+  273  gedit Run46_DC_Heating.ipynb
+  274  cd ..
+  275  jupyter_notebook
+  276  jupyter-notebook
+  277  ls
+  278  cd ~/
+  279  ls
+  280  cd packages
+  281  ls
+  282  cd QETpy
+  283  ls
+  284  pip insrall .
+  285  pip install .
+  286  cd ..
+  287  ls
+  288  cd ~/packages
+  289  ;s
+  290  ls
+  291  cd detanalysis
+  292  cd ..
+  293  cd detprocess
+  294  conda install -c conda-forge vaex
+  295  pip vaex -v
+  296  pip install vaex
+  297  pip uninstall vaex
+  298  conda uninstall vaex
+  299  conda uninstall forge-conda vaex
+  300  conda uninstall conda-forge vaex
+  301  conda uninstall -c conda-forge vaex
+  302  pip install pandas
+  303  pip install astropy
+  304  conda deactivate
+  305  conda remove --name py3_10 --all
+  306  conda create -n py3_10 python=3.10
+  307  conda activate py3_10
+  308  gedit ~/.bashrc
+  309  jupyter-lab
+  310  jupyter-lab
+  311  cd ..
+  312  cd run46
+  313  ls
+  314  cd raw
+  315  ls
+  316  cd ~
+  317  ls
+  318  cd packages/
+  319  ls
+  320  cd detprocess/
+  321  git pull
+  322  git stash
+  323  git pull
+  324  git checkout
+  325  pip install .
+  326  cd ..
+  327  ls
+  328  cd detanalysis/
+  329  ls
+  330  git pull
+  331  pip install .
+  332  ls
+  333  cd ..
+  334  ls
+  335  cd pytesdaq
+  336  ls
+  337  git pull
+  338  pip install .
+  339  ls
+  340  cd ..
+  341  ls
+  342  cd QETpy/
+  343  ls
+  344  git pull
+  345  pip install .
+  346  ls
+  347  cd ..
+  348  ls
+  349  cd pytesdaq/
+  350  ls
+  351  cd pytesdaq
+  352  ls
+  353  cd daq
+  354  ls
+  355  cd ..
+  356  cd daq
+  357  python3 daq.py
+  358  ls
+  359  cd ..
+  360  ls
+  361  cd ..
+  362  ls
+  363  cd ..
+  364  ls
+  365  cd QETpy/
+  366  ls
+  367  cd qetpy/
+  368  ls
+  369  cd core
+  370  ls
+  371  cd ..
+  372  ls
+  373  cd ..
+  374  ls
+  375  cd ..
+  376  ls
+  377  cd pytesdaq/
+  378  cd scope
+  379  ls
+  380  cd pytesdaq
+  381  ls
+  382  cd scope
+  383  ls
+  384  python scope.py
+  385  conda install matplotlib
+  386  conda list matplotlib
+  387  conda uninstall vaex
+  388  conda uninstall matplotlib
+  389  conda list
+  390  pip install vaex
+  391  pip install matplotlib
+  392  python
+  393  python3
+  394  pip install vaex
+  395  python
+  396  conda deactiveate
+  397  conda deactivate
+  398  conda remove --py3_10 --all
+  399  conda remove --name py3_10 --all
+  400  ls
+  401  jupyter-lab
+  402  conda create -n py3_10 python=3.10
+  403  conda activavte py3_10
+  404  conda activate 3_10
+  405  conda activate py3_10
+  406  conda install vaex
+  407  conda -c conda-forge vaex
+  408  conda install -c conda-forge vaex
+  409  conda install jupyter
+  410  conda install matplotlib
+  411  conda install .
+  412  pip install .
+  413  conda deactivate
+  414  conda create -n py3_10_15 python=3.10.15
+  415  conda activate py3_10_15
+  416  conda install vaex
+  417  conda install -c conda-forge vaex
+  418  python -v
+  419  python --version
+  420  ls
+  421  cd ..
+  422  ls
+  423  cd ..
+  424  ls
+  425  cd analysis/
+  426  ls
+  427  jupter-notebook
+  428  ls
+  429  jupter-notebook
+  430  pip install vaex
+  431  python
+  432  conda install vaex
+  433  conda diable
+  434  conda deactivate
+  435  conda delete py3_10
+  436  conda list
+  437  conda create py3_10
+  438  conda create -n py3_10 python=3.10
+  439  conda activate py3_10
+  440  conda install -c conda-forge vaex vaex-core=4.15.1 pyarrow=14.0.1 ptotobuf=4.25.3
+  441  conda install -c conda-forge vaex vaex-core=4.15.1 pyarrow=14.0.1 protobuf=4.25.3 -y
+  442  gedit ~/.bashrc
+  443  ls
+  444  conda install jupyter-notebook
+  445  conda install -c conda-forge jupyter-notebook
+  446  pip install vaex
+  447  pip install pyarrow
+  448  conda install -c conda-forge vaex
+  449  conda update -n base -c defaults conda
+  450  python --version
+  451  conda install -c conda-forge vaex
+  452  conda uninstall vaex
+  453  conda install -c conda-forge vaex
+  454  pip show pyarrow protobuf
+  455  conda install -c conda-forge pyarrow protobuf
+  456  jupyter-lab
+  457  jupyter
+  458  jupyter-lab
+  459  python
+  460  jupyter-lab
+  461  jupyter-lab
+  462  jupter-notebook
+  463  jupyter
+  464  jupyter --config-dir
+  465  jupyter --runtime-dir
+  466  conda install jupyter
+  467  cd ~
+  468  ~/miniconda3/bin/conda init bash
+  469  conda install jupter
+  470  jupyter-notebook
+  471  cd ~
+  472  ls
+  473  cd /
+  474  ls
+  475  cd sdata1
+  476  ls
+  477  cd runs
+  478  ls
+  479  cd run46
+  480  ls
+  481  cd cd ..
+  482  ls
+  483  cd ..
+  484  ls
+  485  cd ..
+  486  ls
+  487  cd ..
+  488  ls
+  489  cd sdata2
+  490  ls
+  491  cd runs
+  492  ls
+  493  cd run46
+  494  cd ..
+  495  cd sdata1
+  496  cd ..
+  497  ls
+  498  cd extdata1
+  499  ls
+  500  cd runs
+  501  ls
+  502  cd ..
+  503  cd ../extdata2
+  504  ls
+  505  cd ..
+  506  ls
+  507  cd extdata3
+  508  ls
+  509  cd runs
+  510  ls
+  511  cd run46
+  512  ls
+  513  cd raw
+  514  ls
+  515  pwd
+  516  ls
+  517  cd ..
+  518  ls
+  519  cd ..
+  520  ls
+  521  cd run47
+  522  ls
+  523  cd ..
+  524  ls
+  525  cd ..
+  526  ls
+  527  cd sdata1
+  528  ls
+  529  cd runs
+  530  ls
+  531  cd run47
+  532  ls
+  533  cd raw
+  534  ls
+  535  ls
+  536  conda
+  537  la
+  538  ls
+  539  conda update -n base -c defaults conda
+  540  conda install python=3.10
+  541  python
+  542  conda install -c conda-forge vaex
+  543  python
+  544  pip install vaex
+  545  python
+  546  conda deactivate
+  547  venv
+  548  python
+  549  conda activate py3_10
+  550  vncserver --kill:2
+  551  vncserver -kill:2
+  552  vncserver -kill :2
+  553  vncserver -help
+  554  exit
+  555  vncserver :2
+  556  wxit
+  557  exit
+  558  vncserver :2 -geometry 2560x1600
+  559  ls
+  560  exit
+  561  ls
+  562  vncserver :2
+  563  exit
+  564  ls
+  565  vncserver :2
+  566  exit
+  567  vncserver -kill
+  568  vncserver -kill :2
+  569  ps aux | grep pid
+  570  ps aux | grep ssh
+  571  exit
+  572  vncserver :3
+  573  exit
+  574  eixt
+  575  exit
+  576  vncserver -kill :3
+  577  vncserver -kill :2
+  578  vncserver -kill :1
+  579  vncserver -kill :4
+  580  vncserver :2
+  581  vncserver -kill :2
+  582  vncserver -help
+  583  vncserver -list
+  584  vncserver :2
+  585  vncserver -clean
+  586  vncserver
+  587  gedit /home/irydstrom/.vnc/oak.berkeley.edu:2.log
+  588  emacs /home/irydstrom/.vnc/oak.berkeley.edu:2.log
+  589  ls
+  590  cd miniconda3
+  591  ls
+  592  uninstall.sh
+  593  bash uninstall.sh
+  594  ls
+  595  conda
+  596  exit
+  597  ls
+  598  emacs ~/.bashrc
+  599  ls
+  600  rm Miniconda3-latest-Linux-x86_64.sh 
+  601  ls
+  602  mkdir -p ~/miniconda3
+  603  wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh
+  604  bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3
+  605  ls
+  606  rm -rf ~/miniconda3/miniconda.sh
+  607  ~/miniconda3/bin/conda init bash
+  608  python
+  609  ls
+  610  vncserver :2
+  611  vncserver -list
+  612  exit
+  613  conda
+  614  python
+  615  conda install vaex -c vaex-forge
+  616  conda install vaex -c conda-forge
+  617  conda create -n py3_10 python=3.10
+  618  conda deactivate
+  619  conda activate py3_10
+  620  python
+  621  conda install jupyter
+  622  conda install -c conda-forge vaex
+  623  python
+  624  exit
+  625  ls
+  626  cd analysls
+  627  cd analys
+  628  cd analysis/
+  629  ls
+  630  cd pylelab_local/
+  631  ls
+  632  cd analysis/
+  633  ls
+  634  cd run47
+  635  ls
+  636  jupter-notebook
+  637  jupter
+  638  conda install jupyter
+  639  jupyter-notebook
+  640  exit
+  641  ls
+  642  cd minconda3
+  643  cd miniconda3/
+  644  ls
+  645  bash uninstall.sh
+  646  lsA
+  647  deactivate
+  648  conda deactivate
+  649  bash uninstall.sh
+  650  lsl
+  651  cd ..
+  652  ls
+  653  emacs ./bashrc
+  654  gedit ./bashrc
+  655  ls
+  656  gedit ~./bashrc
+  657  cd ..
+  658  ls
+  659  cd irydstrom/
+  660  ls
+  661  gedit ~/.bashrc
+  662  ls
+  663  cd /sdata1/
+  664  cd runs/run47/raw/cont
+  665  cd runs/run47/raw/
+  666  cd runs/run47/raw
+  667  cd runs
+  668  cd run47
+  669  ls
+  670  cd ..
+  671  ls
+  672  cd ..
+  673  ls
+  674  cd extdata2
+  675  ls
+  676  cd ..
+  677  cd sdata2
+  678  ls
+  679  cd runs
+  680  ls
+  681  cd run47
+  682  cd ..
+  683  cd extdata1
+  684  ls
+  685  cd runs
+  686  ls
+  687  cd ..
+  688  cd extdata2
+  689  ls
+  690  cd ..
+  691  ls
+  692  cd extdata4
+  693  ls
+  694  cd runs
+  695  ls
+  696  cd ..
+  697  cd .
+  698  cd ..
+  699  ls
+  700  cd extdata5
+  701  ls
+  702  cd runs
+  703  ls
+  704  cd ..
+  705  cd extdata1
+  706  ls
+  707  cd runs
+  708  ls
+  709  cd accelerometer/
+  710  ls
+  711  cd ..
+  712  ls
+  713  cd ..
+  714  ls
+  715  ls extdata2/runs
+  716  cd extdata2
+  717  ls
+  718  cd ..
+  719  cd extdata3
+  720  ls
+  721  cd runs
+  722  ls
+  723  cd run47
+  724  ls
+  725  cd ..
+  726  ls
+  727  cd ..
+  728  ls
+  729  ccd ..
+  730  lc
+  731  ls
+  732  cd ~
+  733  ls
+  734  cd analysis/
+  735  ls
+  736  cd run62
+  737  l
+  738  ls
+  739  jupyter-lab
+  740  jupyter-notebook
+  741  cd analysis/
+  742  ls
+  743  cd pylelab_local/
+  744  ls
+  745  cd anly
+  746  ls
+  747  cd analysis/
+  748  ls
+  749  cd run47
+  750  jupyter-notebook
+  751  pip install numpy
+  752  python3
+  753  python --version
+  754  pip install numpy
+  755  ls
+  756  cd ~
+  757  ls
+  758  cd ..
+  759  ls
+  760  cd ..
+  761  ls
+  762  cd sdata
+  763  cd sdata1
+  764  ls
+  765  gedit ~/.bashrc
+  766  source ~/.bashrc
+  767  ls
+  768  cd analysis/
+  769  ls
+  770  cd run62
+  771  ls
+  772  jupyter-notebook
+  773  cd ..
+  774  ls
+  775  cd ..
+  776  cd packages/
+  777  ls
+  778  cd detanalysis/
+  779  ls
+  780  git pull
+  781  pip install .
+  782  pip install pickle
+  783  conda env list
+  784  ls
+  785  cd ..
+  786  ls
+  787  cd ..
+  788  ls
+  789  cd ~/miniconda3
+  790  mkdir -p ~/miniconda3
+  791  wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh
+  792  cd miniconda3/
+  793  ls
+  794  bash miniconda.sh
+  795  cd ..
+  796  bash miniconda.sh -b -u -p ~/miniconda3
+  797  bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3
+  798  gedit ~/.bashrc
+  799  source ~./bashrc
+  800  source ~/.bashrc
+  801  conda
+  802  ls
+  803  cd miniconda3
+  804  ls
+  805  cd ..
+  806  rm -rf ~/miniconda3/miniconda.sh
+  807  ls
+  808  cd miniconda3/
+  809  ls
+  810  bash uninstall.sh
+  811  ls
+  812  wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+  813  ls
+  814  wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+  815  ls
+  816  wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+  817  ls
+  818  cd ..
+  819  wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh
+  820  ls
+  821  mkdir -p ~/miniconda3
+  822  cd miniconda
+  823  cd miniconda3/
+  824  wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+  825  ls
+  826  bash Miniconda3-latest-Linux-x86_64.sh 
+  827  bash Miniconda3-latest-Linux-x86_64.sh -u
+  828  ls
+  829  cd ..
+  830  source ~/.bashrc
+  831  ls
+  832  conda
+  833  conda update -n base defaults conda -y
+  834  conda create -n py310 python=3.10 -y
+  835  conda activate py310
+  836  conda install -c conda-forge vaex -y
+  837  python -c "import vaex; print(vae.__version__)"
+  838  python -c "import vaex; print(vaex.__version__)"
+  839  deactivate
+  840  conda activate py310
+  841  python -c "import vaex; print(vaex.__version__)"
+  842  which python
+  843  conda install -c conda-forge --force-reinstall pyarrow protobuf
+  844  python -c "import vaex; print(vaex.__version__)"
+  845  conda deactivate
+  846  conda clean --all --yes
+  847  conda create -n py310 -c conda-forge python=3.10 -y
+  848  conda activate py310
+  849  conda deactivate
+  850  conda clean --all --yes
+  851  conda create -n py310 -c conda-forge python=3.10 vaex -y
+  852  conda tivate py310
+  853  conda ativate py310
+  854  conda activate py310
+  855  python -c "import vaex; print(vaex.__version__)"
+  856  python
+  857  deactivate
+  858  conda deactivate
+  859  onda activate py310
+  860  conda activate 310
+  861  conda activate py310
+  862  conda install c conda-forge "pydantic<2.11" -y
+  863  conda install -c conda-forge "pydantic<2.11" -y
+  864  python -c "import vaex; print(vaex.__version__)"
+  865  cd ~/analysis/
+  866  cd ../packages/
+  867  ls
+  868  cd detanalysis/
+  869  git pull
+  870  pip install .
+  871  cd ../detprocess/
+  872  pip install .
+  873  cd ..
+  874  ls
+  875  cd pytesdaq/
+  876  git pull
+  877  pip install .
+  878  cd ..
+  879  cd qet
+  880  cd QETpy/
+  881  pip install .
+  882  ls
+  883  cd packages
+  884  ls
+  885  cd detprocess/
+  886  ls
+  887  cd scripts
+  888  ls
+  889  process.py --help
+  890  process.py -h
+  891  process.py
+  892  python process.py
+  893  ls
+  894  cd ..
+  895  ls
+  896  cd. .
+  897  cd ..
+  898  cd ~
+  899  ls
+  900  cd analysis/
+  901  ls
+  902  cd run47
+  903  ls
+  904  gedit process_r47_071924_calibration.yaml 
+  905  source ~/.bashrc
+  906  conda install git
+  907  conda install -c conda forge gitpython -y
+  908  conda install -c conda-forge gitpython -y
+  909  ls
+  910  gedit process_r62_051025_noise.yaml 
+  911  cd .
+  912  ls
+  913  cd ..
+  914  ls
+  915  cd ..
+  916  cd packages/
+  917  cd detprocess/
+  918  ls
+  919  cd scripts
+  920  ls
+  921  python process.py --help
+  922  python process --enable-rand --enable-feature --random_rate 0.001 --ncores 4 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250513_T112256/ --processing_setup ~/analysis/run62/process_r62_051025_noise.yaml 
+  923  python process.py --enable-rand --enable-feature --random_rate 0.001 --ncores 4 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250513_T112256/ --processing_setup ~/analysis/run62/process_r62_051025_noise.yaml 
+  924  gedit ~/analysis/run62/process_r62_051025_noise.yaml 
+  925  python process.py --enable-rand --enable-feature --random_rate 0.001 --ncores 4 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250513_T112256/ --processing_setup ~/analysis/run62/process_r62_051025_noise.yaml 
+  926  python process.py --enable-rand --enable-feature --random_rate 0.01 --ncores 4 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250513_T112256/ --processing_setup ~/analysis/run62/process_r62_051025_noise.yaml 
+  927  python process.py --enable-rand --enable-feature --random_rate 0.1 --ncores 8 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250513_T112256/ --processing_setup ~/analysis/run62/process_r62_051025_noise.yaml 
+  928  ls
+  929  cd ..
+  930  ls
+  931  ccd scripts
+  932  python process.py --enable-rand --enable-feature --random_rate 0.001 --ncores 8 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250513_T112256/ --processing_setup ~/analysis/run62/process_r62_051025_noise.yaml 
+  933  ls
+  934  cd scripts
+  935  python process.py --enable-rand --enable-feature --random_rate 0.001 --ncores 8 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250513_T112256/ --processing_setup ~/analysis/run62/process_r62_051025_noise.yaml 
+  936  python process.py --enable-rand --enable-feature --random_rate 0.0001 --ncores 8 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250513_T112256/ --processing_setup ~/analysis/run62/process_r62_051025_noise.yaml 
+  937  python process.py --enable-rand --enable-feature --random_rate 0.0001 --ncores 8 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250513_T112256/ --processing_setup ~/analysis/run62/temp/process_r62_051325_noise.yaml 
+  938  ls
+  939  gedit process.py
+  940  python process.py --enable-rand --enable-feature --random_rate 0.0001 --ncores 8 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250513_T112256/ --processing_setup ~/analysis/run62/temp/process_r62_051325_noise.yaml 
+  941  gedit process_r62_052325_noise.yaml
+  942  python process.py --enable-rand --enable-feature --random_rate 4 --ncores 10 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250513_T112256/ --processing_setup ~/analysis/run62/temp/process_r62_051325_noise.yaml 
+  943  python process.py --enable-rand --enable-feature --random_rate 4 --ncores 10 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250603_T200419 --processing_setup ~/analysis/run62/temp/process_r62_060325_noise.yaml 
+  944  python process.py --enable-rand --enable-feature --random_rate 4 --ncores 10 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250603_T200419 --processing_setup ~/analysis/run62/process_r62_060325_noise.yaml
+  945  sudo chmod 666 -R continuous_I2_D20250603_T200419
+  946  sudo
+  947  chmod 666 -R continuous_I2_D20250603_T200419
+  948  chmod 666 -R sdata1/runs/run62/raw/continuous_I2_D20250603_T200419
+  949  chmod 666 -R /sdata1/runs/run62/raw/continuous_I2_D20250603_T200419
+  950  python process.py --enable-rand --enable-feature --random_rate 4 --ncores 8 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250603_T200419 --processing_setup ~/analysis/run62/process_r62_060326_noise.yaml
+  951  python process.py --enable-rand --enable-feature --random_rate 4 --ncores 8 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250603_T200418 --processing_setup ~/analysis/run62/process_r62_060325_noise.yaml
+  952  python process.py --enable-rand --enable-feature --random_rate 4 --ncores 8 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250603_T200419 --processing_setup ~/analysis/run62/process_r62_060325_noise.yaml
+  953  python process.py --enable-rand --enable-feature --random_rate 3 --ncores 8 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250603_T200419 --processing_setup ~/analysis/run62/process_r62_060325_noise.yaml
+  954  python process.py --enable-rand --enable-feature --random_rate 3 --ncores 8 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250604_T224120/ --processing_setup ~/analysis/run62/process_r62_060425_noise.yaml
+  955  top
+  956  python process.py --enable-rand --enable-feature --random_rate 3 --ncores 12 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250604_T224120/ --processing_setup ~/analysis/run62/process_r62_060425_noise.yaml
+  957  cp process_r62_060425_noise.yaml process_r62_060825_noise.yaml
+  958  cp ~/analysis/run62/process_r62_060425_noise.yaml ~/analysis/run62/process_r62_061025_noise.yaml
+  959  python process.py --enable-rand --enable-feature --random_rate 3 --ncores 12 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250608_T114936/ --processing_setup ~/analysis/run62/process_r62_060825_noise.yaml
+  960  cp ~/analysis/run62/process_r62_060425_noise.yaml ~/analysis/run62/process_r62_060825_noise.yaml
+  961  python process.py --enable-rand --enable-feature --random_rate 3 --ncores 12 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250608_T114936/ --processing_setup ~/analysis/run62/process_r62_060825_noise.yaml
+  962  git pull
+  963  cd ..
+  964  pip install .
+  965  cd scripts
+  966  python process.py --enable-rand --enable-feature --random_rate .001 --ncores 12 --raw_path /sdata1/runs/run62/raw/continuous_I2_D20250608_T114936/ --processing_setup ~/analysis/run62/process_r62_060825_noise.yaml
+  967  ls
+  968  cd ..
+  969  ls
+  970  cd ..
+  971  ls
+  972  cd analysis/
+  973  ls
+  974  cd run46
+  975  ls
+  976  cd pylelab_run46_analysis/
+  977  ls
+  978  cd ..
+  979  jupyter-notebook
+  980  cd run47
+  981  cd ..
+  982  cd run47
+  983  ls
+  984  jupyter-notebook
+  985  exit
+  986  cd ~
+  987  ls
+  988  cd packages/
+  989  ls
+  990  cd ptes
+  991  cd pytesdaq/
+  992  ls
+  993  cd bin
+  994  ls
+  995  python run_scope.py
+  996  cd ~pack
+  997  cd ~/packages/
+  998  ls
+  999  cd pytesdaq/
+ 1000  ls 
+ 1001  ssh -X daquser@128.32.239.7
+ 1002  ls
+ 1003  history > temp.txt
+ 1004  gedit temp.txt
+ 1005  rm temp.txt
+ 1006  history > temp.txt
