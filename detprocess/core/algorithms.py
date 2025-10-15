@@ -102,7 +102,19 @@ class FeatureExtractors:
                     f'for  channel {channel}, '
                     f'algorithm "{feature_base_name}"')
 
-                       
+
+
+        # initalize dictionary
+        retdict = dict()
+        retdict[f'chi2_{feature_base_name}'] =  -999999.0,
+        retdict[f'delta_t_{feature_base_name}'] =  -999999.0,
+        for iamp, amp_name in enumerate(amplitude_names):
+            retdict[f'{amp_name}_{feature_base_name}'] =  -999999.0
+            
+        # check if signal stored
+        if not of_base.is_signal_stored(channel):
+            return retdict
+            
         # instantiate OF NxM
         OF = qp.OFnxmx2(of_base=of_base,
                         channels=channel,
@@ -115,7 +127,6 @@ class FeatureExtractors:
         
         amps, deltat, chi2 = OF.get_fit()
         
-        retdict = dict()
         retdict[f'chi2_{feature_base_name}'] = chi2
         retdict[f'delta_t_{feature_base_name}'] = deltat
         for iamp, amp_name in enumerate(amplitude_names):
@@ -301,6 +312,17 @@ class FeatureExtractors:
             raise ValueError('ERROR: Template tag required for OF 1x1')
 
 
+        # intialize variables
+        retdict = {
+            ('amp_' + feature_base_name): -999999.0,
+            ('chi2_' + feature_base_name): -999999.0,
+            ('lowchi2_' + feature_base_name): -999999.0
+        }
+
+        # check if signal stored
+        if not of_base.is_signal_stored(channel):
+            return retdict
+        
         
         # instantiate OF 1x1
         OF = qp.OF1x1(of_base=of_base,
@@ -368,7 +390,18 @@ class FeatureExtractors:
             Dictionary containing the various extracted features.
 
         """
-
+        
+        # intialize features dict
+        retdict = {
+            ('amp_' + feature_base_name): -999999.0,
+            ('t0_' + feature_base_name): -999999.0,
+            ('chi2_' + feature_base_name): -999999.0,
+            ('lowchi2_' + feature_base_name): -999999.0
+        }
+        
+        # check if signal stored
+        if not of_base.is_signal_stored(channel):
+            return retdict
 
         # instantiate OF1x1
         OF = qp.OF1x1(of_base=of_base,
@@ -476,6 +509,23 @@ class FeatureExtractors:
             Dictionary containing the various extracted features.
 
         """
+
+        # intialize dictionary
+        retdict = {
+            ('amp_' + feature_base_name): -999999.0,
+            ('t0_' + feature_base_name): -999999.0,
+            ('chi2_' + feature_base_name): -999999.0,
+            ('lowchi2_' + feature_base_name): -999999.0,
+            ('chi2nopulse_' + feature_base_name): -999999.0,
+            ('ampres_' + feature_base_name): -999999.0,
+            ('timeres_' + feature_base_name): -999999.0
+        }
+
+        # check if signal stored
+        if not of_base.is_signal_stored(channel):
+            return retdict
+
+        
         # instantiate OF1x1
         OF = qp.OF1x1(of_base=of_base,
                       channel=channel,
@@ -550,6 +600,19 @@ class FeatureExtractors:
 
         """
 
+        # intialize dictionary
+        retdict = {
+            ('scintillation_amp_' + feature_base_name): -999999.0,
+            ('evaporation_amp_' + feature_base_name): -999999.0,
+            ('time_diff_' + feature_base_name): -999999.0,
+            ('scintillation_time_index' + feature_base_name): -999999.0,
+            ('evaporation_time_index' + feature_base_name): -999999.0
+        }
+        
+        # check if signal stored
+        if not of_base.is_signal_stored(channel):
+            return retdict
+        
         # instantiate OF1x2
         OF = qp.OF1x2(
             of_base=of_base,
@@ -613,6 +676,15 @@ class FeatureExtractors:
 
         """
 
+        # check if trace is empty or None
+        if (trace is None or trace.size==0):
+            retdict = {
+                feature_base_name: -999999.0,
+            }
+
+            return retdict   
+
+        
         if window_min_index is None:
             window_min_index = 0
 
@@ -665,6 +737,15 @@ class FeatureExtractors:
 
         """
 
+        # check if trace is empty or None
+        if (trace is None or trace.size==0):
+            retdict = {
+                feature_base_name: -999999.0,
+            }
+
+            return retdict  
+
+        
         if window_min_index is None:
             window_min_index = 0
 
@@ -716,6 +797,15 @@ class FeatureExtractors:
 
         """
 
+        # check if trace is empty or None
+        if (trace is None or trace.size==0):
+            retdict = {
+                feature_base_name: -999999.0,
+            }
+
+            return retdict  
+
+        
         if window_min_index is None:
             window_min_index = 0
 
@@ -766,6 +856,16 @@ class FeatureExtractors:
             Dictionary containing the various extracted features.
 
         """
+
+        # check if trace is empty or None
+        if (trace is None or trace.size==0):
+            retdict = {
+                feature_base_name: -999999.0,
+            }
+
+            return retdict  
+        
+        
         if window_min_index is None:
             window_min_index = 0
 
@@ -823,6 +923,15 @@ class FeatureExtractors:
 
         """
 
+        # check if trace is empty or None
+        if (trace is None or trace.size==0):
+            retdict = {
+                feature_base_name: -999999.0,
+            }
+
+            return retdict 
+
+        
         baseline = trace[:window_min_index].mean()
         i_trace = trace[window_min_index:window_max_index] - baseline
 
@@ -981,8 +1090,6 @@ class FeatureExtractors:
                 retdict[var_name_freq] = -999999.0
         # DC
         retdict[f'{feature_base_name}_dc_amp'] = -999999.0
-
-
                 
         # check if signal stored
         if not of_base.is_signal_stored(channel):

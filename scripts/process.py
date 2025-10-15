@@ -482,7 +482,7 @@ if __name__ == "__main__":
                 
                 # get config
                 template_tag = chan_config['template_tag']
-                noise_tag = chan_config['noise_tag']
+                noise_tag = chan_config['csd_tag']
                 dpdi_tag = chan_config['dpdi_tag']
                 dpdi_poles = chan_config['dpdi_poles']
                 
