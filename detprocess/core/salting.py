@@ -359,7 +359,7 @@ class Salting(FilterData):
                     dpdi = dpdi_dict[chan]
                     norm_energy = qp.get_energy_normalization(time_array, temp[0], dpdi=dpdi[0], lgc_ev=True)
                     scaled_template = temp[0]/norm_energy
-                else: scaled_template = temp[0]
+                else: scaled_template = temp[0]/max(temp[0])
                 for n in range(nevents):
                     fullyscaled_template = scaled_template * DM_energies[n]*PCE[i]
                     salts[n].append([fullyscaled_template])   
