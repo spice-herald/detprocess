@@ -645,10 +645,12 @@ class ProcessingData:
                     min_idx = int(trigger_index - nb_pretrigger_samples)
                     max_idx = int(min_idx + nb_samples)
 
-
-                    truncated_traces = (
-                        self._current_full_traces[:, min_idx:max_idx].copy()
-                    )
+                    # check if trace can be extracted
+                    truncated_traces = None
+                    if (min_idx>=0 and max_idx<=self._current_full_traces.shape[-1]):
+                        truncated_traces = (
+                            self._current_full_traces[:, min_idx:max_idx].copy()
+                        )
 
                     chans = self._current_admin_info['detector_chans']
                     
@@ -749,17 +751,19 @@ class ProcessingData:
                     nb_pretrigger_samples=nb_pretrigger_samples,
                     weights=weights_chan
                 )
-                
+             
                 # add to OF base if not yet added
-                self._OF_base_objs[key_tuple]['OF'].update_signal(
-                    chan, trace,
-                    calc_fft=True
-                )
+                if trace is not None:
+                    self._OF_base_objs[key_tuple]['OF'].update_signal(
+                        chan, trace,
+                        calc_fft=True
+                    )
 
             # Filtered signal calculations
             for chan in channels_algorithm:
-                self._OF_base_objs[key_tuple]['OF'].calc_signal_filt(chan)
-                self._OF_base_objs[key_tuple]['OF'].calc_signal_filt_td(chan)
+                if self._OF_base_objs[key_tuple]['OF'].is_signal_stored(chan):
+                    self._OF_base_objs[key_tuple]['OF'].calc_signal_filt(chan)
+                    self._OF_base_objs[key_tuple]['OF'].calc_signal_filt_td(chan)
                 
     def get_event_admin(self, return_all=False):
         """
