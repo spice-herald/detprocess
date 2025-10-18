@@ -433,65 +433,74 @@ def unique_list(alist):
     return unique_items
 
 
-def get_ind_freq_ranges(freq_ranges, freqs=None):
+def cleanup_freq_ranges(f_lims):
     """
-    Return name/frequency/index  list
+    cleanup frequency range for psd_peaks, also return feature 
+    base names
     """
+    if not isinstance(f_lims, list):
+        f_lims = [f_lims]
 
-    name_list = list()
-    freq_range_list = list()
-    ind_range_list = list()
+    # loop
+    freq_ranges = list()
+    range_names = list()
+    for freq_range in f_lims:
 
-    if len(freq_ranges)<1:
-        return
+        # case single number
+        if (isinstance(freq_range, float)
+            or isinstance(freq_range, int)):
+            freq_range = [freq_range]
 
-    if (len(freq_ranges)== 2
-        and (isinstance(freq_ranges[0], float)
-             or isinstance(freq_ranges[0], int))):
-        freq_ranges = [freq_ranges]
-            
-    for it, freq_range in enumerate(freq_ranges):
-        
-        # ignore if not a range
-        if len(freq_range) != 2:
-            continue
-            
-        # low/high frequency
         f_low = abs(freq_range[0])
-        f_high = abs(freq_range[1])
-            
-        if f_low > f_high:
-            f_low = abs(freq_range[1])
-            f_high = abs(freq_range[0])
-                                
-        # check if duplicate
-        name = f'{round(f_low)}_{round(f_high)}'
-        if name in name_list:
-            continue
+        if len(freq_range) == 2:
+            f_high = abs(freq_range[1])
+            if f_low > f_high:
+                f_low, f_high = f_high, f_low
+            name = f'{round(f_low)}_{round(f_high)}'
+            if name not in range_names:
+                freq_ranges.append([f_low, f_high])
+                range_names.append(f'{round(f_low)}_{round(f_high)}')
+        else:
+            name = f'{round(f_low)}'
+            if name not in range_names:
+                freq_ranges.append([f_low])
+                range_names.append(f'{round(f_low)}')
 
-        # get indicies
-        ind_low = None
-        ind_high = None
-        
-        if freqs is not None:
-            ind_low = np.argmin(np.abs(freqs - f_low))
-            ind_high = np.argmin(np.abs(freqs - f_high))
+    return freq_ranges, range_names
 
-            # check if proper range
-            if ind_low == ind_high:
-                if ind_low < len(freqs)-2:
-                    ind_high = ind_low + 1
-                else:
-                    continue
-        
-        
-        # store
-        name_list.append(name)
-        freq_range_list.append((f_low, f_high))
-        if freqs is not None:
-            ind_range_list.append((ind_low, ind_high))
+
+
+
+def get_ind_freq_ranges(freq_ranges, freqs):
+    """
+    Return index list
+    """
+    
+    idx_ranges = list()
+    for freq_range in freq_ranges:
+        f_low = abs(freq_range[0])
+        ind_low = int(np.argmin(np.abs(freqs - f_low)))
+        ind_high = ind_low + 1
+        if len(freq_range) == 2:
+            f_high =  abs(freq_range[1])
+            ind_high = int(np.argmin(np.abs(freqs - f_high)))
             
-    return name_list, freq_range_list, ind_range_list
+        # Ensure order
+        if ind_low > ind_high:
+            ind_low, ind_high = ind_high, ind_low
+            
+        # Handle identical indices 
+        if ind_low == ind_high:
+            if ind_high < len(freqs) - 1:
+                ind_high += 1
+            elif ind_low > 0:
+                ind_low -= 1
+            else:
+                raise ValueError("Frequency range too narrow or outside bounds.")
+        idx_ranges.append([ind_low, ind_high])
+        
+            
+    return idx_ranges
 
 
 def estimate_sampling_rate(freq_array):
