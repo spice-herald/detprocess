@@ -2,6 +2,7 @@ import numpy as np
 import qetpy as qp
 from detprocess.utils import utils
 import random
+from pprint import pprint
 
 __all__ = [
     'FeatureExtractors',
@@ -978,13 +979,13 @@ class FeatureExtractors:
             Dictionary containing the various extracted features.
 
         """
-        
-        # get OF base freqs
-        freqs = of_base.fft_freqs()
-    
-        # get ranges 
-        range_names, freq_ranges, ind_ranges = utils.get_ind_freq_ranges(f_lims, freqs)
 
+        # check f_lims and define feature name
+        if not f_lims:
+            raise ValueError('ERROR: "f_lims" required for algorithm psd_amps')
+
+        freq_ranges, range_names = utils.cleanup_freq_ranges(f_lims)
+        
         # initialize output
         retdict = {}
         for var_base in range_names:
@@ -995,13 +996,11 @@ class FeatureExtractors:
         if not of_base.is_signal_stored(channel):
             return retdict
        
-        # get fft 
+        # get fft
         trace_fft = of_base.signal_fft(channel, squeeze_array=True)
-        if trace_fft.ndim != 1:
-            # multi-channels, not implemented
-            raise ValueError(f'ERROR: "psd_amp" not implemented for '
-                             f'multi-channel. Remove algorithm for '
-                             f'channel {channel}!')
+        trace_fft = trace_fft.copy()
+        freqs = of_base.fft_freqs().copy()
+        nbins = of_base.nb_samples()
 
         # sample rate
         fs = utils.estimate_sampling_rate(freqs)
@@ -1009,7 +1008,7 @@ class FeatureExtractors:
             fs = kwargs['fs']
 
         # calculate psd
-        psd = (np.abs(trace_fft)**2.0) * fs
+        psd = (np.abs(trace_fft)**2.0)*nbins/fs
 
         # fold
         freqs_fold, psd_fold = qp.utils.fold_spectrum(psd, fs)
@@ -1020,11 +1019,12 @@ class FeatureExtractors:
         freqs_fold = freqs_fold[1:]
           
         retdict = {}
+        ind_ranges = utils.get_ind_freq_ranges(freq_ranges, freqs_fold)
         for it, ind_range in enumerate(ind_ranges):
 
             ind_low = ind_range[0]
             ind_high = ind_range[1]
-                                             
+
             # take median
             psd_chunk = psd_fold[ind_low:ind_high]
                 
@@ -1038,7 +1038,7 @@ class FeatureExtractors:
             # parameter name
             psd_amp_name = f'{feature_base_name}_{range_names[it]}'
             retdict[psd_amp_name] = psd_avg
-        
+     
         return retdict
 
 
@@ -1047,6 +1047,7 @@ class FeatureExtractors:
                   f_lims=[],
                   npeaks=1,
                   min_separation_hz=0.0,
+                  average_range=False,
                   feature_base_name='psd_peaks',
                   **kwargs):
         """
@@ -1076,10 +1077,12 @@ class FeatureExtractors:
             Dictionary containing the various extracted features.
 
         """
-        
-        # get ranges 
-        range_names, freq_ranges,_ = utils.get_ind_freq_ranges(f_lims)
+        # check f_lims and define feature name
+        if not f_lims:
+            raise ValueError('ERROR: "f_lims" required for algorithm psd_amps')
 
+        freq_ranges, range_names = utils.cleanup_freq_ranges(f_lims)
+      
         # initialize output
         retdict = {}
         for i in range(1, npeaks + 1):
@@ -1096,7 +1099,8 @@ class FeatureExtractors:
             return retdict
         
         trace_fft = of_base.signal_fft(channel, squeeze_array=True)
-        freqs = of_base.fft_freqs()
+        trace_fft = trace_fft.copy()
+        freqs = of_base.fft_freqs().copy()
         nbins = of_base.nb_samples()
 
         if trace_fft.ndim != 1:
@@ -1117,38 +1121,58 @@ class FeatureExtractors:
         freqs_fold, psd_fold = qp.utils.fold_spectrum(psd, fs)
 
         # store DC amp
-        retdict[f'{feature_base_name}_dc_amp'] = 1e12*np.sqrt(psd_fold[0])
+        retdict[f'{feature_base_name}_dc_amp'] = np.sqrt(psd_fold[0])
 
         # remove DC
         psd_fold =  psd_fold[1:]
-        psd_fold =  1e12*np.sqrt(psd_fold)
+        psd_fold =  np.sqrt(psd_fold)
         freqs_fold = freqs_fold[1:]
               
         # loop range and find peaks
+        ind_ranges = utils.get_ind_freq_ranges(freq_ranges, freqs_fold)
         for it, freq_range in enumerate(freq_ranges):
 
-            # find peaks within interval
-            result_list = utils.find_psd_peaks(
-                freqs_fold, psd_fold,
-                fmin=freq_range[0], fmax=freq_range[1],
-                npeaks=npeaks,
-                min_separation_hz=min_separation_hz,
-                min_prominence=None)
+            ind_range = ind_ranges[it]
+            var_base  =  range_names[it]
+
+            # case single frequency or just take average range
+            if ((ind_range[1] == ind_range[0]+1)
+                or average_range):
+                
+                ind_low = ind_range[0]
+                ind_high = ind_range[1]
+                psd_chunk = psd_fold[ind_low:ind_high]
+                psd_avg = np.average(psd_chunk)
+                freq_avg = np.average(freqs_fold[ind_low:ind_high])
+                var_name_amp = f'{feature_base_name}_{var_base}_amp_1'
+                var_name_freq = f'{feature_base_name}_{var_base}_freq_1'
+
+                retdict[var_name_amp] = psd_avg
+                retdict[var_name_freq] = freq_avg
+
+            else:
+                
+
+                # find peaks within interval
+                result_list = utils.find_psd_peaks(
+                    freqs_fold, psd_fold,
+                    fmin=freq_range[0], fmax=freq_range[1],
+                    npeaks=npeaks,
+                    min_separation_hz=min_separation_hz,
+                    min_prominence=None)
                      
-            # var base name
-            var_base = range_names[it]
-            
-            # loop peaks
-            for i in range(npeaks):
-                var_name_amp = f'{feature_base_name}_{var_base}_amp_{i+1}'
-                var_name_freq = f'{feature_base_name}_{var_base}_freq_{i+1}'
-                if i < len(result_list):
-                    result = result_list[i]
-                    retdict[var_name_amp] = result['amplitude']
-                    retdict[var_name_freq] =  result['freq']
-                else:
-                    retdict[var_name_amp] = 0
-                    retdict[var_name_freq] = -999999.
+                      
+                # loop peaks
+                for i in range(npeaks):
+                    var_name_amp = f'{feature_base_name}_{var_base}_amp_{i+1}'
+                    var_name_freq = f'{feature_base_name}_{var_base}_freq_{i+1}'
+                    if i < len(result_list):
+                        result = result_list[i]
+                        retdict[var_name_amp] = result['amplitude']
+                        retdict[var_name_freq] =  result['freq']
+                    else:
+                        retdict[var_name_amp] = -999999.
+                        retdict[var_name_freq] = -999999.
                     
         # done
         return retdict
@@ -1194,10 +1218,13 @@ class FeatureExtractors:
 
             Phase will be returned in radians.
         """
-        
-        # get ranges 
-        range_names, freq_ranges,_ = utils.get_ind_freq_ranges(f_lims)
 
+        # check f_lims and define feature name
+        if not f_lims:
+            raise ValueError('ERROR: "f_lims" required for algorithm psd_amps')
+
+        freq_ranges, range_names = utils.cleanup_freq_ranges(f_lims)
+    
         # initialize output
         retdict = {}
         for i in range(1, npeaks + 1):
@@ -1213,7 +1240,8 @@ class FeatureExtractors:
             return retdict
         
         trace_fft = of_base.signal_fft(channel, squeeze_array=True)
-        freqs = of_base.fft_freqs()
+        trace_fft = trace_fft.copy()
+        freqs = of_base.fft_freqs().copy()
         nbins = of_base.nb_samples()
 
         if trace_fft.ndim != 1:
@@ -1235,55 +1263,79 @@ class FeatureExtractors:
 
         # remove DC
         psd_fold =  psd_fold[1:]
-        psd_fold =  1e12*np.sqrt(psd_fold)
+        psd_fold =  np.sqrt(psd_fold)
         freqs_fold = freqs_fold[1:]
-              
-        # calculate phase from FFT
-        mag = np.abs(trace_fft)
-        fft_cpy = np.copy(trace_fft)
-        # Apply phase shift to calculate phase relative to the trigger time, not the beginning of the trace.
-        nb_samples_pretrigger = 0
-        if 'nb_samples_pretrigger' in kwargs:
-            nb_samples_pretrigger = kwargs['nb_samples_pretrigger']
-        pretrigger_length_msec = nb_samples_pretrigger / fs * 1e3
-        fft_cpy = fft_cpy * np.exp(1j * 2.0 * np.pi * freqs * pretrigger_length_msec*1e-3) # Apply phase shift for given pretrigger length
-        fft_cpy[mag < mag.max()*float(threshold_factor)] = 0   # round off very small values to avoid weird phase behavior. Can adjust using threshold_factor argument
-        phase = np.angle(fft_cpy) # phase in radians
+     
+        fft_cpy = np.array(trace_fft, copy=True)
+        mag = np.abs(fft_cpy)
         
-        # fold phase
-        # we have to do this manually, since phase is not symmetric. We simply take only the positive frequencies.
-        num_freqs = phase.shape[-1]
-        num_positive_freqs = num_freqs // 2 + 1
-        phase_fold = np.copy(phase[:num_positive_freqs])
-        # remove DC
+        # Phase reference shift for pretrigger
+        nb_samples_pretrigger = kwargs.get('nb_samples_pretrigger', 0)
+        t0 = nb_samples_pretrigger / fs  # seconds
+        fft_cpy *= np.exp(1j * 2.0 * np.pi * freqs * t0)
+
+        # Mask tiny-magnitude bins to avoid noisy phase
+        thr = mag.max() * float(kwargs.get('threshold_factor', 0.0))
+        phase = np.angle(fft_cpy)
+        if thr > 0:
+            phase = np.where(mag >= thr, phase, -999999.0)
+
+
+        # Keep only positive frequencies (includes DC and Nyquist if N even)
+        N = phase.shape[-1]
+        pos_stop = N // 2 + 1
+        phase_fold = phase[:pos_stop]
+        freqs_fold = freqs[:pos_stop]
+
+        # Fix Nyquist if negative (happens for even N)
+        if freqs_fold[-1] < 0:
+            freqs_fold[-1] = abs(freqs_fold[-1])
+            
+        # Remove DC
         phase_fold = phase_fold[1:]
-
-
-        # loop range and find peaks
+        freqs_fold = freqs_fold[1:]
+      
+        # loop ranges
+        ind_ranges = utils.get_ind_freq_ranges(freq_ranges, freqs_fold)
         for it, freq_range in enumerate(freq_ranges):
 
-            # find peaks within interval
-            result_list = utils.find_psd_peaks(
-                freqs_fold, psd_fold,
-                fmin=freq_range[0], fmax=freq_range[1],
-                npeaks=npeaks,
-                min_separation_hz=min_separation_hz,
-                min_prominence=None)
-                     
-            # var base name
-            var_base = range_names[it]
-            
-            # loop peaks
-            for i in range(npeaks):
-                var_name_phase = f'{feature_base_name}_{var_base}_phase_{i+1}'
-                var_name_freq = f'{feature_base_name}_{var_base}_freq_{i+1}'
-                if i < len(result_list):
-                    result = result_list[i]
-                    retdict[var_name_freq] =  result['freq']
-                    retdict[var_name_phase] = phase_fold[result['index']]
-                else:
-                    retdict[var_name_phase] = 0
-                    retdict[var_name_freq] = -999999.
+            ind_range = ind_ranges[it]
+            var_base  =  range_names[it]
+
+            # case single frequency or just take average range
+            if (ind_range[1] == ind_range[0]+1):
+                ind_low = ind_range[0]
+                ind_high = ind_range[1]
+                var_name_phase = f'{feature_base_name}_{var_base}_phase_1'
+                var_name_freq = f'{feature_base_name}_{var_base}_freq_1'
+
+                freq_val = float(freqs_fold[ind_low:ind_high].item())
+                phase_val = float(phase_fold[ind_low:ind_high].item())
+                
+                retdict[var_name_freq] = freq_val
+                retdict[var_name_phase] = phase_val
+                                
+            else:
+                
+                # find peaks within interval
+                result_list = utils.find_psd_peaks(
+                    freqs_fold, psd_fold,
+                    fmin=freq_range[0], fmax=freq_range[1],
+                    npeaks=npeaks,
+                    min_separation_hz=min_separation_hz,
+                    min_prominence=None)
+                            
+                # loop peaks
+                for i in range(npeaks):
+                    var_name_phase = f'{feature_base_name}_{var_base}_phase_{i+1}'
+                    var_name_freq = f'{feature_base_name}_{var_base}_freq_{i+1}'
+                    if i < len(result_list):
+                        result = result_list[i]
+                        retdict[var_name_freq] =  result['freq']
+                        retdict[var_name_phase] = phase_fold[result['index']]
+                    else:
+                        retdict[var_name_phase] = -999999.
+                        retdict[var_name_freq] = -999999.
                     
         # done
         return retdict
