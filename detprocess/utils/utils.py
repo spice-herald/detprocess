@@ -20,7 +20,8 @@ from glob import glob
 __all__ = ['split_channel_name', 'extract_window_indices',
            'find_linear_segment', 'create_directory', 'create_series_name',
            'get_dataframe_series_list', 'get_ind_freq_ranges',
-           'is_empty','unique_list','estimate_sampling_rate' ,'find_psd_peaks']
+           'is_empty','unique_list','estimate_sampling_rate' ,'find_psd_peaks',
+           'get_trigger_template_info']
 
 
     
@@ -708,3 +709,70 @@ def find_psd_peaks(
     # Sort the returned list by frequency 
     # results.sort(key=lambda d: d['freq'])
     return results
+
+
+
+def get_trigger_template_info(trigger_config, filter_data_inst):
+    """
+    Check template length/pretrigger 
+    for deadtime estimate
+    """
+
+    trigger_info = dict()
+    posttrigger_list = list()
+    pretrigger_list = list()
+    
+    # loop channels
+
+    for trigger_chan, trigger_dict in trigger_config['channels'].items():
+
+        if not trigger_dict['run']:
+            continue
+            
+        chan = trigger_dict['channel_name']
+        template_tag = trigger_dict['template_tag']
+        template, _, template_metadata =  filter_data_inst.get_template(
+            chan,
+            tag=template_tag,
+            return_metadata=True)
+
+        # get info
+        sample_rate = template_metadata['sample_rate']
+        nb_pretrigger_samples = template_metadata['nb_pretrigger_samples']
+        nb_samples = template_metadata['nb_samples']
+        nb_posttrigger_samples =  nb_samples - nb_pretrigger_samples
+
+        # convert to msec
+        pretrigger_length_msec = 1e3*nb_pretrigger_samples/sample_rate
+        posttrigger_length_msec = 1e3*nb_posttrigger_samples/sample_rate
+        trace_length_msec = 1e3*nb_samples/sample_rate
+
+
+        # save
+        trigger_info[trigger_chan] = {
+            'nb_pretrigger_samples': nb_pretrigger_samples,
+            'nb_posttrigger_samples': nb_posttrigger_samples,
+            'nb_samples': nb_samples,
+            'pretrigger_length_msec': pretrigger_length_msec,
+            'posttrigger_length_msec': posttrigger_length_msec,
+            'trace_length_msec': trace_length_msec
+        }
+
+
+        posttrigger_list.append(posttrigger_length_msec)
+        pretrigger_list.append(pretrigger_length_msec)
+
+        
+
+    # find min/max
+    trigger_info['min_posttrigger_length_msec'] = min(posttrigger_list)
+    trigger_info['max_posttrigger_length_msec'] = max(posttrigger_list)
+    trigger_info['min_pretrigger_length_msec'] = min(pretrigger_list)
+    trigger_info['max_pretrigger_length_msec'] = max(pretrigger_list)
+    trigger_info['min_edge_exclusion'] = min(trigger_info['min_posttrigger_length_msec'],
+                                             trigger_info['min_pretrigger_length_msec'])
+    trigger_info['max_edge_exclusion'] = max(trigger_info['max_posttrigger_length_msec'],
+                                             trigger_info['max_pretrigger_length_msec'])
+    
+ 
+    return trigger_info

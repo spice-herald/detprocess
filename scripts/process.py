@@ -3,7 +3,7 @@ import argparse
 from pprint import pprint
 from detprocess import utils, TriggerProcessing, IVSweepProcessing
 from detprocess import  FeatureProcessing, Randoms, Salting
-from detprocess import RawData, YamlConfig
+from detprocess import RawData, YamlConfig, FilterData
 import os
 from pathlib import Path
 from pytesdaq.utils import arg_utils
@@ -280,7 +280,8 @@ if __name__ == "__main__":
         print('ERROR: For the moment, randoms cannot '
               'be enabled in the same time as salting!')
         exit()
-        
+
+ 
     # ====================================
     # IV Sweep
     # ====================================
@@ -360,24 +361,36 @@ if __name__ == "__main__":
    
     print(f'Total duration {data_type_str} data: {duration/60} minutes '
           f'({nb_events} events)')
-    
 
-    # ====================================
-    # Read yaml file
-    # ====================================
     
-    yaml_obj = YamlConfig(processing_setup, available_channels,
-                          sample_rate=sample_rate)
-                    
-     
+    # ====================================
+    # Read yaml configuration
+    # ====================================
+
+    yaml_obj = None
+    trigger_template_info = None
+    if processing_setup is not None:
+        yaml_obj = YamlConfig(processing_setup, available_channels,
+                              sample_rate=sample_rate)
+
+
+        # get trigger info (for livetime calculation)
+        trigger_config = yaml_obj.get_config('trigger')
+        if trigger_config is not None:
+            filter_file = trigger_config['overall']['filter_file']
+            filter_data_inst = FilterData()
+            filter_data_inst.load_hdf5(filter_file, overwrite=True)
+            trigger_template_info = utils.get_trigger_template_info(
+                trigger_config, filter_data_inst
+            )
+            
+        
     # ====================================
     # Calc Filter
     # ====================================
     if calc_filter:
         print('CALC FILTER NOT AVAILABLE')
         
-        
-
 
     # ====================================
     # SALTING

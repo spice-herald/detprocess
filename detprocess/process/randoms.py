@@ -173,8 +173,8 @@ class Randoms:
     
     def process(self, random_rate=None,
                 nrandoms=None,
-                min_separation_msec=20,
-                edge_exclusion_msec=20,
+                min_separation_msec=0,
+                edge_exclusion_msec=0,
                 edge_exclusion_samples=None,
                 ncores=1,
                 lgc_save=False,
@@ -236,8 +236,8 @@ class Randoms:
                   + 'random rate!')
 
 
-        if min_separation_sec > edge_exclusion_sec:
-            edge_exclusion_sec = min_separation_sec
+        #if min_separation_sec > edge_exclusion_sec:
+        #    edge_exclusion_sec = min_separation_sec
 
         # If rate is low, we can increase minimum seperation
         # (up to 50% time between randoms) 
@@ -503,7 +503,9 @@ class Randoms:
                                 'group_name':list(),
                                 'processing_id':list(),
                                 'trigger_prod_id': list(),
-                                'trigger_prod_group_name':list()}
+                                'trigger_prod_group_name':list(),
+                                'randoms_min_separation':list(),
+                                'randoms_edge_exclusion':list()}
                 
                 # get file metadata 
                 h5reader = h5io.H5Reader()
@@ -618,6 +620,8 @@ class Randoms:
                         feature_dict['trigger_prod_id'].append(trigger_id)
                         feature_dict['trigger_prod_group_name'].append(trigger_prod_group_name)
                         feature_dict['group_name'].append(metadata['group_name'])
+                        feature_dict['randoms_min_separation'].append(min_separation_sec)
+                        feature_dict['randoms_edge_exclusion'].append(edge_exclusion_sec)
                         processing_id = np.nan
                         if self._processing_id is not None:
                             processing_id = self._processing_id
