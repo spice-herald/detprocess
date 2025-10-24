@@ -39,7 +39,7 @@ class Salting(FilterData):
 
     """
 
-    def __init__(self, filter_file, didv_file=None, verbose=True):
+    def __init__(self, filter_file, didv_file=None, template_info = None, verbose=True):
         """
         Initialize class
 
@@ -82,6 +82,7 @@ class Salting(FilterData):
 
         self._filter_file = filter_file
         self._didv_file = didv_file
+        self.template_info = template_info
         
         self.load_hdf5(filter_file, overwrite=False)
         if didv_file is not None:
@@ -286,7 +287,7 @@ class Salting(FilterData):
         return energysplits
 
     def generate_salt(self, channels, noise_tag, template_tag, dpdi_tag, dpdi_poles,
-                      energies, pdf_file, PCE, nevents=100):
+                      energies, pdf_file, PCE, nevents=100, deadtime_salt=False):
         """
         Generate salting metadata
         """
@@ -340,8 +341,13 @@ class Salting(FilterData):
         # generate the random selections in time 
         sep_time = 1000*nb_samples/self._fs
         if self._dataframe is None:
-            self._generate_randoms(nevents=nevents,
-                                   min_separation_msec=sep_time)
+            if deadtime_salt:
+                self._generate_randoms(nevents=nevents,
+                                   min_separation_msec=sep_time,
+                                   edge_exclusion_msec = 0)
+            else:
+                self._generate_randoms(nevents=nevents,
+                                     min_separation_msec=sep_time,edge_exclusion_msec = self.trigger_info['max_edge_exclusion'])
         nevents = len(self._dataframe)
         # Create channel-specific keys
         for key in base_keys:
@@ -556,7 +562,7 @@ class Salting(FilterData):
                 # Retrieve the template and times
                 template, times = self.get_template(tempchan, tag=template_tag)
                 nb_samples = len(times)
-
+                pretrigger = nb_samples/2 
                 # Handle tempchan containing '|'
                 if '|' in tempchan:
                     tempchan_list = convert_channel_name_to_list(tempchan)
@@ -573,7 +579,7 @@ class Salting(FilterData):
                 # Add salting pulse
                 saltpulse = temp * saltamp
                 simtime = trigger_index
-                newtrace[simtime:simtime + nb_samples] += saltpulse
+                newtrace[simtime:simtime + pretrigger] += saltpulse[pretrigger-1:]
 
             newtraces.append(newtrace)
 

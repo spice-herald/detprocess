@@ -438,6 +438,10 @@ if __name__ == "__main__":
         if 'coincident_salts' in salting_config['overall']:
             coincident_salts = salting_config['overall']['coincident_salts']
             print(f'INFO: Salt time coincidence between channels has been set to {coincident_salts}!')
+         
+        deadtime_salt = False    
+        if "deadtime_salt" in salting_config['overall']:
+            print(f'INFO: deadtime_salt has been set to {salting_config['overall']['deadtime_salt']}! Salts will be placed in the deadtime regions! Don\'t overcount deadtime!')
                    
         # DM pdf
         pdf_file = None
@@ -459,7 +463,7 @@ if __name__ == "__main__":
                 
         
         # Instantiate salting
-        salting = Salting(filter_file, didv_file=didv_file)
+        salting = Salting(filter_file, didv_file=didv_file,template_info = trigger_template_info)
 
         # Add either raw data metadata or raw path
        
@@ -529,7 +533,8 @@ if __name__ == "__main__":
                                       energies=energy,
                                       pdf_file=pdf_file,
                                       PCE=pce,
-                                      nevents=nsalt)
+                                      nevents=nsalt,
+                                      deadtime_salt=deadtime_salt)
                 
                 
                 salting_dataframe = salting.get_dataframe()
