@@ -11,7 +11,7 @@ from scipy import special, stats
 import copy
 import warnings
 import pyarrow as pa
-
+from pprint import pprint
 vx.settings.main.thread_count = 1
 vx.settings.main.thread_count_io = 1
 pa.set_cpu_count(1)
@@ -401,10 +401,11 @@ class OptimumFilterTrigger:
         self._trigger_channel = qp.utils.convert_channel_list_to_name(trigger_channel)
 
         # trigger name
-        self._trigger_name = trigger_name
+        self._trigger_name = str(trigger_name)
         if trigger_name is None:
-            self._trigger_name = self._trigger_channel
-            
+            self._trigger_name = str(self._trigger_channel)
+        if '\0' in self._trigger_name:
+            self._trigger_name = self._trigger_name.replace('\0', '')
         
         # Reshape template if needed to [channels, amplitudes, samples]
         n_dims_template = len(template.shape)
@@ -539,9 +540,23 @@ class OptimumFilterTrigger:
                 
         df = None
         if self._trigger_data is not None:
-            df = vx.from_dict(
-                self._trigger_data[self._trigger_name]
-            )
+
+            data = copy.deepcopy(self._trigger_data[self._trigger_name])
+            
+            prepared = {}
+            for key, values in data.items():
+                if all(isinstance(v, str) or v is None for v in values):
+                    # Convert to Arrow string array
+                    prepared[key] = pa.array(values, type=pa.string())
+                elif all(isinstance(v, (float, int, np.number)) or v is None for v in values):
+                    # Convert to NumPy array (let vaex handle dtype)
+                    prepared[key] = np.array(values, dtype=float)
+                else:
+                    # fallback to generic Arrow array
+                    prepared[key] = pa.array(values)
+            
+            df = vx.from_dict(prepared)
+      
         return df
            
 
@@ -669,6 +684,7 @@ class OptimumFilterTrigger:
                       positive_pulses=True, dynamic=False,
                       dynamic_threshold_function=None, residual=False,
                       saturation_amplitudes_LPF_50kHz=None,
+                      edge_exclusion_msec=None,
                       return_trigger_data=False):
         """
         Method to detect events in the traces with a delta chi2 amplitude
@@ -718,6 +734,9 @@ class OptimumFilterTrigger:
             not provided, we just set the saturation amplitude to inf or
             negative inf, based on positive_pulses; equivalently,
             disabling the check saturation.
+        edge_exclusion_msec: float, optional
+            exclude trigger within edge_exclusion_msec or beginning and end trace
+
         return_trigger_data : bool, optional
             If True, return four objects: the first-pass trigger dictionary,
             the first-pass delta chi2 trace, the second-pass trigger
@@ -829,8 +848,35 @@ class OptimumFilterTrigger:
                       pileup_window_msec, pileup_window_samples,
                       dynamic, dynamic_threshold_function)
 
-
-
+    
+        # remove trigger from edge exlusion
+        if edge_exclusion_msec is not None:
+            
+            threshold_min = edge_exclusion_msec*1e-3
+            threshold_max = (self._filtered_trace.shape[-1]/self._fs) - (edge_exclusion_msec*1e-3)
+          
+            trigger_data_copy  = copy.deepcopy(self._trigger_data)
+        
+            for chan, data in trigger_data_copy.items():
+                             
+                # trigger time, if not triggers do nothing
+                trigger_times = data['trigger_time']
+                if len(trigger_times) == 0:
+                    continue
+                
+                # Keep only items strictly inside the range (exclusive)
+                indices_to_keep = [i for i, t in enumerate(trigger_times) if threshold_min < t < threshold_max]
+                
+                # Filter all lists consistently
+                filtered_data = {
+                    k: [v[i] for i in indices_to_keep]
+                    for k, v in data.items()
+                }
+                
+                n = len(indices_to_keep)
+                filtered_data['trigger_edge_exclusion_time'] = [edge_exclusion_msec*1e-3] * n
+                self._trigger_data[chan] = copy.deepcopy(filtered_data)
+                
             
     def find_triggers_once(self, thresh,
                       pileup_window_msec=None, pileup_window_samples=None,
@@ -970,6 +1016,12 @@ class OptimumFilterTrigger:
                 trigger_data['trigger_pileup_window'].extend([pileup_window])
 
 
+        # add trigger channel
+        nb_events = len(trigger_data['trigger_index'])
+        if nb_events>0:
+            trigger_data['trigger_channel'] = [str(self._trigger_name)]*nb_events
+            
+            
         # duplicate key channel name
         self._trigger_data = dict()
         self._trigger_data[self._trigger_name] = trigger_data.copy()
@@ -977,17 +1029,6 @@ class OptimumFilterTrigger:
         for key, val in trigger_data.items():
             newkey = key + '_' + self._trigger_name
             self._trigger_data[self._trigger_name][newkey] = val
-
-        #  add channels
-        nb_events = len(trigger_data['trigger_index'])
-        chan_list = list()
-        if nb_events>0:
-            if '\0' in self._trigger_name:
-                self._trigger_name = self._trigger_name.replace('\0', '')
-            self._trigger_data[self._trigger_name]['trigger_channel'] = (
-                pa.array([self._trigger_name]*nb_events,
-                         type=pa.string())
-            )
-                        
         
+                    
         

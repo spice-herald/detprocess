@@ -128,7 +128,8 @@ class EventBuilder:
                          pileup_window_samples=None,
                          positive_pulses=True,
                          run_residual=False,
-                         sat_amps_50kHz=None):
+                         sat_amps_50kHz=None,
+                         edge_exclusion_msec=None):
         """
         calc
         """
@@ -152,7 +153,8 @@ class EventBuilder:
             pileup_window_samples=pileup_window_samples,
             positive_pulses=positive_pulses,
             residual=run_residual,
-            saturation_amplitudes_LPF_50kHz=sat_amps_50kHz
+            saturation_amplitudes_LPF_50kHz=sat_amps_50kHz,
+            edge_exclusion_msec=edge_exclusion_msec
         )
 
         # append trigger data to event dataframe
@@ -176,7 +178,8 @@ class EventBuilder:
                     coincident_window_msec=None,
                     coincident_window_samples=None,
                     nb_trigger_channels=None,
-                    trace_length_continuous_sec=None):
+                    trace_length_continuous_sec=None,
+                    exclusion_edge_msec=None):
         """
         Function to merge coincident 
         events based on user defined window (in msec or samples)
@@ -239,7 +242,6 @@ class EventBuilder:
                 coincident_window_samples=coincident_window_samples
             )
             
-
         # number of triggers (after merging coincident events)
         nb_triggers = len(self._event_df)
         

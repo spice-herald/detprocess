@@ -213,9 +213,17 @@ class TriggerProcessing:
             group_name=self._input_group_name,
             filter_file=config_dict['overall']['filter_file'],
             salting_dataframe=salting_dataframe,
+            available_channels=available_channels,
             verbose=verbose
         )
 
+        # edge exclusion
+        filter_data_inst = self._processing_data_inst.get_filter_data_inst()
+        trigger_template_info = utils.get_trigger_template_info(
+            config_dict.copy(), filter_data_inst
+        )
+
+        self._edge_exclusion_msec = trigger_template_info['max_edge_exclusion']
 
     def get_output_path(self):
         """
@@ -761,7 +769,8 @@ class TriggerProcessing:
                         pileup_window_samples=pileup_window_samples,
                         positive_pulses=positive_pulses,
                         run_residual=run_residual,
-                        sat_amps_50kHz=sat_amps_50kHz
+                        sat_amps_50kHz=sat_amps_50kHz,
+                        edge_exclusion_msec=self._edge_exclusion_msec
                         )
 
 
