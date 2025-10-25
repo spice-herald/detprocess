@@ -347,7 +347,7 @@ class Salting(FilterData):
                                    edge_exclusion_msec = 0)
             else:
                 self._generate_randoms(nevents=nevents,
-                                     min_separation_msec=sep_time,edge_exclusion_msec = self.trigger_info['max_edge_exclusion'])
+                                     min_separation_msec=sep_time,edge_exclusion_msec = self.template_info['max_edge_exclusion'])
         nevents = len(self._dataframe)
         # Create channel-specific keys
         for key in base_keys:
@@ -558,11 +558,11 @@ class Salting(FilterData):
                 template_tag = str(common_data['salt_template_tag'][idx])
                 tempchan = str(common_data['saltchanname'][idx])
                 trigger_index = int(common_data['trigger_index'][idx])
-
+                
                 # Retrieve the template and times
                 template, times = self.get_template(tempchan, tag=template_tag)
                 nb_samples = len(times)
-                pretrigger = nb_samples/2 
+                pretrigger = nb_samples//2 
                 # Handle tempchan containing '|'
                 if '|' in tempchan:
                     tempchan_list = convert_channel_name_to_list(tempchan)
@@ -578,9 +578,15 @@ class Salting(FilterData):
                 
                 # Add salting pulse
                 saltpulse = temp * saltamp
-                simtime = trigger_index
-                newtrace[simtime:simtime + pretrigger] += saltpulse[pretrigger-1:]
+                simtime = int(trigger_index)
+                L = len(saltpulse)
+                pretrigger = L // 2  
 
+                segment = saltpulse[pretrigger:]            
+                end = min(simtime + len(segment), len(newtrace))
+                segment = segment[: end - simtime]  # trim if necessary
+                newtrace[simtime:end] += segment
+                    
             newtraces.append(newtrace)
 
         # Prepare output metadata
