@@ -685,6 +685,7 @@ class OptimumFilterTrigger:
                       dynamic_threshold_function=None, residual=False,
                       saturation_amplitudes_LPF_50kHz=None,
                       edge_exclusion_msec=None,
+                      livetime=None,
                       return_trigger_data=False):
         """
         Method to detect events in the traces with a delta chi2 amplitude
@@ -874,9 +875,11 @@ class OptimumFilterTrigger:
                 }
                 
                 n = len(indices_to_keep)
-                filtered_data['trigger_edge_exclusion_time'] = [edge_exclusion_msec*1e-3] * n
+                filtered_data[f'trigger_edge_exclusion_time_{chan}'] = [edge_exclusion_msec*1e-3] * n
+                if livetime is not None:
+                    filtered_data[f'trigger_livetime_{chan}'] = [livetime] * n
                 self._trigger_data[chan] = copy.deepcopy(filtered_data)
-                
+       
             
     def find_triggers_once(self, thresh,
                       pileup_window_msec=None, pileup_window_samples=None,

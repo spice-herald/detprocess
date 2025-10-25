@@ -180,6 +180,7 @@ class Randoms:
                 lgc_save=False,
                 lgc_output=False,
                 save_path=None,
+                livetime=None,
                 output_group_name=None,
                 memory_limit='2GB'):
         
@@ -209,7 +210,8 @@ class Randoms:
             edge_exclusion_sec = edge_exclusion_msec/1000
             
         min_separation_sec = min_separation_msec/1000
-
+        self._livetime = livetime
+        
         # random rate
         if (random_rate is not None
             and nrandoms is not None):
@@ -504,8 +506,9 @@ class Randoms:
                                 'processing_id':list(),
                                 'trigger_prod_id': list(),
                                 'trigger_prod_group_name':list(),
-                                'randoms_min_separation':list(),
-                                'randoms_edge_exclusion':list()}
+                                'randoms_min_separation_time':list(),
+                                'randoms_edge_exclusion_time':list(),
+                                'randoms_livetime':list()}
                 
                 # get file metadata 
                 h5reader = h5io.H5Reader()
@@ -620,8 +623,9 @@ class Randoms:
                         feature_dict['trigger_prod_id'].append(trigger_id)
                         feature_dict['trigger_prod_group_name'].append(trigger_prod_group_name)
                         feature_dict['group_name'].append(metadata['group_name'])
-                        feature_dict['randoms_min_separation'].append(min_separation_sec)
-                        feature_dict['randoms_edge_exclusion'].append(edge_exclusion_sec)
+                        feature_dict['randoms_min_separation_time'].append(min_separation_sec)
+                        feature_dict['randoms_edge_exclusion_time'].append(edge_exclusion_sec)
+                        feature_dict['randoms_livetime'].append(self._livetime)
                         processing_id = np.nan
                         if self._processing_id is not None:
                             processing_id = self._processing_id
