@@ -57,7 +57,7 @@ class YamlConfig:
                         'coincident_salts',
                         'energies',
                         'nsalt',
-                        'deadtime_salt'],
+                        'do_salt_deadtime'],
             'feature': ['trace_length_samples',
                         'pretrigger_length_samples',
                         'trace_length_msec',
@@ -74,7 +74,8 @@ class YamlConfig:
             'nb_pretrigger_samples': 'pretrigger_length_samples',
             'template_time_tags': 'template_group_ids',
             'psd_tag': 'csd_tag',
-            'noise_tag':'csd_tag'
+            'noise_tag':'csd_tag',
+            'deadtime_salt': 'do_salt_deadtime'
         }
     
         # available channel separators

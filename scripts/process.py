@@ -439,12 +439,29 @@ if __name__ == "__main__":
             coincident_salts = salting_config['overall']['coincident_salts']
             print(f'INFO: Salt time coincidence between channels has been set to {coincident_salts}!')
          
-        deadtime_salt = False    
-        if 'deadtime_salt' in salting_config['overall']:
-            deadtime_salt = salting_config['overall']['deadtime_salt']
-            print(f'INFO: deadtime_salt has been set to {deadtime_salt}! '
+        do_salt_deadtime = False    
+        if 'do_salt_deadtime' in salting_config['overall']:
+            do_salt_deadtime = salting_config['overall']['do_salt_deadtime']
+            
+        if do_salt_deadtime:
+            print(f'INFO: "do_salt_deadtime" has been set to {do_salt_deadtime}! '
                   f'Salts will be placed in the deadtime regions!')
-                               
+        else:
+
+            if trigger_template_info is None:
+                print('ERROR: Missing trigger information to calculate deadtime for salting')
+                sys.exit(0)
+                
+            print(f'INFO: "do_salt_deadtime" has been set to {do_salt_deadtime}! '
+                  f'NO salts will be placed in the deadtime regions!')
+        # livetime
+        salting_livetime = duration
+        if not do_salt_deadtime:
+            edge_exclusion_msec = trigger_template_info['max_edge_exclusion']
+            salting_livetime = duration -(nb_events*2*edge_exclusion_msec*1e-3)
+
+        print(f'INFO: Total salting livetime = {salting_livetime/60} minutes')
+                                       
         # DM pdf
         pdf_file = None
         if 'dm_pdf_file' in salting_config['overall']:
@@ -465,7 +482,8 @@ if __name__ == "__main__":
                 
         
         # Instantiate salting
-        salting = Salting(filter_file, didv_file=didv_file,template_info = trigger_template_info)
+        salting = Salting(filter_file, didv_file=didv_file,
+                          template_info=trigger_template_info)
 
         # Add either raw data metadata or raw path
        
@@ -536,7 +554,8 @@ if __name__ == "__main__":
                                       pdf_file=pdf_file,
                                       PCE=pce,
                                       nevents=nsalt,
-                                      deadtime_salt=deadtime_salt)
+                                      do_salt_deadtime=do_salt_deadtime,
+                                      livetime=salting_livetime)
                 
                 
                 salting_dataframe = salting.get_dataframe()
