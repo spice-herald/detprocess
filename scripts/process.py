@@ -373,10 +373,10 @@ if __name__ == "__main__":
         yaml_obj = YamlConfig(processing_setup, available_channels,
                               sample_rate=sample_rate)
 
-
         # get trigger info (for livetime calculation)
         trigger_config = yaml_obj.get_config('trigger')
-        if trigger_config is not None:
+        if (trigger_config is not None
+            and trigger_config['channels']):
             filter_file = trigger_config['overall']['filter_file']
             filter_data_inst = FilterData()
             filter_data_inst.load_hdf5(filter_file, overwrite=True)
