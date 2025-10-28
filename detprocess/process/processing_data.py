@@ -112,7 +112,7 @@ class ProcessingData:
              
         # get ADC and file info
         self._data_info = self._extract_data_info()
-            
+                
         # available channels
         self._available_channels =  available_channels
 
@@ -127,7 +127,9 @@ class ProcessingData:
     def verbose(self):
         return self._verbose
 
-
+    def get_filter_data_inst(self):
+        return self._filter_data
+    
     def load_salting_dataframe(self):
         """
         Load salting dataframe

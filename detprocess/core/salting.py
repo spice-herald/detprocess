@@ -39,7 +39,7 @@ class Salting(FilterData):
 
     """
 
-    def __init__(self, filter_file, didv_file=None, verbose=True):
+    def __init__(self, filter_file, didv_file=None, template_info=None, verbose=True):
         """
         Initialize class
 
@@ -82,6 +82,7 @@ class Salting(FilterData):
 
         self._filter_file = filter_file
         self._didv_file = didv_file
+        self._template_info = template_info
         
         self.load_hdf5(filter_file, overwrite=False)
         if didv_file is not None:
@@ -286,7 +287,9 @@ class Salting(FilterData):
         return energysplits
 
     def generate_salt(self, channels, noise_tag, template_tag, dpdi_tag, dpdi_poles,
-                      energies, pdf_file, PCE, nevents=100):
+                      energies, pdf_file, PCE, nevents=100,
+                      do_salt_deadtime=False,
+                      livetime=None):
         """
         Generate salting metadata
         """
@@ -304,6 +307,10 @@ class Salting(FilterData):
                          'salt_recoil_energy_eV': list(),
                          'saltchanname': list(),
                          'salting_type':list()}
+
+        if livetime is not None:
+            salt_var_dict['salting_livetime'] = list()
+
         
         base_keys = ['salt_amplitude', 'salt_energy_eV']
         # get dpdi for each individual channels
@@ -340,8 +347,15 @@ class Salting(FilterData):
         # generate the random selections in time 
         sep_time = 1000*nb_samples/self._fs
         if self._dataframe is None:
-            self._generate_randoms(nevents=nevents,
-                                   min_separation_msec=sep_time)
+            if do_salt_deadtime:
+                self._generate_randoms(nevents=nevents,
+                                       min_separation_msec=sep_time,
+                                       edge_exclusion_msec=0)
+            else:
+                edge_exclusion = self._template_info['max_edge_exclusion']
+                self._generate_randoms(nevents=nevents,
+                                       min_separation_msec=sep_time,
+                                       edge_exclusion_msec=edge_exclusion)
         nevents = len(self._dataframe)
         # Create channel-specific keys
         for key in base_keys:
@@ -368,6 +382,8 @@ class Salting(FilterData):
                         salt_var_dict['salt_recoil_energy_eV'].append([])
                         salt_var_dict['saltchanname'].append([])
                         salt_var_dict[f'salting_type'].append([])
+                        if livetime is not None:
+                            salt_var_dict[f'salting_livetime'].append([])
                         
                     salt_var_dict[f'salt_amplitude_{chan}'][n] = max(fullyscaled_template)
                     salt_var_dict[f'salt_energy_eV_{chan}'][n] = DM_energies[n]
@@ -378,6 +394,9 @@ class Salting(FilterData):
                         salt_var_dict[f'salting_type'][n] = 'dm_pdf'
                     else:
                         salt_var_dict[f'salting_type'][n] = f'energy_{DM_energies[n]}_eV'
+                    if livetime is not None:
+                        salt_var_dict[f'salting_livetime'][n] = livetime
+                        
         else: 
             salts = []
             if dpdi_dict:
@@ -392,8 +411,10 @@ class Salting(FilterData):
                     salt_var_dict['salt_template_tag'].append([])
                     salt_var_dict['salt_recoil_energy_eV'].append([])     
                     salt_var_dict['saltchanname'].append([])          
-                    salt_var_dict[f'salting_type'].append([])
-                    
+                    salt_var_dict[f'salting_type'].append([]) 
+                    if livetime is not None:
+                        salt_var_dict[f'salting_livetime'].append([])
+                        
                 salt_var_dict[f'salt_amplitude_{chan}'][n] = max(fullyscaled_template)
                 salt_var_dict[f'salt_energy_eV_{chan}'][n] = DM_energies[n]
                 salt_var_dict[f'salt_template_tag'][n] = template_tag
@@ -403,7 +424,10 @@ class Salting(FilterData):
                     salt_var_dict[f'salting_type'][n] = 'dm_pdf'
                 else:
                     salt_var_dict[f'salting_type'][n] = f'energy_{DM_energies[n]}_eV'
-                
+
+                if livetime is not None:
+                    salt_var_dict[f'salting_livetime'][n] = livetime
+                    
         maxlen = len(self._dataframe) 
         for key in salt_var_dict:
             salt_var_dict[key] = salt_var_dict[key][:maxlen]   
@@ -552,11 +576,11 @@ class Salting(FilterData):
                 template_tag = str(common_data['salt_template_tag'][idx])
                 tempchan = str(common_data['saltchanname'][idx])
                 trigger_index = int(common_data['trigger_index'][idx])
-
+                
                 # Retrieve the template and times
                 template, times = self.get_template(tempchan, tag=template_tag)
                 nb_samples = len(times)
-
+                pretrigger = nb_samples//2 
                 # Handle tempchan containing '|'
                 if '|' in tempchan:
                     tempchan_list = convert_channel_name_to_list(tempchan)
@@ -572,9 +596,15 @@ class Salting(FilterData):
                 
                 # Add salting pulse
                 saltpulse = temp * saltamp
-                simtime = trigger_index
-                newtrace[simtime:simtime + nb_samples] += saltpulse
+                simtime = int(trigger_index)
+                L = len(saltpulse)
+                pretrigger = L // 2  
 
+                segment = saltpulse[pretrigger:]            
+                end = min(simtime + len(segment), len(newtrace))
+                segment = segment[: end - simtime]  # trim if necessary
+                newtrace[simtime:end] += segment
+                    
             newtraces.append(newtrace)
 
         # Prepare output metadata

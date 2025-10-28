@@ -56,7 +56,8 @@ class YamlConfig:
             'salting': ['dm_pdf_file',
                         'coincident_salts',
                         'energies',
-                        'nsalt'],
+                        'nsalt',
+                        'do_salt_deadtime'],
             'feature': ['trace_length_samples',
                         'pretrigger_length_samples',
                         'trace_length_msec',
@@ -73,7 +74,8 @@ class YamlConfig:
             'nb_pretrigger_samples': 'pretrigger_length_samples',
             'template_time_tags': 'template_group_ids',
             'psd_tag': 'csd_tag',
-            'noise_tag':'csd_tag'
+            'noise_tag':'csd_tag',
+            'deadtime_salt': 'do_salt_deadtime'
         }
     
         # available channel separators
@@ -222,7 +224,6 @@ class YamlConfig:
             new_channel_config = {}
             channels = processing_configs[field]['channels']
             for chan, chan_dict in channels.items():
-
                 # check if disable
                 if ('disable' in chan_dict and chan_dict['disable']
                     or 'run' in chan_dict and not chan_dict['run']):

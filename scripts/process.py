@@ -3,7 +3,7 @@ import argparse
 from pprint import pprint
 from detprocess import utils, TriggerProcessing, IVSweepProcessing
 from detprocess import  FeatureProcessing, Randoms, Salting
-from detprocess import RawData, YamlConfig
+from detprocess import RawData, YamlConfig, FilterData
 import os
 from pathlib import Path
 from pytesdaq.utils import arg_utils
@@ -280,7 +280,8 @@ if __name__ == "__main__":
         print('ERROR: For the moment, randoms cannot '
               'be enabled in the same time as salting!')
         exit()
-        
+
+ 
     # ====================================
     # IV Sweep
     # ====================================
@@ -360,24 +361,36 @@ if __name__ == "__main__":
    
     print(f'Total duration {data_type_str} data: {duration/60} minutes '
           f'({nb_events} events)')
-    
 
-    # ====================================
-    # Read yaml file
-    # ====================================
     
-    yaml_obj = YamlConfig(processing_setup, available_channels,
-                          sample_rate=sample_rate)
-                    
-     
+    # ====================================
+    # Read yaml configuration
+    # ====================================
+
+    yaml_obj = None
+    trigger_template_info = None
+    if processing_setup is not None:
+        yaml_obj = YamlConfig(processing_setup, available_channels,
+                              sample_rate=sample_rate)
+
+        # get trigger info (for livetime calculation)
+        trigger_config = yaml_obj.get_config('trigger')
+        if (trigger_config is not None
+            and trigger_config['channels']):
+            filter_file = trigger_config['overall']['filter_file']
+            filter_data_inst = FilterData()
+            filter_data_inst.load_hdf5(filter_file, overwrite=True)
+            trigger_template_info = utils.get_trigger_template_info(
+                trigger_config, filter_data_inst
+            )
+            
+        
     # ====================================
     # Calc Filter
     # ====================================
     if calc_filter:
         print('CALC FILTER NOT AVAILABLE')
         
-        
-
 
     # ====================================
     # SALTING
@@ -425,7 +438,30 @@ if __name__ == "__main__":
         if 'coincident_salts' in salting_config['overall']:
             coincident_salts = salting_config['overall']['coincident_salts']
             print(f'INFO: Salt time coincidence between channels has been set to {coincident_salts}!')
-                   
+         
+        do_salt_deadtime = False    
+        if 'do_salt_deadtime' in salting_config['overall']:
+            do_salt_deadtime = salting_config['overall']['do_salt_deadtime']
+            
+        if do_salt_deadtime:
+            print(f'INFO: "do_salt_deadtime" has been set to {do_salt_deadtime}! '
+                  f'Salts will be placed in the deadtime regions!')
+        else:
+
+            if trigger_template_info is None:
+                print('ERROR: Missing trigger information to calculate deadtime for salting')
+                sys.exit(0)
+                
+            print(f'INFO: "do_salt_deadtime" has been set to {do_salt_deadtime}! '
+                  f'NO salts will be placed in the deadtime regions!')
+        # livetime
+        salting_livetime = duration
+        if not do_salt_deadtime:
+            edge_exclusion_msec = trigger_template_info['max_edge_exclusion']
+            salting_livetime = duration -(nb_events*2*edge_exclusion_msec*1e-3)
+
+        print(f'INFO: Total salting livetime = {salting_livetime/60} minutes')
+                                       
         # DM pdf
         pdf_file = None
         if 'dm_pdf_file' in salting_config['overall']:
@@ -446,7 +482,8 @@ if __name__ == "__main__":
                 
         
         # Instantiate salting
-        salting = Salting(filter_file, didv_file=didv_file)
+        salting = Salting(filter_file, didv_file=didv_file,
+                          template_info=trigger_template_info)
 
         # Add either raw data metadata or raw path
        
@@ -516,7 +553,9 @@ if __name__ == "__main__":
                                       energies=energy,
                                       pdf_file=pdf_file,
                                       PCE=pce,
-                                      nevents=nsalt)
+                                      nevents=nsalt,
+                                      do_salt_deadtime=do_salt_deadtime,
+                                      livetime=salting_livetime)
                 
                 
                 salting_dataframe = salting.get_dataframe()
@@ -596,41 +635,25 @@ if __name__ == "__main__":
                          verbose=True)
 
 
-        # find trace length and pretrigger for estimation of
-        # exclusion
+        # edge exclusion
+        edge_exclusion_msec = 0     
+        if trigger_template_info is not None:
+            edge_exclusion_msec = trigger_template_info['max_edge_exclusion']
 
-        # let do a default of 50ms, with 25ms pretrigger
-        pretrigger_length_samples = int(sample_rate*50*1e-3)
-        trace_length_samples = int(sample_rate*25*1e-3)
-
-        # get from global parameters if exist
-        feature_config = yaml_obj.get_config('feature')['overall']
-         
-        if 'pretrigger_length_samples' in feature_config:
-            pretrigger_length_samples = int(feature_config['pretrigger_length_samples'])
-        elif 'pretrigger_length_msec' in feature_config:
-            pretrigger_length_samples = int(sample_rate*feature_config['pretrigger_length_msec']*1e-3)
-         
-        if 'trace_length_samples' in feature_config:
-            trace_length_samples = int(feature_config['trace_length_samples'])
-        elif 'trace_length_msec' in feature_config:
-            trace_length_samples = int(sample_rate*feature_config['trace_length_msec']*1e-3)
-
-        edge_exclusion_samples = None
-        if (pretrigger_length_samples is not None
-            and trace_length_samples is not None):
-            edge_exclusion_samples = max([pretrigger_length_samples,
-                                          trace_length_samples-pretrigger_length_samples])
-            edge_exclusion_samples = int(1.25*edge_exclusion_samples)
-
+        # livetime randoms
+        randoms_livetime = duration -(nb_events*2*edge_exclusion_msec*1e-3)
+        print(f'INFO: Total livetime for randoms = {randoms_livetime/60} minutes')
+        
         # process randoms
         myproc.process(random_rate=random_rate,
                        nrandoms=nrandoms,
                        ncores=ncores,
-                       edge_exclusion_samples=edge_exclusion_samples,
+                       min_separation_msec=0,
+                       edge_exclusion_msec=edge_exclusion_msec,
                        lgc_save=True,
                        lgc_output=False,
-                       save_path=save_path)
+                       save_path=save_path,
+                       livetime=randoms_livetime)
         
         randoms_group_path = myproc.get_output_path()
         
@@ -659,7 +682,17 @@ if __name__ == "__main__":
         if (randoms_group_path is not None
             and salting_dataframe_list[0] is None):
             trigger_group_name = os.path.basename(randoms_group_path)
-            
+
+
+        # edge exclusion
+        edge_exclusion_msec = None
+        trigger_livetime = None
+        if trigger_template_info is not None:
+            edge_exclusion_msec = trigger_template_info['max_edge_exclusion']
+            trigger_livetime = duration -(nb_events*2*edge_exclusion_msec*1e-3)
+            print(f'INFO: Total livetime for each trigger channels = '
+                  f'{trigger_livetime/60} minutes')
+                        
         for idx, salting_df in enumerate(salting_dataframe_list):
 
             # display salting energy 
@@ -687,7 +720,9 @@ if __name__ == "__main__":
                            lgc_save=True,
                            output_group_name=trigger_group_name,
                            ncores=ncores,
-                           save_path=save_path)
+                           save_path=save_path,
+                           edge_exclusion_msec=edge_exclusion_msec,
+                           livetime=trigger_livetime)
 
             trigger_group_path_list.append(myproc.get_output_path())
 

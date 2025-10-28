@@ -213,10 +213,11 @@ class TriggerProcessing:
             group_name=self._input_group_name,
             filter_file=config_dict['overall']['filter_file'],
             salting_dataframe=salting_dataframe,
+            available_channels=available_channels,
             verbose=verbose
         )
 
-
+        
     def get_output_path(self):
         """
         Get output group path
@@ -230,6 +231,8 @@ class TriggerProcessing:
                 save_path=None,
                 output_group_name=None,
                 ncores=1,
+                edge_exclusion_msec=None,
+                livetime=None,
                 memory_limit='1GB'):
         
         """
@@ -277,6 +280,10 @@ class TriggerProcessing:
                 print('INFO: Changing number cores to '
                       + str(ncores) + ' (maximum allowed)')
 
+        # edge exclusion and livetime
+        self._edge_exclusion_msec = edge_exclusion_msec
+        self._livetime = livetime
+                
         # create output directory
         output_group_path = None
         output_series_num = None
@@ -373,7 +380,6 @@ class TriggerProcessing:
         if self._verbose:
             print('INFO: Trigger processing done!') 
                 
-        
         if lgc_output:
             return output_df 
         
@@ -631,7 +637,7 @@ class TriggerProcessing:
                         dump_str = str(dump_counter)
                         file_name =  (output_base_file + '_F' + dump_str.zfill(4)
                                       + '.hdf5')
-                            
+
                         # export to hdf5 
                         try:
                             # export
@@ -678,6 +684,7 @@ class TriggerProcessing:
                             print('INFO' + node_num_str
                                   + ': Requested nb events reached. '
                                   + 'Stopping processing!')
+
                         return process_df
 
                     # case memory limit reached
@@ -761,8 +768,10 @@ class TriggerProcessing:
                         pileup_window_samples=pileup_window_samples,
                         positive_pulses=positive_pulses,
                         run_residual=run_residual,
-                        sat_amps_50kHz=sat_amps_50kHz
-                        )
+                        sat_amps_50kHz=sat_amps_50kHz,
+                        edge_exclusion_msec=self._edge_exclusion_msec,
+                        livetime=self._livetime
+                    )
 
 
                 # -----------------------

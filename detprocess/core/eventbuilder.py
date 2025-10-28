@@ -128,7 +128,9 @@ class EventBuilder:
                          pileup_window_samples=None,
                          positive_pulses=True,
                          run_residual=False,
-                         sat_amps_50kHz=None):
+                         sat_amps_50kHz=None,
+                         edge_exclusion_msec=None,
+                         livetime=None):
         """
         calc
         """
@@ -152,7 +154,9 @@ class EventBuilder:
             pileup_window_samples=pileup_window_samples,
             positive_pulses=positive_pulses,
             residual=run_residual,
-            saturation_amplitudes_LPF_50kHz=sat_amps_50kHz
+            saturation_amplitudes_LPF_50kHz=sat_amps_50kHz,
+            edge_exclusion_msec=edge_exclusion_msec,
+            livetime=livetime
         )
 
         # append trigger data to event dataframe
@@ -239,7 +243,6 @@ class EventBuilder:
                 coincident_window_samples=coincident_window_samples
             )
             
-
         # number of triggers (after merging coincident events)
         nb_triggers = len(self._event_df)
         
@@ -270,8 +273,7 @@ class EventBuilder:
         for key, val in metadata_string_dict.items():
             self._event_df[key] = val
 
-        # integer parameters
-                
+        # integer parameters      
         default_val  = np.array([-1]*nb_triggers, dtype=np.int64)
         metadata_dict = {'series_number': default_val,
                          'event_number': default_val,
@@ -325,6 +327,7 @@ class EventBuilder:
           
         self._current_trigger_id = metadata_dict['trigger_prod_id'][-1]
 
+        
         # add to dataframe
         for key, val in metadata_dict.items():
             self._event_df[key] = val
