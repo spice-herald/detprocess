@@ -1182,7 +1182,6 @@ class FeatureExtractors:
               f_lims=[],
               npeaks=1,
               min_separation_hz=0.0,
-              threshold_factor=1e-3,
               feature_base_name='phase',
               **kwargs):
         """
@@ -1205,8 +1204,6 @@ class FeatureExtractors:
         npeaks : number of peaks to search. Default=1
 
         min_separation_hz : minimum separation between peaks
-
-        threshold_factor : a threshold factor that will be applied in FFT units to avoid calculating the phase for noisy garbage.
 
         feature_base_name : str, option
             output feature base name
@@ -1273,12 +1270,7 @@ class FeatureExtractors:
         nb_samples_pretrigger = kwargs.get('nb_samples_pretrigger', 0)
         t0 = nb_samples_pretrigger / fs  # seconds
         fft_cpy *= np.exp(1j * 2.0 * np.pi * freqs * t0)
-
-        # Mask tiny-magnitude bins to avoid noisy phase
-        thr = mag.max() * float(kwargs.get('threshold_factor', 0.0))
         phase = np.angle(fft_cpy)
-        if thr > 0:
-            phase = np.where(mag >= thr, phase, -999999.0)
 
 
         # Keep only positive frequencies (includes DC and Nyquist if N even)
@@ -1336,6 +1328,31 @@ class FeatureExtractors:
                     else:
                         retdict[var_name_phase] = -999999.
                         retdict[var_name_freq] = -999999.
-                    
+
+            ### PHASE UNCERTAINTY CALCULATION
+            # calculate phase uncertainty if requested (optional, add "calc_err: True" to yaml)
+            # Also requires a csd_tag to be provided in yaml.
+            if kwargs.get('calc_err', False):
+                csd_tag = kwargs.get('csd_tag', None)
+                if csd_tag is None:
+                    raise ValueError(f'ERROR: phase -> calc_err: True requires a noise psd!'
+                                f'Add csd_tag for algorithm {feature_base_name}, '
+                                f'channel {channel}!')
+
+                # get stored psd from of_base
+                noise_psd, noise_psd_freqs, noise_psd_metadata = (
+                    of_base._filter_data.get_psd(
+                        channel,
+                        tag=csd_tag,
+                        fold=False,
+                        return_metadata=True)
+                )
+
+                # Convert noise PSD back to raw FFT units (just Amps)
+                noise_fft_mag = np.sqrt(noise_psd * fs / nbins)
+                
+
+
         # done
         return retdict
+
