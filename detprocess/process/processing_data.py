@@ -199,12 +199,16 @@ class ProcessingData:
                 continue
 
             # channel list
+            available_channels = None
+            if (self._available_channels is not None
+                and self._available_channels):
+                available_channels = copy.deepcopy(self._available_channels)
             chan_list, _ = utils.split_channel_name(
                 chan,
-                available_channels=self._available_channels,
+                available_channels=available_channels,
                 separator='|'
             )
-
+            
             nb_channels = len(chan_list)
                     
             # loop configuration and get list of templates
@@ -235,7 +239,6 @@ class ProcessingData:
                 # number of samples
                 nb_samples = algo_config['nb_samples']
                 nb_pretrigger_samples =  algo_config['nb_pretrigger_samples']
-
 
                 # csd tag
                 csd_tag = 'default'
@@ -273,21 +276,19 @@ class ProcessingData:
                 if key_tuple not in self._OF_base_objs:
                     self._OF_base_objs[key_tuple] = {
                         'OF': qp.OFBase(sample_rate, verbose=True),
-                        'channels_split': chan_list,
+                        'channels_split': chan_list.copy(),
                         'channels': [chan],
                         'algorithms': [algo]
                     }
                 else:
-                    self._OF_base_objs[key_tuple]['channels_split'].extend(chan_list)
+                    self._OF_base_objs[key_tuple]['channels_split'].extend(chan_list.copy())
                     self._OF_base_objs[key_tuple]['channels'].append(chan)
                     self._OF_base_objs[key_tuple]['algorithms'].append(algo)
-
 
                 # no template/csd for psd_amp
                 if (algo_base == 'psd_amp' or algo_base == 'psd_peaks' or algo_base == 'phase'):
                     self._OF_base_objs[key_tuple]['OF']._nbins = nb_samples
                     continue
-
 
                 # get csd
                 csd, csd_freqs, csd_metadata = (
@@ -721,10 +722,11 @@ class ProcessingData:
         None
 
         """
-
+        
         # loop keys
         for key_tuple, key_dict in self._OF_base_objs.items():
 
+                  
             # clear signal
             self._OF_base_objs[key_tuple]['OF'].clear_signal()
             
@@ -737,6 +739,8 @@ class ProcessingData:
             nb_pretrigger_samples = int(key_tuple[1])
             channels_trace = key_dict['channels_split']
             channels_algorithm = key_dict['channels']
+
+
             
             # loop channels and update traces
             for chan in channels_trace:
@@ -1006,6 +1010,7 @@ class ProcessingData:
                     'ERROR: "nb_pretrigger_samples" required!')
 
             key = (nb_samples, nb_pretrigger_samples)
+            
             if (self._current_truncated_traces_data is None
                 or key not in self._current_truncated_traces_data.keys()):
                 raise ValueError('ERROR: Traces not available!')

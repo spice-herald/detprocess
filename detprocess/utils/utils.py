@@ -171,7 +171,7 @@ def split_channel_name(channel_name,
     # case not '-'
     if separator != '-':
         channel_list = channel_name.split(separator)
-        return channel_list, separator
+        return channel_list.copy(), separator
 
 
     if ('|' in channel_name
@@ -181,7 +181,7 @@ def split_channel_name(channel_name,
         raise ValueError(f'Multiple separators available, split first '
                          f'with other separators before "-"')
     else:
-        return  channel_list, separator
+        return  channel_list.copy(), separator
 
 
 
