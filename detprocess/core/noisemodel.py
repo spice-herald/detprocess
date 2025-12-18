@@ -1140,6 +1140,11 @@ class NoiseModel(FilterData):
             s_ptfn = noise_sim.s_ptfn(psd_freqs)
             s_psquid = noise_sim.s_psquid(psd_freqs)
             s_ptot = noise_sim.s_ptot(psd_freqs)
+
+
+            # convert noise to power 
+            p_psd = psd*np.abs(noise_sim.dPdI)**2
+
             
             # save
             self._noise_data[chan]['sim']['transition'] = {
@@ -1149,9 +1154,11 @@ class NoiseModel(FilterData):
                 's_ptes':s_ptes, 's_pload':s_pload,
                 's_ptfn':s_ptfn, 's_psquid':s_psquid,
                 's_ptot':s_ptot,
-                'freqs': psd_freqs
+                'freqs': psd_freqs,
+                's_idata': psd,
+                's_pdata': p_psd
             }
-         
+            
          
             
             # plot
@@ -1160,7 +1167,6 @@ class NoiseModel(FilterData):
                 # fold
                 fs =  utils.estimate_sampling_rate(psd_freqs)
                 psd_fold_freqs, psd_fold = qp.foldpsd(psd, fs)
-                p_psd = psd*np.abs(noise_sim.dPdI)**2
                 _,p_psd_fold  = qp.foldpsd(p_psd, fs)
                 
                 _,s_ites_fold  = qp.foldpsd(s_ites, fs)

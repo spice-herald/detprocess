@@ -608,50 +608,46 @@ class DIDVAnalysis(FilterData):
                 
             # get didvobj
             didvobj = self._didv_data[chan]['didvobj']
-            
-            # IV bor
+
+            # get bias parameters for IV sweep or BOR IV
+            biasparams = None
             if use_iv_bor:
-                if 'ivsweep_results' not in self._didv_data[chan]:
-                    raise ValueError(f'ERROR: No IV sweep results found '
-                                     f'for channel {chan}! Use '
-                                     f'"set_ivsweep_results()" first.')
                 if 'ivbor_results' not in self._didv_data[chan]:
                     raise ValueError(f'ERROR: No IV bor results found '
                                      f'for channel {chan}! Use '
                                      f'"set_iv_bor_data()" first.')
-                ivbor_results = self._didv_data[chan]['ivbor_results']
-                if 'ibias' not in ivbor_results:
+                
+                biasparams = self._didv_data[chan]['ivbor_results']
+                
+                if 'ibias' not in biasparams:
                     raise ValueError(f'ERROR: Unable to get ibias from '
                                         f'IV bor for channel {chan}!')
-                tes_bias = ivbor_results['ibias']
-                didvobj.calc_smallsignal_params(
-                    biasparams=ivbor_results,
-                    poles=poles,
-                    lgc_diagnostics=lgc_diagnostics
-                )
-                print(f'INFO: Using ibias={tes_bias:.3e} A from '
-                        f'IV bor for channel {chan}')
-            else:
-                if ('ivsweep_results' in self._didv_data[chan]
-                    and self._didv_data[chan]['ivsweep_results'] is not None):
-                    ivsweep_results = self._didv_data[chan]['ivsweep_results']
-                    if ('ibias' in ivsweep_results
-                        and tes_bias != ivsweep_results['ibias']):
-                        tes_bias = ivsweep_results['ibias']
-                        didvobj.calc_smallsignal_params(
-                        biasparams=ivsweep_results,
-                        poles=poles,
-                        lgc_diagnostics=lgc_diagnostics
-                        )
-                        if self._verbose:
-                            print(f'INFO: Using ibias={tes_bias:.3e} A from '
-                                  f'IV sweep for channel {chan}')
-                            
-            # IV sweep result - KEPT FOR BRUNO TO REVIEW
-            #ivsweep_results = self._didv_data[chan]['ivsweep_results']
-            #if (ivsweep_results is not None
-            #    and 'ibias' not in ivsweep_results):
-            #    ivsweep_results['ibias'] = tes_bias
+                tes_bias = biasparams['ibias']
+                
+                if self._verbose:
+                    print(f'INFO: Using ibias={tes_bias:.3e} A from '
+                          f'IV bor for channel {chan}')
+            elif ('ivsweep_results' in self._didv_data[chan]
+                  and  self._didv_data[chan]['ivsweep_results'] is not None):
+                
+                biasparams = self._didv_data[chan]['ivsweep_results']
+                
+                if 'ibias' in biasparams:
+                    tes_bias = biasparams['ibias']
+                else:
+                    biasparams['ibias'] = tes_bias
+                                   
+                if self._verbose:
+                    print(f'INFO: Using ibias={tes_bias:.3e} A from '
+                          f'IV sweep for channel {chan}')
+                    
+
+            # calculate small signal params
+            didvobj.calc_smallsignal_params(
+                biasparams=biasparams,
+                poles=poles,
+                lgc_diagnostics=lgc_diagnostics
+            )
 
             # replace
             self._didv_data[chan]['didvobj'] = didvobj
