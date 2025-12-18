@@ -576,15 +576,19 @@ class ProcessingData:
                 index=self._current_dataframe_index
             )
 
-            # get event/series number, and trigger index
-            event_number = int(self._current_dataframe_info['event_number'])
+            # get segment/series number, and trigger index
+            segment_number = None
+            if 'segment_number' in self._current_dataframe_info:
+                segment_number = int(self._current_dataframe_info['segment_number'])
+            else:
+                segment_number = int(self._current_dataframe_info['event_number'])
             dump_number = int(self._current_dataframe_info['dump_number'])
             series_number = int(self._current_dataframe_info['series_number'])
             trigger_index = int(self._current_dataframe_info['trigger_index'])
             group_name = str(self._current_dataframe_info['group_name'])
 
-            # event index in file
-            event_index = int(event_number%100000)
+            # segment index in file
+            segment_index = int(segment_number%100000)
 
             # check if new file needs to be loaded
             if (self._current_series_number is None
@@ -673,7 +677,7 @@ class ProcessingData:
                     # read traces
                     traces, info = (
                         self._h5.read_single_event(
-                            event_index,
+                            segment_index,
                             detector_chans=key_channels,
                             trigger_index=trigger_index,
                             trace_length_samples=nb_samples,
