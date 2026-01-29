@@ -123,8 +123,9 @@ class DIDVAnalysis(FilterData):
      
         dpdi = self._didv_data[channel]['dpdi_' +  poles_str]
         dpdi_freqs = self._didv_data[channel]['dpdi_freqs_' +  poles_str]
+        dpdi_err = self._didv_data[channel]['dpdi_err_' + poles_str]
 
-        return dpdi_freqs, dpdi
+        return dpdi_freqs, dpdi, dpdi_err
         
         
     def get_qetpy_object(self, channel):
@@ -1405,15 +1406,15 @@ class DIDVAnalysis(FilterData):
                 fs = self._didv_data[chan]['data_config']['fs']
             
             if 'dpdi_2poles' in self._didv_data[chan]:
-                dpdi_freqs,  dpdi= self.get_dpdi(chan, 2)
-                self.set_dpdi(chan, dpdi, dpdi_freqs, 2,
+                dpdi_freqs, dpdi, dpdi_err = self.get_dpdi(chan, 2)
+                self.set_dpdi(chan, dpdi, dpdi_err, dpdi_freqs, 2,
                               sample_rate=fs,
                               metadata=metadata)
                 save_data = True
                 
             if 'dpdi_3poles' in self._didv_data[chan]:
-                dpdi_freqs, dpdi = self.get_dpdi(chan, 3)
-                self.set_dpdi(chan, dpdi, dpdi_freqs, 3,
+                dpdi_freqs, dpdi, dpdi_err = self.get_dpdi(chan, 3)
+                self.set_dpdi(chan, dpdi, dpdi_err, dpdi_freqs, 3,
                               sample_rate=fs,
                               metadata=metadata)
                 save_data = True
