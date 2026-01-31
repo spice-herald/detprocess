@@ -885,7 +885,7 @@ class FilterData:
             )
 
             self._filter_data[chan][dpdi_err_name] = (
-                pd.series(dpdi_err_chan, dpdi_freqs_chan)
+                pd.Series(dpdi_err_chan, dpdi_freqs_chan)
             )
             
             # add channel name metadata
