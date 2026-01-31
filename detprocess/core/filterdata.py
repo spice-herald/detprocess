@@ -627,7 +627,7 @@ class FilterData:
                              'for "psd_freqs" argument')
 
         # add dimension if needed
-        if psd_freqs.ndim == 2:
+        if psd_freqs.ndim == 1:
             psd_freqs = psd_freqs[np.newaxis, :]
 
         # check if folded -> NOT ALLOWED
