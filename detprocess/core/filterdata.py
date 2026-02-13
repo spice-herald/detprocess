@@ -789,7 +789,8 @@ class FilterData:
           
             
     def set_dpdi(self, channels,
-                 dpdi, dpdi_freqs,
+                 dpdi, dpdi_err, 
+                 dpdi_freqs,
                  poles,
                  sample_rate=None,
                  metadata=None,
@@ -855,6 +856,7 @@ class FilterData:
             
         # parameter name
         dpdi_name = f'dpdi_{poles}poles_{tag}'
+        dpdi_err_name = f'dpdi_err_{poles}poles_{tag}'
                            
         # metadata
         if metadata is None:
@@ -871,6 +873,7 @@ class FilterData:
 
             # psd
             dpdi_chan = np.squeeze(dpdi[ichan,:])
+            dpdi_err_chan = np.squeeze(dpdi_err)
             dpdi_freqs_chan = np.squeeze(dpdi_freqs[ichan,:])
             
             # add channel if needed
@@ -880,10 +883,15 @@ class FilterData:
             self._filter_data[chan][dpdi_name] = (
                 pd.Series(dpdi_chan, dpdi_freqs_chan)
             )
+
+            self._filter_data[chan][dpdi_err_name] = (
+                pd.Series(dpdi_err_chan, dpdi_freqs_chan)
+            )
             
             # add channel name metadata
             metadata['channel'] = chan
             self._filter_data[chan][dpdi_name + '_metadata'] = metadata
+            self._filter_data[chan][dpdi_err_name + '_metadata'] = metadata
 
             
     def set_ivsweep_data(self, 
