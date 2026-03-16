@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 from pprint import pprint
-import pytesdaq.io as h5io
+import pytesio as h5io
 import matplotlib.pyplot as plt
 from qetpy.utils import fftfreq, rfftfreq, fold_spectrum
 from qetpy.utils import convert_channel_name_to_list, convert_channel_list_to_name

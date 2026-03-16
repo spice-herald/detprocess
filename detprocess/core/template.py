@@ -2,7 +2,6 @@ import os
 import pandas as pd
 import numpy as np
 from pprint import pprint
-import pytesdaq.io as h5io
 import qetpy as qp
 from glob import glob
 import vaex as vx

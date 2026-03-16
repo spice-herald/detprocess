@@ -20,7 +20,7 @@ from humanfriendly import parse_size
 from itertools import groupby
 from detprocess.core import Noise, DIDVAnalysis, FilterData, Template, NoiseModel
 from detprocess import utils
-import pytesdaq.io as h5io
+import pytesio as h5io
 from scipy.signal import savgol_filter
 
 warnings.filterwarnings('ignore')

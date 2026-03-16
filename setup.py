@@ -72,7 +72,7 @@ setup(
         'pyyaml',
         'qetpy>=1.8.3',
         'pandas',
-        'pytesdaq>=0.4.5',
+        'pytesio>=0.4.7',
         'scikit-image',
         'iminuit>=2',
         'seaborn',
