@@ -23,10 +23,7 @@ from detprocess.process.processing_data  import ProcessingData
 from detprocess.utils import utils
 from detprocess.process.config import YamlConfig
 from detprocess.core.rawdata import RawData
-
-
-
-import pytesdaq.io as h5io
+import pytesio as h5io
 import gc
 warnings.filterwarnings('ignore')
 import pyarrow as pa

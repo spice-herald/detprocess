@@ -11,7 +11,7 @@ from itertools import repeat
 from datetime import datetime
 import stat
 import time
-import pytesdaq.io as h5io
+import pytesio as h5io
 from math import ceil, floor
 import random
 import copy

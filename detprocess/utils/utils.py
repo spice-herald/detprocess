@@ -9,7 +9,7 @@ import copy
 from yaml.loader import SafeLoader
 import re
 from pprint import pprint
-from pytesdaq.io import convert_length_msec_to_samples
+from pytesio import convert_length_msec_to_samples
 from qetpy.utils import convert_channel_name_to_list, convert_channel_list_to_name
 import vaex as vx
 from datetime import datetime

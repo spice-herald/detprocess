@@ -8,7 +8,6 @@ from glob import glob
 from pathlib import Path
 import types
 import cloudpickle
-import pytesdaq.io as h5io
 import math
 import array
 from detprocess.core.oftrigger import OptimumFilterTrigger

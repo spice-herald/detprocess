@@ -14,7 +14,7 @@ from datetime import datetime
 import stat
 import time
 import astropy
-import pytesdaq.io as h5io
+import pytesio as h5io
 import copy
 from humanfriendly import parse_size
 from detprocess.process.processing_data  import ProcessingData

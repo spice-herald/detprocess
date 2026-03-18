@@ -2,7 +2,6 @@ import os
 import pandas as pd
 import numpy as np
 from pprint import pprint
-import pytesdaq.io as h5io
 import qetpy as qp
 from glob import glob
 import vaex as vx
@@ -10,8 +9,8 @@ from pathlib import Path
 from scipy.signal import unit_impulse
 from datetime import datetime
 from detprocess.core.filterdata import FilterData
-from pytesdaq.io.hdf5 import H5Reader
-import pytesdaq.io.hdf5 as h5io
+from pytesio.hdf5 import H5Reader
+import pytesio as h5io
 h5 = h5io.H5Reader()
 import stat
 
