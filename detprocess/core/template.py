@@ -7,7 +7,7 @@ from glob import glob
 import vaex as vx
 from pathlib import Path
 from detprocess.core.filterdata import FilterData
-
+import pytesio as h5io
 
 class Template(FilterData):
     """
@@ -28,10 +28,122 @@ class Template(FilterData):
 
         """
 
+        self._average_pulses = dict()
+        
+
+
+
+        
         # instantiate base class
         super().__init__(verbose=verbose)
 
-           
+
+
+
+    def calc_average_pulses(self, channels, filepath, event_list,
+                            trace_length_msec=None,
+                            pretrigger_length_msec=None,
+                            trace_length_samples=None,
+                            pretrigger_length_samples=None,
+                            max_events=1000,
+                            lgc_plot=False,
+                            lgc_filter_freq=True, filter_freq=50e3)
+    
+        """
+        Calculates the average pulse in the time domain.
+        
+        Parameters
+        ----------
+            
+        lgc_plot_average_trace : bool, optional
+            
+        lgc_filter_freq : bool, optional
+            If True, filters the plotted example events with a low pass filter
+            
+        filter_freq : float, optional
+            The low pass filter frequency for the displayed pulses
+    
+        """ 
+
+        h5reader = h5io.H5Reader()
+
+        # get traces
+        
+        traces, metadata = h5reader.read_many_events(
+            filepath=filepath,
+            nevents=1000,
+            output_format=2,
+            detector_chans=channels,
+            event_list=event_list,
+            trace_length_msec=trace_length_msec,
+            trace_length_samples=trace_length_samples,
+            pretrigger_length_msec=pretrigger_length_msec,
+            pretrigger_length_samples=pretrigger_length_samples,
+            include_metadata=True,
+            adctoamp=True,
+            baselinesub=False)
+
+
+        average_traces = np.mean(traces, axis=0)
+        trigger_index = int(self.pretrigger_window*self.fs)
+        mean_i_t -= np.mean(mean_i_t[:trigger_index - 100])
+
+
+        return average_traces
+
+    
+        """
+        if lgc_plot_average_trace:
+            i = 0
+            while i < len(photon_peak_numbers):
+                photon_peak_number = photon_peak_numbers[i]
+                mean_i_t = self.mean_i_t_dict[photon_peak_number]
+                
+                
+                if lgc_filter_freq:
+                    plt.plot(self.t_arr*1e3, mean_i_t, label = "Mean Trace Peak " + str(photon_peak_number),
+                            alpha = 0.5, color = 'C'+str(i))
+                    plt.plot(self.t_arr*1e3, lowpassfilter(mean_i_t, cut_off_freq=filter_freq,
+                                                           order=2, fs=self.fs),
+                             label = "Filtered Mean Trace Peak " + str(photon_peak_number) + ", Fcut = " + str(filter_freq*1e-3) + " kHz",
+                             color = 'C'+str(i))
+                    
+                else:
+                    plt.plot(self.t_arr*1e3, mean_i_t, label = "Mean Trace Peak " + str(photon_peak_number))
+                i += 1
+            plt.xlabel("Time (ms)")
+            plt.ylabel("Average Pulse Height (Amps)")
+            plt.legend()
+            plt.xlim(time_lims[0]*1e3, time_lims[1]*1e3)
+            plt.show()
+            
+            i = 0
+            while i < len(photon_peak_numbers):
+                photon_peak_number = photon_peak_numbers[i]
+                mean_i_t = self.mean_i_t_dict[photon_peak_number]
+                normalization = max(mean_i_t)
+                
+                
+                if lgc_filter_freq:
+                    plt.plot(self.t_arr*1e3, mean_i_t/normalization, label = "Mean Trace Peak " + str(photon_peak_number),
+                            alpha = 0.5, color = 'C'+str(i))
+                    plt.plot(self.t_arr*1e3, lowpassfilter(mean_i_t/normalization, cut_off_freq=filter_freq,
+                                                           order=2, fs=self.fs),
+                             label = "Filtered Mean Trace Peak " + str(photon_peak_number) + ", Fcut = " + str(filter_freq*1e-3) + " kHz",
+                             color = 'C'+str(i))
+                    
+                else:
+                    plt.plot(self.t_arr*1e3, mean_i_t, label = "Mean Trace Peak " + str(photon_peak_number))
+                i += 1
+            plt.xlabel("Time (ms)")
+            plt.ylabel("Normalized Pulse Height")
+            plt.legend()
+            plt.title("Pulses Normalized")
+            plt.xlim(time_lims[0]*1e3, time_lims[1]*1e3)
+            plt.show()
+
+        """
+        
 
     def create_template(self, channels,
                         sample_rate=None,
