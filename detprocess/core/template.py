@@ -29,10 +29,7 @@ class Template(FilterData):
         """
 
         self._average_pulses = dict()
-        
-
-
-
+     
         
         # instantiate base class
         super().__init__(verbose=verbose)
@@ -40,14 +37,14 @@ class Template(FilterData):
 
 
 
-    def calc_average_pulses(self, channels, filepath, event_list,
+    def calc_average_pulses(self, channels, file_path, event_list,
                             trace_length_msec=None,
                             pretrigger_length_msec=None,
                             trace_length_samples=None,
                             pretrigger_length_samples=None,
-                            max_events=1000,
+                            nevents=2000,
                             lgc_plot=False,
-                            lgc_filter_freq=True, filter_freq=50e3)
+                            lgc_filter_freq=True, filter_freq=50e3):
     
         """
         Calculates the average pulse in the time domain.
@@ -64,14 +61,14 @@ class Template(FilterData):
             The low pass filter frequency for the displayed pulses
     
         """ 
-
+        
         h5reader = h5io.H5Reader()
 
         # get traces
         
         traces, metadata = h5reader.read_many_events(
-            filepath=filepath,
-            nevents=1000,
+            filepath=file_path,
+            nevents=nevents,
             output_format=2,
             detector_chans=channels,
             event_list=event_list,
@@ -85,13 +82,11 @@ class Template(FilterData):
 
 
         average_traces = np.mean(traces, axis=0)
-        trigger_index = int(self.pretrigger_window*self.fs)
-        mean_i_t -= np.mean(mean_i_t[:trigger_index - 100])
-
-
-        return average_traces
-
-    
+        #trigger_index = int(self.pretrigger_window*self.fs)
+        #mean_i_t -= np.mean(mean_i_t[:trigger_index - 100])
+        self._average_pulses = average_traces.copy()
+        
+       
         """
         if lgc_plot_average_trace:
             i = 0
