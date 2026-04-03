@@ -51,21 +51,17 @@ class Template(FilterData):
         
         Parameters
         ----------
-            
-        lgc_plot_average_trace : bool, optional
-            
-        lgc_filter_freq : bool, optional
-            If True, filters the plotted example events with a low pass filter
-            
-        filter_freq : float, optional
-            The low pass filter frequency for the displayed pulses
+       
     
         """ 
         
         h5reader = h5io.H5Reader()
 
+        # convert channels to list if string
+        if isinstance(channels, str):
+            channels = [channels]
+
         # get traces
-        
         traces, metadata = h5reader.read_many_events(
             filepath=file_path,
             nevents=nevents,
@@ -81,14 +77,31 @@ class Template(FilterData):
             baselinesub=False)
 
 
-        average_traces = np.mean(traces, axis=0)
-        #trigger_index = int(self.pretrigger_window*self.fs)
-        #mean_i_t -= np.mean(mean_i_t[:trigger_index - 100])
-        self._average_pulses = average_traces.copy()
+        # average 2D array for each channels
+        mean_traces = np.mean(traces, axis=0)
+        
+        # sample rate
+        fs = metadata[0]['sample_rate']
+
+        # basaline subtraction
+        trigger_index = mean_traces.shape[-1]//2
+        if pretrigger_length_msec is not None:
+            trigger_index = h5io.convert_length_msec_to_samples(
+                pretrigger_length_msec, fs
+            ) - 1
+        elif pretrigger_length_samples is not None:
+            trigger_index = pretrigger_length_samples -1
+            
+        baseline = mean_traces[:, :trigger_index-100].mean(axis=1, keepdims=True)
+        mean_traces -= baseline
+    
+        # save
+        for ichan, chan in enumerate(channels):
+            self._average_pulses[chan] =  mean_traces[ichan, :]
         
        
         """
-        if lgc_plot_average_trace:
+        if lgc_plot:
             i = 0
             while i < len(photon_peak_numbers):
                 photon_peak_number = photon_peak_numbers[i]
