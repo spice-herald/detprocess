@@ -9,3 +9,4 @@ from .didv  import *
 from .noisemodel  import *
 from .salting import *
 from .rawdata import *
+from .filterbuilder import *

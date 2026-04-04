@@ -13,25 +13,31 @@ from detprocess.utils import estimate_sampling_rate
 
 class FilterData:
     """
-    Class to manage Template, noise psd, csd and IV/dIdV data 
+    Class to manage Template, noise psd, csd and IV/dIdV data
     """
 
-    def __init__(self, verbose=True):
+    def __init__(self, verbose=True, filter_data=None):
         """
         Initialize class
 
         Parameters:
         ----------
-
         verbose : bool, optional
           display information
 
-
+        filter_data : dict, optional
+          shared filter-data dictionary. If None, a new one is created.
         """
         self._verbose = verbose
-      
-        # filter file data dictionary
-        self._filter_data = dict()
+
+        if filter_data is None:
+            self._filter_data = dict()
+        else:
+            if not isinstance(filter_data, dict):
+                raise ValueError(
+                    'ERROR: "filter_data" should be a dictionary or None!'
+                )
+            self._filter_data = filter_data
 
     @property
     def verbose(self):
@@ -460,7 +466,8 @@ class FilterData:
 
 
 
-    def get_dpdi(self, channel, poles, tag='default'):
+    def get_dpdi(self, channel, poles, return_dpdi_err=False,
+                 tag='default'):
         """
         Get dpdi for a specific channel in units of Volts
 
@@ -469,6 +476,12 @@ class FilterData:
 
         channel :  str 
            channel name
+
+        poles: int
+          2 or 3-poles fit
+        
+        return_dpdi_err : bool
+          return dpdi error (optinal to keep back compatibility)
         
         tag : str, optional
             dpdi tag, default: No tag
@@ -478,22 +491,36 @@ class FilterData:
       
         dpdi : ndarray, 
             dpdi [Volts]
+    
+        dpdi_err : ndarray, optional return
 
         f  : ndarray
             dpdi frequencies
-        
+         
+      
+    
     
         """
 
         if poles not in [2,3]:
             raise ValueError('ERROR: "poles" should be '
                              '2 or 3!')
-
+        # dpdi
         par_name = f'dpdi_{poles}poles'
-        
-        # return values
-        return self._get_param_array(par_name,channel,
-                                     tag=tag)
+        dpdi,f = self._get_param_array(par_name,channel,
+                                       tag=tag)
+
+
+        # dpdi error
+        if return_dpdi_err:
+            par_name = f'dpdi_err_{poles}poles'
+            dpdi_err,_ = self._get_param_array(par_name,channel,
+                                               tag=tag)
+
+        if return_dpdi_err:
+            return dpdi, dpdi_err, f
+        else:
+            return dpdi, f
             
 
     def set_template(self, channels, template,
