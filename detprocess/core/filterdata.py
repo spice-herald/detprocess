@@ -47,13 +47,14 @@ class FilterData:
     def verbose(self, value):
         self._verbose=value
 
-    def describe(self):
+    def describe(self, channels=None):
         """
         Print filter data info
          
         Parameters:
         ----------
-        None
+        channels : str or list
+          optional list of channels
 
         Return
         -------
@@ -66,6 +67,12 @@ class FilterData:
                   '(function load_hdf5(file_name)')
             return
 
+        # channels:
+        if (channels is not None
+            and isinstance(channels, str)):
+            channels = [channels]
+
+        
         # Let's first loop channel and get tags/display msg
         filter_display = dict()
 
@@ -74,6 +81,7 @@ class FilterData:
             'psd', 'template',
             'csd',
             'dpdi_2poles', 'dpdi_3poles',
+            'dpdi_err_2poles', 'dpdi_err_3poles',
             'ivsweep_data',
             'ivsweep_results_noise',
             'ivsweep_results_didv',
@@ -97,6 +105,16 @@ class FilterData:
             
         for chan, chan_dict in self._filter_data.items():
             
+            if channels is not None:
+                do_display = False
+                for user_chan in channels:
+                    if user_chan in chan:
+                        do_display = True
+                        break
+
+                if not do_display:
+                    continue
+            
             if chan not in  filter_display.keys():
                 filter_display[chan] = dict()
                 
@@ -107,20 +125,15 @@ class FilterData:
                     continue
                 
                 # check if metadata
-                if '_inds' in par_name:
+                if ('_inds' in par_name
+                    or 'csd_freqs' in par_name):
                     continue
 
                 # find tag
-                par_split = par_name.split('_')
-                tag = par_split[-1]
-                base_par = par_name[:-len(tag)-1]
-                if (base_par not in parameter_list
-                    and len(par_split)>=2):
-                    tag = '_'.join(par_split[-2:])
-                    base_par = par_name[:-len(tag)-1]
-                    if base_par not in parameter_list:
-                        tag = 'default'
-                        base_par = par_name
+                base_par, tag = self._split_parameter_name(par_name, parameter_list)
+                if tag is None:
+                    continue
+               
                 if tag not in filter_display[chan]:
                     filter_display[chan][tag] = list()
                             
@@ -242,7 +255,7 @@ class FilterData:
                              'dictionary!')
 
         # update
-        if overwrite or not self._filter_data:
+        if not self._filter_data:
             self._filter_data.update(data)
         else:
             for key, item in data.items():
@@ -250,7 +263,7 @@ class FilterData:
                     self._filter_data[key] = item
                     continue
                 for par_name, value in item.items():
-                    if par_name not in self._filter_data[key].keys():
+                    if (overwrite or par_name not in self._filter_data[key].keys()):
                         self._filter_data[key][par_name] = (
                             data[key][par_name]
                         )
@@ -1666,3 +1679,11 @@ class FilterData:
         else:
             return vals, vals_inds
 
+    def _split_parameter_name(self, parameter_name, base_list):
+        # Match longest base first to avoid partial matches
+        for base in sorted(base_list, key=len, reverse=True):
+            prefix = base + "_"
+            if parameter_name.startswith(prefix):
+                tag = parameter_name[len(prefix):]
+                return base, tag
+        return None, None  # or raise ValueError
