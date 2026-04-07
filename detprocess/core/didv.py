@@ -15,39 +15,26 @@ h5 = h5io.H5Reader()
 import stat
 
 
-
 class DIDVAnalysis(FilterData):
     """
     Class to manage didv calculations using 
     QETpy. DIDV data are stored 
     """
-
     def __init__(self, verbose=True,
                  auto_save_hdf5=False,
-                 file_path_name=None):
-        """
-        Initialize class
+                 file_path_name=None,
+                 filter_data=None):
 
-        Parameters:
-        ----------
+        super().__init__(verbose=verbose, filter_data=filter_data)
 
-        verbose : bool, optional
-          display information
-
-        """
-
-        # instantiate base class
-        super().__init__(verbose=verbose)
-        
-        # initialize didv objects
         self._didv_data = None
-        
 
         # save results
         self._save_hdf5 = auto_save_hdf5
         self._save_path = None
         self._file_name = self._set_file_name()
-        
+      
+            
         if file_path_name is not None:
             if os.path.isfile(file_path_name):
                 self._save_path = os.path.dirname(file_path_name)
@@ -566,9 +553,8 @@ class DIDVAnalysis(FilterData):
                 self.plot_fit_result(chan)
 
 
-        # save hdf5
-        if self._save_hdf5:
-            self.save_didv_data()
+        # save data
+        self.save_didv_data(save_hdf5=self._save_hdf5)
           
     
     
@@ -653,10 +639,9 @@ class DIDVAnalysis(FilterData):
             self._didv_data[chan]['didvobj'] = didvobj
 
             
-        # save hdf5
-        if self._save_hdf5:
-            self.save_didv_data()
-            
+        # store data
+        self.save_didv_data(save_hdf5=self._save_hdf5)
+               
     
     def calc_bias_params_infinite_loop_gain(self, channels=None):
                                            
@@ -752,10 +737,10 @@ class DIDVAnalysis(FilterData):
                     rn=rn)
                 
             self._didv_data[chan]['biasparams_ilg'] = biasparams_ilg
-        
-        if self._save_hdf5:
-            self.save_didv_data()
-                      
+
+        # store data
+        self.save_didv_data(save_hdf5=self._save_hdf5)
+                              
    
     def calc_dpdi(self, freqs, channels=None, list_of_poles=None,
                   lgc_plot=False):
@@ -807,11 +792,9 @@ class DIDVAnalysis(FilterData):
 
 
                 
-        # save hdf5
-        if self._save_hdf5:
-            self.save_didv_data()
-                   
-                
+        # store data
+        self.save_didv_data(save_hdf5=self._save_hdf5)
+                       
     def calc_energy_resolution(self, channel, psd,
                                poles=3, fs=None, template=None,
                                collection_eff=1,
@@ -1334,30 +1317,10 @@ class DIDVAnalysis(FilterData):
         return df
 
 
-    def save_didv_data(self, channels=None, file_path_name=None):
+    def save_didv_data(self, channels=None, file_path_name=None, save_hdf5=False):
         """
         Save didv data
         """
-
-        # file_name
-        file_path = self._save_path
-        if file_path is None:
-            file_path = './'
-        file_name = self._file_name
-        
-        if  file_path_name is not None:
-            if os.path.isfile(file_path_name):
-                file_path = os.path.dirname(file_path_name)
-                file_name = os.path.basename(file_path_name)
-            elif os.path.isdir(file_path_name):
-                file_path = file_path_name
-            else:
-                raise ValueError('ERROR: "file_path_name" should be a '
-                                 'file or path!')
-        full_file_name = file_path + '/' + file_name
-        if file_path[-1] == '/':
-            full_file_name = file_path + file_name
-
 
         # channels
         if channels is None:
@@ -1419,11 +1382,30 @@ class DIDVAnalysis(FilterData):
                 save_data = True
 
         if not save_data:
-            print('WARNING: No dIdV data to save!')
             return
 
+        if save_hdf5:
 
-        self.save_hdf5(full_file_name, overwrite=True)
+            # file_name
+            file_path = self._save_path
+            if file_path is None:
+                file_path = './'
+            file_name = self._file_name
+        
+            if  file_path_name is not None:
+                if os.path.isfile(file_path_name):
+                    file_path = os.path.dirname(file_path_name)
+                    file_name = os.path.basename(file_path_name)
+                elif os.path.isdir(file_path_name):
+                    file_path = file_path_name
+                else:
+                    raise ValueError('ERROR: "file_path_name" should be a '
+                                     'file or path!')
+            full_file_name = file_path + '/' + file_name
+            if file_path[-1] == '/':
+                full_file_name = file_path + file_name
+
+            self.save_hdf5(full_file_name, overwrite=True)
      
                         
             

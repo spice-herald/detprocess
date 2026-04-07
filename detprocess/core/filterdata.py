@@ -13,25 +13,31 @@ from detprocess.utils import estimate_sampling_rate
 
 class FilterData:
     """
-    Class to manage Template, noise psd, csd and IV/dIdV data 
+    Class to manage Template, noise psd, csd and IV/dIdV data
     """
 
-    def __init__(self, verbose=True):
+    def __init__(self, verbose=True, filter_data=None):
         """
         Initialize class
 
         Parameters:
         ----------
-
         verbose : bool, optional
           display information
 
-
+        filter_data : dict, optional
+          shared filter-data dictionary. If None, a new one is created.
         """
         self._verbose = verbose
-      
-        # filter file data dictionary
-        self._filter_data = dict()
+
+        if filter_data is None:
+            self._filter_data = dict()
+        else:
+            if not isinstance(filter_data, dict):
+                raise ValueError(
+                    'ERROR: "filter_data" should be a dictionary or None!'
+                )
+            self._filter_data = filter_data
 
     @property
     def verbose(self):
@@ -41,13 +47,14 @@ class FilterData:
     def verbose(self, value):
         self._verbose=value
 
-    def describe(self):
+    def describe(self, channels=None):
         """
         Print filter data info
          
         Parameters:
         ----------
-        None
+        channels : str or list
+          optional list of channels
 
         Return
         -------
@@ -60,6 +67,12 @@ class FilterData:
                   '(function load_hdf5(file_name)')
             return
 
+        # channels:
+        if (channels is not None
+            and isinstance(channels, str)):
+            channels = [channels]
+
+        
         # Let's first loop channel and get tags/display msg
         filter_display = dict()
 
@@ -68,6 +81,7 @@ class FilterData:
             'psd', 'template',
             'csd',
             'dpdi_2poles', 'dpdi_3poles',
+            'dpdi_err_2poles', 'dpdi_err_3poles',
             'ivsweep_data',
             'ivsweep_results_noise',
             'ivsweep_results_didv',
@@ -91,6 +105,16 @@ class FilterData:
             
         for chan, chan_dict in self._filter_data.items():
             
+            if channels is not None:
+                do_display = False
+                for user_chan in channels:
+                    if user_chan in chan:
+                        do_display = True
+                        break
+
+                if not do_display:
+                    continue
+            
             if chan not in  filter_display.keys():
                 filter_display[chan] = dict()
                 
@@ -101,20 +125,15 @@ class FilterData:
                     continue
                 
                 # check if metadata
-                if '_inds' in par_name:
+                if ('_inds' in par_name
+                    or 'csd_freqs' in par_name):
                     continue
 
                 # find tag
-                par_split = par_name.split('_')
-                tag = par_split[-1]
-                base_par = par_name[:-len(tag)-1]
-                if (base_par not in parameter_list
-                    and len(par_split)>=2):
-                    tag = '_'.join(par_split[-2:])
-                    base_par = par_name[:-len(tag)-1]
-                    if base_par not in parameter_list:
-                        tag = 'default'
-                        base_par = par_name
+                base_par, tag = self._split_parameter_name(par_name, parameter_list)
+                if tag is None:
+                    continue
+               
                 if tag not in filter_display[chan]:
                     filter_display[chan][tag] = list()
                             
@@ -236,7 +255,7 @@ class FilterData:
                              'dictionary!')
 
         # update
-        if overwrite or not self._filter_data:
+        if not self._filter_data:
             self._filter_data.update(data)
         else:
             for key, item in data.items():
@@ -244,7 +263,7 @@ class FilterData:
                     self._filter_data[key] = item
                     continue
                 for par_name, value in item.items():
-                    if par_name not in self._filter_data[key].keys():
+                    if (overwrite or par_name not in self._filter_data[key].keys()):
                         self._filter_data[key][par_name] = (
                             data[key][par_name]
                         )
@@ -460,7 +479,8 @@ class FilterData:
 
 
 
-    def get_dpdi(self, channel, poles, tag='default'):
+    def get_dpdi(self, channel, poles, return_dpdi_err=False,
+                 tag='default'):
         """
         Get dpdi for a specific channel in units of Volts
 
@@ -469,6 +489,12 @@ class FilterData:
 
         channel :  str 
            channel name
+
+        poles: int
+          2 or 3-poles fit
+        
+        return_dpdi_err : bool
+          return dpdi error (optinal to keep back compatibility)
         
         tag : str, optional
             dpdi tag, default: No tag
@@ -478,22 +504,36 @@ class FilterData:
       
         dpdi : ndarray, 
             dpdi [Volts]
+    
+        dpdi_err : ndarray, optional return
 
         f  : ndarray
             dpdi frequencies
-        
+         
+      
+    
     
         """
 
         if poles not in [2,3]:
             raise ValueError('ERROR: "poles" should be '
                              '2 or 3!')
-
+        # dpdi
         par_name = f'dpdi_{poles}poles'
-        
-        # return values
-        return self._get_param_array(par_name,channel,
-                                     tag=tag)
+        dpdi,f = self._get_param_array(par_name,channel,
+                                       tag=tag)
+
+
+        # dpdi error
+        if return_dpdi_err:
+            par_name = f'dpdi_err_{poles}poles'
+            dpdi_err,_ = self._get_param_array(par_name,channel,
+                                               tag=tag)
+
+        if return_dpdi_err:
+            return dpdi, dpdi_err, f
+        else:
+            return dpdi, f
             
 
     def set_template(self, channels, template,
@@ -1639,3 +1679,11 @@ class FilterData:
         else:
             return vals, vals_inds
 
+    def _split_parameter_name(self, parameter_name, base_list):
+        # Match longest base first to avoid partial matches
+        for base in sorted(base_list, key=len, reverse=True):
+            prefix = base + "_"
+            if parameter_name.startswith(prefix):
+                tag = parameter_name[len(prefix):]
+                return base, tag
+        return None, None  # or raise ValueError
