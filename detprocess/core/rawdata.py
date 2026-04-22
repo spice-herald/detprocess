@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 from pprint import pprint
-import pytesdaq.io as h5io
+import pytesio as h5io
 from glob import glob
 from pathlib import Path
 import re

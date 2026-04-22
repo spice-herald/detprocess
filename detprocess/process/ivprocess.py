@@ -21,8 +21,7 @@ import copy
 import matplotlib.pyplot as plt
 from detprocess.utils import find_linear_segment, unique_list
 from detprocess.core import FilterData
-
-import pytesdaq.io as h5io
+import pytesio as h5io
 import qetpy as qp
 from scipy.signal import butter, filtfilt
 

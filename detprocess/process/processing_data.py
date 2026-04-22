@@ -3,7 +3,7 @@ import pandas as pd
 import qetpy as qp
 import sys
 from pprint import pprint
-import pytesdaq.io as h5io
+import pytesio as h5io
 import vaex as vx
 from glob import glob
 from detprocess.utils import utils

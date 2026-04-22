@@ -7,7 +7,7 @@ import yaml
 import copy
 from yaml.loader import SafeLoader
 import re
-from pytesdaq.io import convert_length_msec_to_samples
+from pytesio import convert_length_msec_to_samples
 from qetpy.utils import convert_channel_name_to_list, convert_channel_list_to_name
 from detprocess.utils import utils
 

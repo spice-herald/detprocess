@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 from pprint import pprint
-import pytesdaq.io as h5io
+import pytesio as h5io
 import qetpy as qp
 from glob import glob
 import vaex as vx
@@ -13,51 +13,26 @@ from detprocess.core.filterdata import FilterData
 from detprocess.utils import utils
 from detprocess.core.rawdata import RawData
 
-
 class Noise(FilterData):
     """
     Class to manage noise calculation from 
     randoms for multiple channels
     """
 
-    def __init__(self, verbose=True):
-        """
-        Initialize class
+    def __init__(self, verbose=True, filter_data=None):
+        super().__init__(verbose=verbose, filter_data=filter_data)
 
-        Parameters:
-        ----------
-
-        verbose : bool, optional
-          display information
-
-
-        """
-
-        # instantiate base class
-        super().__init__(verbose=verbose)
-        
-
-        # initialize raw data dictionary
         self._raw_data = None
         self._group_name = None
         self._raw_base_path = None
         self._series_list = None
         self._detector_config = None
-
-        
-        # intialize randoms dataframe
         self._dataframe = None
-
-        # intialize event list
         self._event_list = None
-
-        # sample rate stored for convenience
         self._fs = None
-    
-        # offset
         self._offset = dict()
- 
-        
+
+           
     def get_detector_config(self, channel):
         """
         get detector config
