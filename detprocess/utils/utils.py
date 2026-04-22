@@ -776,3 +776,10 @@ def get_trigger_template_info(trigger_config, filter_data_inst):
     
  
     return trigger_info
+
+def twopole(t,rtau, ftau, amp0, t0):
+    pulse = amp0*(np.exp(-(t-t0)/ftau) - np.exp(-(t-t0)/rtau))
+    if (ftau<=rtau):
+        ftau=rtau*1.001 # error-trap 
+    twopoletrace = np.where(pulse > 0 , pulse, 0)
+    return twopoletrace

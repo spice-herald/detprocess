@@ -3,6 +3,8 @@ import qetpy as qp
 from detprocess.utils import utils
 import random
 from pprint import pprint
+from scipy.optimize import curve_fit
+from scipy import signal
 
 __all__ = [
     'FeatureExtractors',
@@ -1338,4 +1340,91 @@ class FeatureExtractors:
                         retdict[var_name_freq] = -999999.
                     
         # done
+        return retdict
+
+    @staticmethod
+    def rftau(trace,
+                 rtau=None, ftau=None, amp0=None, t0=None,
+                 feature_base_name='rftau',
+                 **kwargs):
+        """
+        Feature extraction for the trace baseline.
+
+        Parameters
+        ----------
+        trace : ndarray
+            An ndarray containing the raw data to extract the feature
+            from.
+
+        rtau : int, optional
+            The rise time of the pulse, in samples.
+            Default: 30
+
+        ftau : int, optional
+            The fall time of the pulse, in samples.
+            Default: 100
+
+        amp0 : int, optional
+            The amplitude of the pulse.
+            Default: estimated from data
+
+        t0 : int, optional
+            The start time of the pulse, in samples.
+            Default: midpoint - 10 samples
+
+        feature_base_name : str, optional
+            output feature base name
+
+        Returns
+        -------
+        retdict : dict
+            Dictionary containing the various extracted features.
+
+        """
+
+        # check if trace is empty or None
+        if (trace is None or trace.size==0):
+            retdict = {
+                feature_base_name: -999999.0,
+            }
+
+            return retdict   
+
+        # set default parameters
+        if rtau is None:
+            rtau = 30 # samples
+        if ftau is None:
+            ftau = 100 # samples
+        if t0 is None:
+            t0 = int(trace.shape[-1]/2) - 10 # midpoint-10
+
+        lw = 800; uw = 1600 # could make these parameters; hard-coded for now. beware changing them, long windows eat CPU time with little added benefit
+        tt = np.arange(0,trace.shape[0],1)
+        baseline = np.mean(trace[t0-lw:t0])
+        traceb = (trace-baseline) # get a good baseline in precisely the window we care about
+
+        # RC filter the trace -- I wish this were done in hardware
+        fs = 1.25e6       # Sampling frequency (Hz)
+        fc = 50e3         # Desired cutoff frequency (Hz)
+        order = 1         # RC filter order
+        b, a = signal.butter(order, fc / (0.5 * fs), btype='low')
+        tracerc = signal.lfilter(b,a,traceb)
+        
+        if amp0 is None:
+            amp0 = np.max(tracerc[t0-lw:t0+uw])
+
+        try: # this is necessary for corner cases in which the template fit barfs
+            (opt, cov) = curve_fit(utils.twopole, tt[t0-lw:t0+uw], tracerc[t0-lw:t0+uw], p0 = [rtau, ftau, amp0, t0])#, bounds=(0,[100,1000,1e-6,t0+100]))
+        except:
+            opt = [-1,-1,-1,-1]
+        amp = np.max(utils.twopole(tt, *opt))
+        chisq = np.sum((tracerc[t0-lw:t0+uw]-utils.twopole(tt[t0-lw:t0+uw], *opt))**2)/(uw+lw)
+
+        retdict = {
+            ('risetime_' + feature_base_name): opt[0],
+            ('falltime_' + feature_base_name): opt[1],
+            ('amplitud_' + feature_base_name): amp,
+            ('chisq_' + feature_base_name): chisq,
+        }
+
         return retdict
