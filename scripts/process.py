@@ -519,9 +519,14 @@ if __name__ == "__main__":
                 
                 # get config
                 template_tag = chan_config['template_tag']
-                noise_tag = chan_config['csd_tag']
-                dpdi_tag = chan_config['dpdi_tag']
-                dpdi_poles = chan_config['dpdi_poles']
+                
+                dpdi_tag = None
+                if 'dpdi_tag' in chan_config:
+                    dpdi_tag = chan_config['dpdi_tag']
+
+                dpdi_poles = None
+                if 'dpdi_poles' in chan_config:
+                    dpdi_poles = chan_config['dpdi_poles']
                 
                 if (dpdi_tag is None) != (dpdi_poles is None): 
                     raise ValueError("Both 'dpdi_tag' and 'dpdi_poles' must be either set or None.")
@@ -546,7 +551,6 @@ if __name__ == "__main__":
                     salting.set_dataframe(coincidenttimes_dataframe)
                 # generate salt
                 salting.generate_salt(chan,
-                                      noise_tag=noise_tag,
                                       template_tag=template_tag,
                                       dpdi_tag=dpdi_tag,
                                       dpdi_poles=dpdi_poles,

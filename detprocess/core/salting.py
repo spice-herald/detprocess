@@ -14,7 +14,9 @@ from detprocess.core.oftrigger import OptimumFilterTrigger
 from detprocess.process.randoms import Randoms, RawData
 from detprocess.core.filterdata import FilterData
 from qetpy.utils import convert_channel_name_to_list,convert_channel_list_to_name
+from scipy import integrate, interpolate
 from pprint import pprint
+import pytesio as h5io
 import pyarrow as pa
 import warnings
 warnings.filterwarnings('ignore')
@@ -71,8 +73,8 @@ class Salting(FilterData):
         # sample rate stored for convenience
         self._fs = None
         
-        # store the energies from the DM spectra that you have sampled
-        self._DMenergies = np.array([])
+        # store the energies from the spectra that you have sampled
+        self._energies = np.array([])
         #self._Channelenergies = np.array([])
         
         self._verbose = verbose
@@ -189,7 +191,7 @@ class Salting(FilterData):
 
             
     
-    def sample_DMpdf(self,function, xrange, nsamples=1000, npoints=10000, normalize_cdf=True):
+    def sample_pdf(self,function, xrange, nsamples=1000, npoints=10000, normalize_cdf=True):
         """
         Produces randomly sampled values based on the arbitrary PDF defined
         by `function`, done using inverse transform sampling.
@@ -199,7 +201,7 @@ class Salting(FilterData):
         function : FunctionType
             The 1D probability density function to be randomly sampled from.
         xrange : array_like
-            A 1D array of length 2 that defines the range over which the PDF
+            A 1D array of length 2 that defines the range (in ev) over which the PDF
             in `function` is defined. Outside of this range, it is assumed that
             the PDF is zero.
         nsamples : int, optional
@@ -246,16 +248,16 @@ class Salting(FilterData):
         samples = np.random.rand(nsamples)
         sampled_energies = inv_cdf(samples)
         
-        #this is hardcoded! This is because the dRdE spectrum I'm using is in keV!
-        self._DMenergies = np.append(self._DMenergies,sampled_energies* 1e3)
+        #this is hardcoded! This is because the dRdE spectrum I'm using is in eV!
+        self._energies = np.append(self._energies,sampled_energies)
         
         return sampled_energies
 
-    def get_DMenergies(self):
-        return self._DMenergies
+    def get_sampled_energies(self):
+        return self._energies
     
-    def clear_DMenergies(self):
-        self._DMenergies = np.array([])
+    def clear_sampled_energies(self):
+        self._energies = np.array([])
         
     def channel_energy_split(self,mean=0.5, std_dev=0.2, npairs=10):
         #make n pairs which will be the same as the number of events to sim
@@ -285,13 +287,63 @@ class Salting(FilterData):
                 sublist[i] = 1
         return energysplits
 
-    def generate_salt(self, channels, noise_tag, template_tag, dpdi_tag, dpdi_poles,
-                      energies, pdf_file, PCE, nevents=100,
+    def generate_salt(self, channels, template_tag, dpdi_tag, dpdi_poles,
+                      PCE, energies = None, pdf_file = None, pdf_tag = None, pdf_bounds = [1e-2, 1e3],
+                      nevents = None, rate = None, poisson = False,
                       do_salt_deadtime=False,
                       livetime=None):
         """
         Generate salting metadata
+        
+        Parameters
+        ----------
+
+        channels : list
+            list of channels to receive the salt
+
+        template_tag : string
+            tag for pulse template in the filter file 
+        
+        dpdi_tag : string
+            tag for dpdi in the filter file   
+
+        dpdi_poles : string
+            tag for dpdi pole # in the filter file 
+
+        energies : float or list, optional
+            list of energies at which to salt   
+        
+        pdf_file : string, optional
+            path to file containing DM/LEE PDFs
+        
+        pdf_tag : string, optional
+            tag corresponding to the specfic PDF to pull. If "DM", 
+            this will interpret the file as containing a variety of masses
+            and run an individual salting on each one.
+
+    
+
+        nevents : integer, optional
+            # of salted pulses to inject
+
+        rate : float, optional
+            Rate (in Hz) of salted events 
+
+        poisson : bool, optional
+            add poisson fluctuations on the number of salts to inject (defalt no)
+
         """
+
+        if nevents is None and rate is None and pdf_tag != 'DM':
+            raise ValueError('User must specify either a number of samples, or a sample rate (unless salting with DM spectra)')
+        elif pdf_tag == 'DM':
+            pass
+        elif nevents is None: #calculate the # of salts based on dataset length.
+            nevents = rate * self._rawdata_inst.get_duration()
+
+        if nevents is not None and poisson:
+            nevents = np.random.poisson(nevents)
+
         
         channel_list  = convert_channel_name_to_list(channels)
         channel_name = convert_channel_list_to_name(channels)
@@ -319,32 +371,51 @@ class Salting(FilterData):
             for chan in channel_list:
                 dpdi, _= self.get_dpdi(chan, poles = dpdi_poles, tag=dpdi_tag)
                 dpdi_dict[chan] = dpdi
-        if pdf_file and energies:
-            raise ValueError('Only pass either list of energies or DM PDFs, not both!')
+
+
+        if pdf_file is not None and energies is not None:
+            raise ValueError('You can either pass DM PDFs, LEE PDFs, or discrete energies. Pick one!')
 
         #get the energies 
         if pdf_file:
-            masses = []
-            salt_var_dict['salt_dm_mass_MeV'] = []
-            self.clear_DMenergies()
-            with open(pdf_file, 'rb') as f:
-                dmdists = cloudpickle.load(f)
-            for mass, data in dmdists.items():
-                dmrate_function = data["dmrate"]
-                masses.append(mass)
-                self.sample_DMpdf(dmrate_function,[1e-5,1],nsamples = nevents)
-                salt_var_dict['salt_dm_mass_MeV'].extend([mass] * nevents)
-            DM_energies = self.get_DMenergies()
-            nevents = len(DM_energies)
+            if pdf_tag == 'DM':
+                if nevents is not None or rate is not None:
+                    print('Warning: ignoring nevents/rate argument; dark matter rate is pre-defined and stored in the PDF files')
+                masses = []
+                salt_var_dict['salt_dm_mass_MeV'] = []
+                self.clear_sampled_energies()
+                with open(pdf_file, 'rb') as f:
+                    dmdists = cloudpickle.load(f)
+                for mass, data in dmdists.items():
+                    dmrate_function = data["dmrate"]
+                    masses.append(mass)
+                    self.sample_pdf(dmrate_function,pdf_bounds,nsamples = nevents)
+                    salt_var_dict['salt_dm_mass_MeV'].extend([mass] * nevents)
+                sampled_energies = self.get_sampled_energies()
+                nevents = len(sampled_energies)
+            else:
+                self.clear_sampled_energies()
+                salt_var_dict[f'salt_{pdf_tag}'] = []
+                with open(pdf_file, 'rb') as f:
+                    PDF_function = cloudpickle.load(f)[pdf_tag]
+                self.sample_pdf(PDF_function,pdf_bounds, nsamples = nevents, npoints = int(2e5))
+                salt_var_dict[f'salt_{pdf_tag}'].extend([pdf_tag] * nevents)
+                sampled_energies = self.get_sampled_energies()
 
         if energies:
             if not isinstance(energies, list):
                 energies = [energies]
-            DM_energies = [energy for energy in energies for _ in range(nevents)]
-            nevents = len(DM_energies)
+            sampled_energies = [energy for energy in energies for _ in range(nevents)]
+            nevents = len(sampled_energies)
                
         # generate the random selections in time 
-        sep_time = 1000*nb_samples/self._fs
+
+        #if we're salting for understaning dE'/dE, disallow pileup
+        if pdf_tag is None:
+            sep_time = 1000*nb_samples/self._fs
+        #if we're salting for non-detector physics, allow piluep
+        else:
+            sep_time = 0
         if self._dataframe is None:
             if do_salt_deadtime:
                 self._generate_randoms(nevents=nevents,
@@ -374,7 +445,7 @@ class Salting(FilterData):
                     scaled_template = temp[0]/norm_energy
                 else: scaled_template = temp[0]/max(temp[0])
                 for n in range(nevents):
-                    fullyscaled_template = scaled_template * DM_energies[n]*PCE[i]
+                    fullyscaled_template = scaled_template * sampled_energies[n]*PCE[i]
                     salts[n].append([fullyscaled_template])   
                     if len(salt_var_dict['salt_template_tag']) <= n:
                         salt_var_dict['salt_template_tag'].append([])
@@ -385,14 +456,14 @@ class Salting(FilterData):
                             salt_var_dict[f'salting_livetime'].append([])
                         
                     salt_var_dict[f'salt_amplitude_{chan}'][n] = max(fullyscaled_template)
-                    salt_var_dict[f'salt_energy_eV_{chan}'][n] = DM_energies[n]
+                    salt_var_dict[f'salt_energy_eV_{chan}'][n] = sampled_energies[n]
                     salt_var_dict[f'salt_template_tag'][n] = template_tag
-                    salt_var_dict[f'salt_recoil_energy_eV'][n] = DM_energies[n]
+                    salt_var_dict[f'salt_recoil_energy_eV'][n] = sampled_energies[n]
                     salt_var_dict[f'saltchanname'][n] = channel_name
                     if pdf_file:
                         salt_var_dict[f'salting_type'][n] = 'dm_pdf'
                     else:
-                        salt_var_dict[f'salting_type'][n] = f'energy_{DM_energies[n]}_eV'
+                        salt_var_dict[f'salting_type'][n] = f'energy_{sampled_energies[n]}_eV'
                     if livetime is not None:
                         salt_var_dict[f'salting_livetime'][n] = livetime
                         
@@ -404,7 +475,7 @@ class Salting(FilterData):
                 scaled_template = template/norm_energy
             else: scaled_template = template
             for n in range(nevents):
-                fullyscaled_template = scaled_template * DM_energies[n]*PCE
+                fullyscaled_template = scaled_template * sampled_energies[n]*PCE
                 salts.append(fullyscaled_template)
                 if len(salt_var_dict['salt_template_tag']) <= n:
                     salt_var_dict['salt_template_tag'].append([])
@@ -415,14 +486,17 @@ class Salting(FilterData):
                         salt_var_dict[f'salting_livetime'].append([])
                         
                 salt_var_dict[f'salt_amplitude_{chan}'][n] = max(fullyscaled_template)
-                salt_var_dict[f'salt_energy_eV_{chan}'][n] = DM_energies[n]
+                salt_var_dict[f'salt_energy_eV_{chan}'][n] = sampled_energies[n]
                 salt_var_dict[f'salt_template_tag'][n] = template_tag
-                salt_var_dict[f'salt_recoil_energy_eV'][n] = DM_energies[n]
+                salt_var_dict[f'salt_recoil_energy_eV'][n] = sampled_energies[n]
                 salt_var_dict[f'saltchanname'][n] = channel_name
                 if pdf_file:
-                    salt_var_dict[f'salting_type'][n] = 'dm_pdf'
+                    if pdf_tag == 'DM':
+                        salt_var_dict[f'salting_type'][n] = 'dm_pdf'
+                    else:
+                        salt_var_dict[f'salting_type'][n] = 'LEE_pdf'
                 else:
-                    salt_var_dict[f'salting_type'][n] = f'energy_{DM_energies[n]}_eV'
+                    salt_var_dict[f'salting_type'][n] = f'energy_{sampled_energies[n]}_eV'
 
                 if livetime is not None:
                     salt_var_dict[f'salting_livetime'][n] = livetime
@@ -430,6 +504,7 @@ class Salting(FilterData):
         maxlen = len(self._dataframe) 
         for key in salt_var_dict:
             salt_var_dict[key] = salt_var_dict[key][:maxlen]   
+ 
         df = vx.from_dict(salt_var_dict)
         
         self._dataframe = self._dataframe.join(df)
@@ -451,12 +526,8 @@ class Salting(FilterData):
         or path to vaex hdf5 files)
         """
         
-        # initialize data
-        #self.clear_dataframe()
-        # check dataframe
-        # check filter data
         if self._dataframe:
-            print('WARNING: Some salt have been previously generated.')
+            print('WARNING: Some salt have been previously generated and will be ovewritten')
         if dataframe is not None:
             
             if isinstance(dataframe, vx.dataframe.DataFrame):
@@ -620,3 +691,230 @@ class Salting(FilterData):
         else:
             return output_trace
     
+
+
+
+    def _load_dataframe(self, dataframe_path):
+        """
+        Load vaex dataframe
+        """
+
+
+        # get list of files
+        files_dict, base_path, group_name = (
+            self._get_file_list(dataframe_path,
+                                is_raw=False)
+        )
+
+        file_list = list()
+        for series,files in files_dict.items():
+            if len(files)>0:
+                file_list.extend(files)
+
+        dataframe = None
+        if file_list:
+            dataframe = vx.open_many(file_list)
+        else:
+            raise ValueError('ERROR: No vaex file found. Check path!')
+        
+        return dataframe
+
+
+
+            
+    def _get_file_list(self, file_path,
+                       series=None,
+                       is_raw=True,
+                       restricted=False,
+                       calib=False):
+        """
+        Get file list from path. Return as a dictionary
+        with key=series and value=list of files
+
+        Parameters
+        ----------
+
+        file_path : str or list of str 
+           raw data group directory OR full path to HDF5  file 
+           (or list of files). Only a single raw data group 
+           allowed 
+        
+        series : str or list of str, optional
+            series to be process, disregard other data from raw_path
+
+        restricted : boolean
+            if True, use restricted data 
+            if False (default), exclude restricted data
+
+        Return
+        -------
+        
+        series_dict : dict 
+          list of files for splitted inot series
+
+        base_path :  str
+           base path of the raw data
+
+        group_name : str
+           group name of raw data
+
+        """
+
+        # convert file_path to list 
+        if isinstance(file_path, str):
+            file_path = [file_path]
+            
+            
+        # initialize
+        file_list = list()
+        base_path = None
+        group_name = None
+
+
+        # loop files 
+        for a_path in file_path:
+                   
+            # case path is a directory
+            if os.path.isdir(a_path):
+
+                if base_path is None:
+                    base_path = str(Path(a_path).parent)
+                    group_name = str(Path(a_path).name)
+                            
+                if series is not None:
+                    if series == 'even' or series == 'odd':
+                        file_name_wildcard = series + '_*.hdf5'
+                        file_list = glob(a_path + '/' + file_name_wildcard)
+                    else:
+                        if not isinstance(series, list):
+                            series = [series]
+                        for it_series in series:
+                            file_name_wildcard = '*' + it_series + '_*.hdf5'
+                            file_list.extend(glob(a_path + '/' + file_name_wildcard))
+                else:
+                    file_list = glob(a_path + '/*.hdf5')
+               
+                # check a single directory
+                if len(file_path) != 1:
+                    raise ValueError('Only single directory allowed! ' +
+                                     'No combination files and directories')
+                
+                    
+            # case file
+            elif os.path.isfile(a_path):
+
+                if base_path is None:
+                    base_path = str(Path(a_path).parents[1])
+                    group_name = str(Path(Path(a_path).parent).name)
+                    
+                if a_path.find('.hdf5') != -1:
+                    if series is not None:
+                        if series == 'even' or series == 'odd':
+                            if a_path.find(series) != -1:
+                                file_list.append(a_path)
+                        else:
+                            if not isinstance(series, list):
+                                series = [series]
+                            for it_series in series:
+                                if a_path.find(it_series) != -1:
+                                    file_list.append(a_path)
+                    else:
+                        file_list.append(a_path)
+
+            else:
+                raise ValueError('File or directory "' + a_path
+                                 + '" does not exist!')
+            
+        if not file_list:
+            raise ValueError('ERROR: No raw input data found. Check arguments!')
+
+        # sort
+        file_list.sort()
+
+      
+        # convert to series dictionary so can be easily split
+        # in multiple cores
+        
+        series_dict = dict()
+        h5reader = h5io.H5Reader()
+        series_name = None
+        file_counter = 0
+        
+        for afile in file_list:
+
+            file_name = str(Path(afile).name)
+                        
+            # skip if filter file
+            if 'filter_' in file_name:
+                continue
+
+            # skip didv
+            if ('didv_' in file_name
+                or 'iv_' in file_name):
+                continue
+                      
+            if 'treshtrig_' in file_name:
+                continue
+
+            # calibration
+            if (calib
+                and 'calib_' not in file_name):
+                continue
+
+            # not calibration
+            if not calib:
+                
+                if 'calib_' in file_name:
+                    continue
+                            
+                # restricted
+                if (restricted
+                    and 'restricted' not in file_name):
+                    continue
+
+                # not restricted
+                if (not restricted
+                    and 'restricted' in file_name):
+                    continue
+                      
+            # append file if series already in dictionary
+            if (series_name is not None
+                and series_name in afile
+                and series_name in series_dict.keys()):
+
+                if afile not in series_dict[series_name]:
+                    series_dict[series_name].append(afile)
+                    file_counter += 1
+                continue
+            
+            # get metadata
+            if is_raw:
+                metadata = h5reader.get_metadata(afile)
+                series_name = h5io.extract_series_name(metadata['series_num'])
+            else:
+                sep_start = file_name.find('_I')
+                sep_end = file_name.find('_F')
+                series_name = file_name[sep_start+1:sep_end]
+                              
+            if series_name not in series_dict.keys():
+                series_dict[series_name] = list()
+
+            # append
+            if afile not in series_dict[series_name]:
+                series_dict[series_name].append(afile)
+                file_counter += 1
+       
+            
+        if self._verbose:
+            msg = ' raw data file(s) from '
+            if not is_raw:
+                msg = ' dataframe file(s) from '
+                
+            print('INFO: Found total of '
+                  + str(file_counter)
+                  + msg
+                  + str(len(series_dict.keys()))
+                  + ' different series number!')
+
+      
+        return series_dict, base_path, group_name

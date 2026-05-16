@@ -50,11 +50,10 @@ class YamlConfig:
 
         # available global parameters
         self._overall_parameters  = {
-            'global': ['filter_file', 'didv_file'],
+            'global': ['filter_file', 'didv_file', 'LEE_PDF_file', 'DM_PDF_file'],
             'trigger': ['coincident_window_msec',
                         'coincident_window_samples'] ,
-            'salting': ['dm_pdf_file',
-                        'coincident_salts',
+            'salting': ['coincident_salts',
                         'energies',
                         'nsalt',
                         'do_salt_deadtime'],
@@ -181,7 +180,6 @@ class YamlConfig:
             # let's get config dictionary
             config_dict = copy.deepcopy(yaml_dict[field])
             yaml_dict.pop(field)
-            
             for config, config_items in config_dict.items():
 
                 if config in overall_params:
@@ -193,13 +191,19 @@ class YamlConfig:
                         field_map['overall'][param] = (
                             config_items[param]
                         )
+                elif field == 'salting' and config == 'global':
+                    for param in config_items:
+                        field_map['overall'][param] = (
+                            config_items[param]
+                        )
+
                 else:
                     field_map['channels'][config] = (
                         config_items
                     )
             # save
             processing_configs[field] = field_map
-            
+
         # the rest of parameters are for feature processing (without
         # "feature" field
         for param in  yaml_dict.keys():
