@@ -191,12 +191,6 @@ class YamlConfig:
                         field_map['overall'][param] = (
                             config_items[param]
                         )
-                elif field == 'salting' and config == 'global':
-                    for param in config_items:
-                        field_map['overall'][param] = (
-                            config_items[param]
-                        )
-
                 else:
                     field_map['channels'][config] = (
                         config_items
