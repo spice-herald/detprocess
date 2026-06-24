@@ -104,3 +104,10 @@ We have also specified to extract different features from each event: `of1x1_nod
 ### Extracting Features
 
 See notebook detprocess/examples/run_detprocess.ipynb
+
+
+---
+
+## Accelerometer Data Processing
+
+Use `scripts/process_transducer_sweep.py` to process transducer sweep data. Find more information in the header of that file.
