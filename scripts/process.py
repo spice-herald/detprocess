@@ -508,25 +508,28 @@ if __name__ == "__main__":
             # intialize dataframe list for channel
             chan_dataframe_list = []
             i = 0
-            for chan, chan_config in salting_config['channels'].items():
+            for salt, salt_config in salting_config['channels'].items():
 
                 # display
-                print(f'INFO: Generate salting for channel  {chan}')
+                print(f'INFO: Generate salting for channel {salt}')
 
                 
-                # check if multi-channel
-                chan_list = convert_channel_name_to_list(chan)
-                
+  
                 # get config
-                template_tag = chan_config['template_tag']
+                template_tag = salt_config['template_tag']
                 
                 dpdi_tag = None
-                if 'dpdi_tag' in chan_config:
-                    dpdi_tag = chan_config['dpdi_tag']
+                if 'dpdi_tag' in salt_config:
+                    dpdi_tag = salt_config['dpdi_tag']
 
                 dpdi_poles = None
-                if 'dpdi_poles' in chan_config:
-                    dpdi_poles = chan_config['dpdi_poles']
+                if 'dpdi_poles' in salt_config:
+                    dpdi_poles = salt_config['dpdi_poles']
+
+                if 'channel' in salt_config:
+                    chan = salt_config['channel']
+                else:
+                    chan = salt
                 
                 if (dpdi_tag is None) != (dpdi_poles is None): 
                     raise ValueError("Both 'dpdi_tag' and 'dpdi_poles' must be either set or None.")
@@ -539,9 +542,15 @@ if __name__ == "__main__":
                     print(f'INFO: dpdi_tag is {dpdi_tag} and dpdi_poles is {dpdi_poles}!'
                           ' Template amplitude is assumed to be 1!')
 
+
+                # check if multi-channel
+                chan_list = convert_channel_name_to_list(chan)
+                
+
+
                 pce = 1
-                if 'collection_efficiency' in chan_config:
-                    pce = chan_config['collection_efficiency']
+                if 'collection_efficiency' in salt_config:
+                    pce = salt_config['collection_efficiency']
                 elif len(chan_list) >=2:
                     pce = [pce]*len(chan_list)
 

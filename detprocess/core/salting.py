@@ -89,7 +89,6 @@ class Salting(FilterData):
         if didv_file is not None:
             self.load_hdf5(didv_file, overwrite=False)
 
-
         
     def get_detector_config(self, channel):
         """
@@ -446,6 +445,7 @@ class Salting(FilterData):
                 else: scaled_template = temp[0]/max(temp[0])
                 for n in range(nevents):
                     fullyscaled_template = scaled_template * sampled_energies[n]*PCE[i]
+
                     salts[n].append([fullyscaled_template])   
                     if len(salt_var_dict['salt_template_tag']) <= n:
                         salt_var_dict['salt_template_tag'].append([])
@@ -461,7 +461,10 @@ class Salting(FilterData):
                     salt_var_dict[f'salt_recoil_energy_eV'][n] = sampled_energies[n]
                     salt_var_dict[f'saltchanname'][n] = channel_name
                     if pdf_file:
-                        salt_var_dict[f'salting_type'][n] = 'dm_pdf'
+                        if pdf_tag == 'DM':
+                            salt_var_dict[f'salting_type'][n] = 'dm_pdf'
+                        else:
+                            salt_var_dict[f'salting_type'][n] = 'LEE_pdf'
                     else:
                         salt_var_dict[f'salting_type'][n] = f'energy_{sampled_energies[n]}_eV'
                     if livetime is not None:
@@ -648,9 +651,8 @@ class Salting(FilterData):
                 trigger_index = int(common_data['trigger_index'][idx])
                 
                 # Retrieve the template and times
-                template, times = self.get_template(tempchan, tag=template_tag)
-                nb_samples = len(times)
-                pretrigger = nb_samples//2 
+                template, times, template_metdata = self.get_template(tempchan, tag=template_tag, return_metadata=True)
+                pretrigger = template_metdata['nb_pretrigger_samples']
                 # Handle tempchan containing '|'
                 if '|' in tempchan:
                     tempchan_list = convert_channel_name_to_list(tempchan)
@@ -667,8 +669,7 @@ class Salting(FilterData):
                 # Add salting pulse
                 saltpulse = temp * saltamp
                 simtime = int(trigger_index)
-                L = len(saltpulse)
-                pretrigger = L // 2  
+   
 
                 segment = saltpulse[pretrigger:]            
                 end = min(simtime + len(segment), len(newtrace))
