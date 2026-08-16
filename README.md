@@ -111,3 +111,33 @@ See notebook detprocess/examples/run_detprocess.ipynb
 ## Accelerometer Data Processing
 
 Use `scripts/process_transducer_sweep.py` to process transducer sweep data. Find more information in the header of that file.
+
+---
+
+## dIdQ processing
+
+A dIdQ measurement injects a large-amplitude square wave into one TES on a chip
+(the heater) and measures the heat response in another TES on the same chip (the
+thermometer). `scripts/process_didq.py` fits the thermometer response in the
+frequency domain using the same two-pole and three-pole models as dIdV, and
+reports the raw fitted parameters and poles without converting them to TES small
+signal parameters.
+
+```bash
+python scripts/process_didq.py --raw_path /path/to/exttrig_group
+```
+
+The series of a dIdQ group are repeat measurements at one bias point, so by default
+the traces of every series are pooled into one ensemble and fitted once, giving a
+single output row named after the group. Pass `--per_series` to average and fit each
+series on its own instead. Series that disagree on their bias point, drive or sample
+rate are not repeat measurements, and pooling them is rejected rather than silently
+averaged. Two files are written: a vaex dataframe for detanalysis, and
+a `didq_results` object holding the full fit output including covariances, plus
+the mean trace, mean transfer function and its standard deviation, so a fit can
+be re-plotted without re-reading raw data.
+
+Use the fall time columns rather than the raw `A`, `B`, `C` and `tau` parameters.
+For the three-pole model the raw parameters are degenerate: fits from different
+starting points reach the same cost while the raw parameters move by more than an
+order of magnitude, and only the fall times are reproducible.

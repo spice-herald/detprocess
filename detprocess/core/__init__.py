@@ -6,6 +6,7 @@ from .noise import *
 from .template import *
 from .ivsweep import *
 from .didv  import *
+from .didq  import *
 from .noisemodel  import *
 from .salting import *
 from .rawdata import *

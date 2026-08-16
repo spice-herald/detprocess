@@ -1287,13 +1287,230 @@ class FilterData:
 
             output_data['ssp_light'].update(ssp_light)
         
-        dpdipar = 'dpdi_' + str(poles) + 'poles_' + tag         
+        dpdipar = 'dpdi_' + str(poles) + 'poles_' + tag
         if dpdipar in self._filter_data[channel].keys():
-            output_data[dpdipar] = self._filter_data[channel][dpdipar].to_dict() 
-                        
+            output_data[dpdipar] = self._filter_data[channel][dpdipar].to_dict()
+
         return  output_data
 
-    def set_didv_dataframe(self, 
+    def set_didq_results(self,
+                         channel,
+                         results,
+                         poles,
+                         metadata=None,
+                         tag='default'):
+        """
+        Set results from a dIdQ fit.
+
+        Mirrors set_didv_results, but stores only the raw fit output. dIdQ has
+        no small signal parameters and no bias parameters.
+
+        Parameters
+        ----------
+        channel : str
+            Channel or series name to store the results under.
+        results : dict
+            Fit results dictionary.
+        poles : int
+            Pole model, 2 or 3.
+        metadata : dict, optional
+            Metadata recorded alongside the results.
+        tag : str, optional
+            Result tag. Default is "default".
+
+        Return
+        ------
+        None
+        """
+
+        if not isinstance(results, dict):
+            raise ValueError(
+                'ERROR: "results" argument should be a dictionary!')
+
+        if not isinstance(poles, int):
+            raise ValueError(
+                'ERROR: "poles" argument should be an integer!')
+
+        if channel not in self._filter_data.keys():
+            self._filter_data[channel] = dict()
+
+        base_name = 'didq_results_' + str(poles) + 'poles'
+
+        if metadata is not None:
+            metadata.update({'channel': channel})
+        else:
+            metadata = {'channel': channel}
+
+        # dIdQ stores only the raw fit output
+        subdict_list = ['errors', 'params']
+
+        fit_data = dict()
+        for par_name, par_val in results.items():
+            if not isinstance(par_val, dict):
+                fit_data[par_name] = par_val
+
+        if fit_data:
+            pd_series = pd.Series(fit_data)
+            data_name = base_name + '_fit_' + tag
+            self._filter_data[channel][data_name] = pd_series
+            self._filter_data[channel][data_name + '_metadata'] = metadata
+
+        for keyname in subdict_list:
+
+            if (keyname not in results.keys() or
+                not isinstance(results[keyname], dict)):
+                continue
+
+            pd_series = pd.Series(results[keyname])
+            data_name = base_name + '_' + keyname + '_' + tag
+            self._filter_data[channel][data_name] = pd_series
+            self._filter_data[channel][data_name + '_metadata'] = metadata
+
+    def get_didq_results(self,
+                         channel,
+                         poles,
+                         tag='default'):
+        """
+        Get dIdQ fit results.
+
+        Parameters
+        ----------
+        channel : str
+            Channel or series name.
+        poles : int
+            Pole model, 2 or 3.
+        tag : str, optional
+            Result tag. Default is "default".
+
+        Return
+        ------
+        output_data : dict
+            Stored fit results.
+        """
+
+        if channel not in self._filter_data.keys():
+            raise ValueError(
+                f'ERROR: no channel {channel} available! '
+            )
+
+        output_data = dict()
+        base_name = 'didq_results_' + str(poles) + 'poles'
+
+        par_name = base_name + '_fit_' + tag
+        if par_name not in self._filter_data[channel].keys():
+            raise ValueError(f'ERROR: No dIdQ {poles}-poles fit results '
+                             f'for channel {channel}!')
+
+        output_data.update(self._filter_data[channel][par_name].to_dict())
+        output_data['metadata'] = (
+            self._filter_data[channel][par_name + '_metadata']
+        )
+
+        for par in ['errors', 'params']:
+            par_name = base_name + '_' + par + '_' + tag
+            if par_name in self._filter_data[channel].keys():
+                output_data[par] = (
+                    self._filter_data[channel][par_name].to_dict()
+                )
+
+        return output_data
+
+    def set_didq_traces(self,
+                        channel,
+                        tmean,
+                        didv_mean,
+                        didv_std,
+                        freq,
+                        metadata=None,
+                        tag='default'):
+        """
+        Set the per-series arrays behind a dIdQ fit.
+
+        These are the mean trace, the mean transfer function, the complex
+        standard deviation of the transfer function, and the matching
+        frequency array. They are stored once per series, not once per pole
+        model, so a saved dIdQ fit can be re-plotted without re-reading raw
+        data.
+
+        Parameters
+        ----------
+        channel : str
+            Channel or series name to store the arrays under.
+        tmean : ndarray
+            Ensemble mean trace, in the time domain.
+        didv_mean : ndarray of complex
+            Ensemble mean transfer function.
+        didv_std : ndarray of complex
+            Ensemble standard deviation of the transfer function.
+        freq : ndarray
+            Frequency array matching didv_mean and didv_std, in Hz.
+        metadata : dict, optional
+            Metadata recorded alongside the arrays.
+        tag : str, optional
+            Result tag. Default is "default".
+
+        Return
+        ------
+        None
+        """
+
+        if channel not in self._filter_data.keys():
+            self._filter_data[channel] = dict()
+
+        base_name = 'didq_results_traces'
+
+        if metadata is not None:
+            metadata = dict(metadata)
+            metadata.update({'channel': channel})
+        else:
+            metadata = {'channel': channel}
+
+        data_dict = {
+            'tmean': np.asarray(tmean),
+            'didv_mean': np.asarray(didv_mean),
+            'didv_std': np.asarray(didv_std),
+            'freq': np.asarray(freq),
+        }
+
+        pd_series = pd.Series(data_dict)
+        data_name = base_name + '_' + tag
+        self._filter_data[channel][data_name] = pd_series
+        self._filter_data[channel][data_name + '_metadata'] = metadata
+
+    def get_didq_traces(self,
+                        channel,
+                        tag='default'):
+        """
+        Get the per-series arrays behind a dIdQ fit.
+
+        Parameters
+        ----------
+        channel : str
+            Channel or series name.
+        tag : str, optional
+            Result tag. Default is "default".
+
+        Return
+        ------
+        output_data : dict
+            Dictionary with keys tmean, didv_mean, didv_std and freq.
+        """
+
+        if channel not in self._filter_data.keys():
+            raise ValueError(
+                f'ERROR: no channel {channel} available! '
+            )
+
+        base_name = 'didq_results_traces'
+        par_name = base_name + '_' + tag
+
+        if par_name not in self._filter_data[channel].keys():
+            raise ValueError(f'ERROR: No dIdQ traces stored for channel '
+                             f'{channel}!')
+
+        return self._filter_data[channel][par_name].to_dict()
+
+    def set_didv_dataframe(self,
                            channel,
                            dataframe,
                            metadata=None,

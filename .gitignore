@@ -131,3 +131,9 @@ dmypy.json
 
 # ignore autosaved files
 *.*~
+
+# Agents
+AGENTS.md
+CLAUDE.md
+.superpowers/
+docs/
