@@ -11,6 +11,102 @@ __all__ = [
 ]
 
 
+# Cached least squares basis vectors for the "fft_bin" algorithm, keyed by
+# (sample rate, nb samples, nb pretrigger samples, frequency). The basis and
+# its normal matrix depend only on those values, so they are built once per
+# worker process and reused for every event.
+_FFT_BIN_BASIS_CACHE = dict()
+
+# frequencies already flagged as not landing on an FFT bin center, so the
+# warning is printed only once per worker process
+_FFT_BIN_OFF_BIN_WARNED = set()
+
+
+def _fft_bin_freq_label(freq):
+    """
+    Build the frequency part of an fft_bin feature name.
+
+    Parameters
+    ----------
+    freq : float
+        Frequency in Hz.
+
+    Returns
+    -------
+    label : str
+        Frequency rendered without a decimal point, for example 100.0 to
+        "100" and 102.5 to "102p5".
+    """
+
+    return f'{freq:.10g}'.replace('.', 'p')
+
+
+def _fft_bin_basis(fs, nb_samples, nb_pretrigger_samples, freq):
+    """
+    Get the cached sine/cosine basis and inverse normal matrix for one bin.
+
+    Parameters
+    ----------
+    fs : float
+        Sample rate in Hz.
+
+    nb_samples : int
+        Number of samples in the trace.
+
+    nb_pretrigger_samples : int
+        Number of pretrigger samples, used as the phase time origin.
+
+    freq : float
+        Frequency in Hz.
+
+    Returns
+    -------
+    sin_basis : ndarray
+        Sine basis vector of length nb_samples.
+
+    cos_basis : ndarray
+        Cosine basis vector of length nb_samples.
+
+    normal_inv : ndarray
+        Inverse of the 3x3 normal matrix for the [sin, cos, constant] fit.
+    """
+
+    cache_key = (fs, nb_samples, nb_pretrigger_samples, freq)
+    if cache_key in _FFT_BIN_BASIS_CACHE:
+        return _FFT_BIN_BASIS_CACHE[cache_key]
+
+    # sine at DC or Nyquist is identically zero, which makes the fit singular
+    if (freq <= 0.0 or freq >= fs / 2.0):
+        raise ValueError(f'ERROR: "fft_bin" frequency {freq} Hz must be '
+                         f'greater than 0 and less than the Nyquist '
+                         f'frequency ({fs / 2.0} Hz)!')
+
+    # warn once if the frequency does not land on an FFT bin center
+    bin_width = fs / nb_samples
+    nb_bins_exact = freq / bin_width
+    if (abs(nb_bins_exact - round(nb_bins_exact)) > 1e-6
+        and cache_key not in _FFT_BIN_OFF_BIN_WARNED):
+        _FFT_BIN_OFF_BIN_WARNED.add(cache_key)
+        print(f'WARNING: "fft_bin" frequency {freq} Hz is not a multiple '
+              f'of the bin width ({bin_width} Hz) for a {nb_samples} sample '
+              f'trace. The fit is still valid, but the basis is not exactly '
+              f'orthogonal so neighboring lines may leak in.')
+
+    time_array = (np.arange(nb_samples) - nb_pretrigger_samples) / fs
+    omega = 2.0 * np.pi * freq
+
+    sin_basis = np.sin(omega * time_array)
+    cos_basis = np.cos(omega * time_array)
+
+    # normal matrix for the design matrix [sin, cos, constant]
+    design = np.column_stack([sin_basis, cos_basis, np.ones(nb_samples)])
+    normal_inv = np.linalg.inv(np.dot(design.T, design))
+
+    _FFT_BIN_BASIS_CACHE[cache_key] = (sin_basis, cos_basis, normal_inv)
+
+    return sin_basis, cos_basis, normal_inv
+
+
 class FeatureExtractors:
     """
     A class that contains all of the possible feature extractors
@@ -1179,6 +1275,107 @@ class FeatureExtractors:
         # done
         return retdict
     
+    @staticmethod
+    def fft_bin(trace, fs,
+                freqs=None,
+                nb_pretrigger_samples=0,
+                feature_base_name='fft_bin',
+                **kwargs):
+        """
+        Feature extraction for the amplitude and phase of a trace at a list of
+        exact frequencies. A sinusoid is fit directly to each frequency by
+        least squares, so no full FFT of the trace is ever computed.
+
+        Parameters
+        ----------
+        trace : ndarray
+            An ndarray containing the raw data to extract the feature from.
+
+        fs : float
+            The digitization rate of the data in trace.
+
+        freqs : float or list of float
+            Frequencies in Hz at which to fit a sinusoid, for example
+            [100, 150, 1000].
+
+        nb_pretrigger_samples : int, optional
+            Number of pretrigger samples, used as the phase time origin.
+            Default: 0
+
+        feature_base_name : str, optional
+            output feature base name
+
+        Returns
+        -------
+        retdict : dict
+            Dictionary containing the various extracted features. For each
+            frequency there is an amplitude in the same units as the trace,
+            and a phase in radians on the interval (-pi, pi].
+        """
+
+        # check frequencies
+        if freqs is None:
+            raise ValueError('ERROR: "freqs" required for algorithm fft_bin')
+
+        if not isinstance(freqs, (list, tuple, np.ndarray)):
+            freqs = [freqs]
+
+        freqs = [float(freq) for freq in freqs]
+
+        if not freqs:
+            raise ValueError('ERROR: "freqs" required for algorithm fft_bin')
+
+        # initialize output
+        retdict = {}
+        for freq in freqs:
+            freq_label = _fft_bin_freq_label(freq)
+            retdict[f'{feature_base_name}_{freq_label}Hz_amp'] = -999999.0
+            retdict[f'{feature_base_name}_{freq_label}Hz_phase'] = -999999.0
+
+        # check if trace is empty or None
+        if (trace is None or trace.size == 0):
+            return retdict
+
+        if trace.ndim != 1:
+            # multi-channels, not implemented
+            raise ValueError(f'ERROR: "fft_bin" not implemented for '
+                             f'multi-channel. Remove algorithm for '
+                             f'this channel!')
+
+        if nb_pretrigger_samples is None:
+            nb_pretrigger_samples = 0
+
+        nb_samples = trace.shape[-1]
+
+        # the constant term is common to every frequency
+        trace_sum = np.sum(trace)
+
+        # loop frequencies and fit A*sin(wt) + B*cos(wt) + C
+        for freq in freqs:
+
+            sin_basis, cos_basis, normal_inv = _fft_bin_basis(
+                fs=fs,
+                nb_samples=nb_samples,
+                nb_pretrigger_samples=nb_pretrigger_samples,
+                freq=freq
+            )
+
+            projections = np.array([np.dot(trace, sin_basis),
+                                    np.dot(trace, cos_basis),
+                                    trace_sum])
+
+            amp_sin, amp_cos, _ = np.dot(normal_inv, projections)
+
+            freq_label = _fft_bin_freq_label(freq)
+            var_name_amp = f'{feature_base_name}_{freq_label}Hz_amp'
+            var_name_phase = f'{feature_base_name}_{freq_label}Hz_phase'
+
+            retdict[var_name_amp] = np.sqrt(amp_sin**2.0 + amp_cos**2.0)
+            retdict[var_name_phase] = np.arctan2(amp_cos, amp_sin)
+
+        # done
+        return retdict
+
     @staticmethod
     def phase(channel, of_base,
               f_lims=[],
