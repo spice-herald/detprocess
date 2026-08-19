@@ -11,102 +11,6 @@ __all__ = [
 ]
 
 
-# Cached least squares basis vectors for the "fft_bin" algorithm, keyed by
-# (sample rate, nb samples, nb pretrigger samples, frequency). The basis and
-# its normal matrix depend only on those values, so they are built once per
-# worker process and reused for every event.
-_FFT_BIN_BASIS_CACHE = dict()
-
-# frequencies already flagged as not landing on an FFT bin center, so the
-# warning is printed only once per worker process
-_FFT_BIN_OFF_BIN_WARNED = set()
-
-
-def _fft_bin_freq_label(freq):
-    """
-    Build the frequency part of an fft_bin feature name.
-
-    Parameters
-    ----------
-    freq : float
-        Frequency in Hz.
-
-    Returns
-    -------
-    label : str
-        Frequency rendered without a decimal point, for example 100.0 to
-        "100" and 102.5 to "102p5".
-    """
-
-    return f'{freq:.10g}'.replace('.', 'p')
-
-
-def _fft_bin_basis(fs, nb_samples, nb_pretrigger_samples, freq):
-    """
-    Get the cached sine/cosine basis and inverse normal matrix for one bin.
-
-    Parameters
-    ----------
-    fs : float
-        Sample rate in Hz.
-
-    nb_samples : int
-        Number of samples in the trace.
-
-    nb_pretrigger_samples : int
-        Number of pretrigger samples, used as the phase time origin.
-
-    freq : float
-        Frequency in Hz.
-
-    Returns
-    -------
-    sin_basis : ndarray
-        Sine basis vector of length nb_samples.
-
-    cos_basis : ndarray
-        Cosine basis vector of length nb_samples.
-
-    normal_inv : ndarray
-        Inverse of the 3x3 normal matrix for the [sin, cos, constant] fit.
-    """
-
-    cache_key = (fs, nb_samples, nb_pretrigger_samples, freq)
-    if cache_key in _FFT_BIN_BASIS_CACHE:
-        return _FFT_BIN_BASIS_CACHE[cache_key]
-
-    # sine at DC or Nyquist is identically zero, which makes the fit singular
-    if (freq <= 0.0 or freq >= fs / 2.0):
-        raise ValueError(f'ERROR: "fft_bin" frequency {freq} Hz must be '
-                         f'greater than 0 and less than the Nyquist '
-                         f'frequency ({fs / 2.0} Hz)!')
-
-    # warn once if the frequency does not land on an FFT bin center
-    bin_width = fs / nb_samples
-    nb_bins_exact = freq / bin_width
-    if (abs(nb_bins_exact - round(nb_bins_exact)) > 1e-6
-        and cache_key not in _FFT_BIN_OFF_BIN_WARNED):
-        _FFT_BIN_OFF_BIN_WARNED.add(cache_key)
-        print(f'WARNING: "fft_bin" frequency {freq} Hz is not a multiple '
-              f'of the bin width ({bin_width} Hz) for a {nb_samples} sample '
-              f'trace. The fit is still valid, but the basis is not exactly '
-              f'orthogonal so neighboring lines may leak in.')
-
-    time_array = (np.arange(nb_samples) - nb_pretrigger_samples) / fs
-    omega = 2.0 * np.pi * freq
-
-    sin_basis = np.sin(omega * time_array)
-    cos_basis = np.cos(omega * time_array)
-
-    # normal matrix for the design matrix [sin, cos, constant]
-    design = np.column_stack([sin_basis, cos_basis, np.ones(nb_samples)])
-    normal_inv = np.linalg.inv(np.dot(design.T, design))
-
-    _FFT_BIN_BASIS_CACHE[cache_key] = (sin_basis, cos_basis, normal_inv)
-
-    return sin_basis, cos_basis, normal_inv
-
-
 class FeatureExtractors:
     """
     A class that contains all of the possible feature extractors
@@ -1274,7 +1178,17 @@ class FeatureExtractors:
                     
         # done
         return retdict
+
     
+    # fft_bin least squares basis, keyed by (fs, nb_samples, nb_pretrigger_samples, freq). 
+    # Built once per thread, reused every event 
+    # (same trace length, same basis functions = no need to rebuild every time).
+    _fft_bin_basis_cache = dict()
+
+    # fft_bin frequency lists already validated, keyed by (fs, nb_samples,
+    # freqs). Keeps the off bin warning to one line per worker.
+    _fft_bin_checked_configs = set()
+
     @staticmethod
     def fft_bin(trace, fs,
                 freqs=None,
@@ -1308,12 +1222,10 @@ class FeatureExtractors:
         Returns
         -------
         retdict : dict
-            Dictionary containing the various extracted features. For each
-            frequency there is an amplitude in the same units as the trace,
-            and a phase in radians on the interval (-pi, pi].
+            Dictionary containing the various extracted features. Amplitude is
+            in trace units (Amps, etc), phase in radians on the interval (-pi, pi].
         """
 
-        # check frequencies
         if freqs is None:
             raise ValueError('ERROR: "freqs" required for algorithm fft_bin')
 
@@ -1325,10 +1237,12 @@ class FeatureExtractors:
         if not freqs:
             raise ValueError('ERROR: "freqs" required for algorithm fft_bin')
 
+        # feature name carries the frequency with "p" for the decimal point
+        freq_labels = [f'{freq:.10g}'.replace('.', 'p') for freq in freqs]
+
         # initialize output
         retdict = {}
-        for freq in freqs:
-            freq_label = _fft_bin_freq_label(freq)
+        for freq_label in freq_labels:
             retdict[f'{feature_base_name}_{freq_label}Hz_amp'] = -999999.0
             retdict[f'{feature_base_name}_{freq_label}Hz_phase'] = -999999.0
 
@@ -1347,33 +1261,83 @@ class FeatureExtractors:
 
         nb_samples = trace.shape[-1]
 
-        # the constant term is common to every frequency
-        trace_sum = np.sum(trace)
+        # validate the whole frequency list at once, so the off bin warning
+        # is one line per worker instead of one line per frequency
+        check_key = (fs, nb_samples, tuple(freqs))
+        if check_key not in FeatureExtractors._fft_bin_checked_configs:
 
-        # loop frequencies and fit A*sin(wt) + B*cos(wt) + C
-        for freq in freqs:
+            bin_width = fs / nb_samples
+            off_bin_freqs = []
 
-            sin_basis, cos_basis, normal_inv = _fft_bin_basis(
-                fs=fs,
-                nb_samples=nb_samples,
-                nb_pretrigger_samples=nb_pretrigger_samples,
-                freq=freq
+            for freq in freqs:
+
+                # sine vanishes at DC and Nyquist, leaving the fit singular
+                if (freq <= 0.0 or freq >= fs / 2.0):
+                    raise ValueError(
+                        f'ERROR: "fft_bin" frequency {freq} Hz must be '
+                        f'greater than 0 and less than the Nyquist '
+                        f'frequency ({fs / 2.0} Hz)!')
+
+                nb_bins = freq / bin_width
+                if abs(nb_bins - round(nb_bins)) > 1e-6:
+                    off_bin_freqs.append(freq)
+
+            if off_bin_freqs:
+                off_bin_string = ', '.join(
+                    [f'{freq:.10g}' for freq in off_bin_freqs]
+                )
+                print(f'WARNING: "fft_bin" frequencies {off_bin_string} Hz '
+                      f'are not multiples of the {bin_width:.6g} Hz bin '
+                      f'width for a {nb_samples} sample trace. Fits are '
+                      f'still valid but neighboring lines may leak in.')
+
+            FeatureExtractors._fft_bin_checked_configs.add(check_key)
+
+        cache = FeatureExtractors._fft_bin_basis_cache
+
+        for freq, freq_label in zip(freqs, freq_labels):
+
+            cache_key = (fs, nb_samples, nb_pretrigger_samples, freq)
+
+            if cache_key not in cache:
+
+                time_array = (
+                    (np.arange(nb_samples) - nb_pretrigger_samples) / fs
+                )
+                omega = 2.0 * np.pi * freq
+
+                sin_basis = np.sin(omega * time_array)
+                cos_basis = np.cos(omega * time_array)
+                # centering makes the basis orthogonal to a constant, so the
+                # trace DC offset drops out and the fit stays 2 parameter
+                # (allows us to do 2x2 matrix math to solve)
+                sin_basis = sin_basis - np.mean(sin_basis)
+                cos_basis = cos_basis - np.mean(cos_basis)
+
+                cache[cache_key] = (sin_basis, cos_basis,
+                                    np.sum(sin_basis * sin_basis),
+                                    np.sum(cos_basis * cos_basis),
+                                    np.sum(sin_basis * cos_basis))
+
+            sin_basis, cos_basis, sum_ss, sum_cc, sum_sc = cache[cache_key]
+
+            # np.sum of a product rather than np.dot
+            proj_sin = np.sum(trace * sin_basis)
+            proj_cos = np.sum(trace * cos_basis)
+
+            # 2x2 normal equations for A*sin(wt) + B*cos(wt)
+            # determinant = (sum_ss * sum_cc) - (sum_sc * sum_sc) gives LSQ fit result analytically
+            det = (sum_ss * sum_cc) - (sum_sc * sum_sc)
+            amp_sin = ((sum_cc * proj_sin) - (sum_sc * proj_cos)) / det
+            amp_cos = ((sum_ss * proj_cos) - (sum_sc * proj_sin)) / det
+
+            retdict[f'{feature_base_name}_{freq_label}Hz_amp'] = (
+                np.sqrt(amp_sin**2.0 + amp_cos**2.0)
+            )
+            retdict[f'{feature_base_name}_{freq_label}Hz_phase'] = (
+                np.arctan2(amp_cos, amp_sin)
             )
 
-            projections = np.array([np.dot(trace, sin_basis),
-                                    np.dot(trace, cos_basis),
-                                    trace_sum])
-
-            amp_sin, amp_cos, _ = np.dot(normal_inv, projections)
-
-            freq_label = _fft_bin_freq_label(freq)
-            var_name_amp = f'{feature_base_name}_{freq_label}Hz_amp'
-            var_name_phase = f'{feature_base_name}_{freq_label}Hz_phase'
-
-            retdict[var_name_amp] = np.sqrt(amp_sin**2.0 + amp_cos**2.0)
-            retdict[var_name_phase] = np.arctan2(amp_cos, amp_sin)
-
-        # done
         return retdict
 
     @staticmethod
