@@ -44,6 +44,7 @@ def test_process_didq_end_to_end(tmp_path):
 
     output_file = process_didq(
         raw_path=RAW_PATH,
+        thermometer_channels='Mv6GaAs4pcBigFinsLeft',
         nb_events=20,
         fcutoff_hz=200.0,
         output_path=str(tmp_path),
@@ -57,16 +58,58 @@ def test_process_didq_end_to_end(tmp_path):
     # the reference group holds six series
     assert dataframe.shape[0] == 6
 
-    for column in ('series_name', 'heater_channel', 'thermometer_channel',
+    for column in ('series_name', 'thermometer_channel',
                    'sgfreq_hz', 'didq_2pole_falltime_1',
                    'didq_3pole_falltime_1'):
         assert column in dataframe.get_column_names()
 
-    assert (dataframe['heater_channel'].tolist()[0]
-            == 'Mv6GaAs4pcBigFinsRight')
+    assert 'heater_channel' not in dataframe.get_column_names()
     assert (dataframe['thermometer_channel'].tolist()[0]
             == 'Mv6GaAs4pcBigFinsLeft')
     assert dataframe['sgfreq_hz'].tolist()[0] == pytest.approx(4.0)
+
+
+@pytest.mark.filterwarnings(
+    'ignore:Conversion of an array with ndim > 0 to a scalar is deprecated:'
+    'DeprecationWarning'
+)
+@pytest.mark.filterwarnings(
+    'ignore:visit_NameConstant is deprecated:DeprecationWarning'
+)
+@pytest.mark.filterwarnings(
+    'ignore:`product` is deprecated as of NumPy 1.25.0:DeprecationWarning'
+)
+@pytest.mark.filterwarnings('ignore::pandas.errors.PerformanceWarning')
+@pytest.mark.filterwarnings(
+    'ignore:invalid value encountered in sqrt:RuntimeWarning'
+)
+@pytest.mark.filterwarnings(
+    'ignore:`np.bool8` is a deprecated alias:DeprecationWarning'
+)
+def test_process_didq_fits_both_channels_of_a_chip(tmp_path):
+    from process_didq import process_didq
+
+    channels = ['Mv6GaAs4pcBigFinsLeft', 'Mv6GaAs4pcBigFinsRight']
+
+    output_file = process_didq(
+        raw_path=RAW_PATH,
+        thermometer_channels=','.join(channels),
+        series=['I2_D20260719_T145304'],
+        nb_events=20,
+        fcutoff_hz=200.0,
+        output_path=str(tmp_path),
+        verbose=False,
+    )
+
+    dataframe = vx.open(str(output_file))
+
+    # one pooled row per channel, and the channel driving the square wave is
+    # fitted like any other
+    assert dataframe.shape[0] == 2
+    assert sorted(dataframe['thermometer_channel'].tolist()) == sorted(channels)
+
+    falltimes = dataframe['didq_2pole_falltime_1'].tolist()
+    assert falltimes[0] != falltimes[1]
 
 
 @pytest.mark.filterwarnings(
@@ -85,6 +128,7 @@ def test_process_didq_single_series_matches_design_measurement(tmp_path):
 
     output_file = process_didq(
         raw_path=RAW_PATH,
+        thermometer_channels='Mv6GaAs4pcBigFinsLeft',
         series=['I2_D20260719_T145304'],
         nb_events=100,
         fcutoff_hz=200.0,
@@ -120,6 +164,7 @@ def test_parallel_matches_serial(tmp_path):
 
     serial_file = process_didq(
         raw_path=RAW_PATH,
+        thermometer_channels='Mv6GaAs4pcBigFinsLeft',
         nb_events=20,
         fcutoff_hz=200.0,
         output_path=str(tmp_path / 'serial'),
@@ -128,6 +173,7 @@ def test_parallel_matches_serial(tmp_path):
     )
     parallel_file = process_didq(
         raw_path=RAW_PATH,
+        thermometer_channels='Mv6GaAs4pcBigFinsLeft',
         nb_events=20,
         fcutoff_hz=200.0,
         output_path=str(tmp_path / 'parallel'),
@@ -173,8 +219,7 @@ def test_process_didq_rejects_a_group_shorter_than_one_drive_period(tmp_path):
     with pytest.raises(ValueError) as excinfo:
         process_didq(
             raw_path=SHORT_PERIOD_RAW_PATH,
-            heater_channel='Mv6GaAs4pcBigFinsRight',
-            thermometer_channel='Mv6GaAs4pcBigFinsLeft',
+            thermometer_channels='Mv6GaAs4pcBigFinsLeft',
             output_path=str(output_dir),
             ncores=6,
             verbose=False,

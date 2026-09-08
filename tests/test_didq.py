@@ -15,12 +15,17 @@ from detprocess.core.didq import (
     build_didq_row,
     build_pooled_metadata,
     build_pooled_series_name,
+    build_didq_key,
+    build_3pole_seeds,
+    three_pole_improves_on_two_pole,
+    DIDQ_NB_FREE_PARAMS,
     count_progress_stages,
     DIDQAnalysis,
     compute_snr_diagnostic,
     get_driven_bin_mask,
-    identify_didq_channels,
+    parse_thermometer_channels,
     resolve_drive_parameters,
+    validate_channels_present,
     rows_to_dataframe,
     validate_drive_period_coverage,
     validate_series_are_poolable,
@@ -43,7 +48,7 @@ def make_detector_config():
         Dictionary keyed by detector channel name.
     """
     detector_config = {
-        'HeaterChan': {
+        'ChanA': {
             'signal_gen_source': 'tes',
             'signal_gen_frequency': 4.0,
             'signal_gen_current': 9.960079840319362e-05,
@@ -51,7 +56,7 @@ def make_detector_config():
             'shunt_resistance': 0.004999999888241291,
             'tes_bias': '0.00012002442002442',
         },
-        'ThermoChan': {
+        'ChanB': {
             'signal_gen_source': 'none',
             'signal_gen_frequency': 4.0,
             'signal_gen_current': 9.960079840319362e-05,
@@ -64,52 +69,81 @@ def make_detector_config():
     return detector_config
 
 
-def test_identify_channels_from_signal_gen_source():
-    heater, thermometer = identify_didq_channels(
-        detector_config=make_detector_config()
-    )
-    assert heater == 'HeaterChan'
-    assert thermometer == 'ThermoChan'
+def test_parse_thermometer_channels_splits_on_commas_and_spaces():
+    assert parse_thermometer_channels('ChanA') == ['ChanA']
+    assert parse_thermometer_channels('ChanA,ChanB') == ['ChanA', 'ChanB']
+    assert parse_thermometer_channels('ChanA, ChanB') == ['ChanA', 'ChanB']
+    assert parse_thermometer_channels('ChanA ChanB') == ['ChanA', 'ChanB']
+    assert parse_thermometer_channels(
+        ['ChanA,ChanB', 'ChanC']
+    ) == ['ChanA', 'ChanB', 'ChanC']
 
 
-def test_identify_channels_respects_overrides():
-    heater, thermometer = identify_didq_channels(
+def test_parse_thermometer_channels_drops_duplicates_keeping_order():
+    assert parse_thermometer_channels(
+        'ChanB,ChanA,ChanB'
+    ) == ['ChanB', 'ChanA']
+
+
+def test_parse_thermometer_channels_raises_when_empty():
+    for value in (None, '', '  ', [], [',']):
+        with pytest.raises(ValueError, match='no thermometer channel'):
+            parse_thermometer_channels(value)
+
+
+def test_validate_channels_present_accepts_recorded_channels():
+    validate_channels_present(
         detector_config=make_detector_config(),
-        heater_channel='ThermoChan',
-        thermometer_channel='HeaterChan',
+        channels=['ChanA', 'ChanB'],
     )
-    assert heater == 'ThermoChan'
-    assert thermometer == 'HeaterChan'
 
 
-def test_identify_channels_raises_when_no_heater():
-    detector_config = make_detector_config()
-    detector_config['HeaterChan']['signal_gen_source'] = 'none'
-
-    with pytest.raises(ValueError, match='no heater'):
-        identify_didq_channels(detector_config=detector_config)
-
-
-def test_identify_channels_raises_when_two_heaters():
-    detector_config = make_detector_config()
-    detector_config['ThermoChan']['signal_gen_source'] = 'tes'
-
-    with pytest.raises(ValueError, match='more than one heater'):
-        identify_didq_channels(detector_config=detector_config)
-
-
-def test_identify_channels_raises_when_unknown_override():
-    with pytest.raises(ValueError, match='not present'):
-        identify_didq_channels(
+def test_validate_channels_present_raises_and_lists_the_alternatives():
+    with pytest.raises(ValueError, match='NoSuchChannel') as error:
+        validate_channels_present(
             detector_config=make_detector_config(),
-            heater_channel='NoSuchChannel',
+            channels=['ChanA', 'NoSuchChannel'],
         )
+    assert 'ChanB' in str(error.value)
+
+
+def test_signal_gen_source_is_never_consulted():
+    # every channel driven, or none, resolves the same as the default fixture
+    for source in ('tes', 'none'):
+        detector_config = make_detector_config()
+        for config in detector_config.values():
+            config['signal_gen_source'] = source
+
+        validate_channels_present(
+            detector_config=detector_config, channels=['ChanA', 'ChanB'],
+        )
+        params = resolve_drive_parameters(
+            detector_config=detector_config, channel='ChanB',
+        )
+        assert params['sgfreq_hz'] == pytest.approx(4.0)
+
+
+def test_build_didq_key_joins_the_series_and_channel():
+    assert build_didq_key('I2_D20260731_T135414', 'ChanA') == (
+        'I2_D20260731_T135414_ChanA'
+    )
+
+
+def test_resolve_drive_parameters_reads_the_channel_it_is_given():
+    # the acquisition replicates the drive on every channel, so an undriven
+    # thermometer resolves the same parameters as the driven channel
+    for channel in ('ChanA', 'ChanB'):
+        params = resolve_drive_parameters(
+            detector_config=make_detector_config(), channel=channel,
+        )
+        assert params['sgfreq_hz'] == pytest.approx(4.0)
+        assert params['sgamp_amps'] == pytest.approx(9.960079840319362e-05)
 
 
 def test_resolve_drive_parameters_from_metadata():
     params = resolve_drive_parameters(
         detector_config=make_detector_config(),
-        heater_channel='HeaterChan',
+        channel='ChanA',
     )
     assert params['sgfreq_hz'] == pytest.approx(4.0)
     assert params['sgamp_amps'] == pytest.approx(9.960079840319362e-05)
@@ -120,7 +154,7 @@ def test_resolve_drive_parameters_from_metadata():
 def test_resolve_drive_parameters_drops_recorded_offset():
     params = resolve_drive_parameters(
         detector_config=make_detector_config(),
-        heater_channel='HeaterChan',
+        channel='ChanA',
     )
     assert 'sgoffset_v' not in params
 
@@ -128,7 +162,7 @@ def test_resolve_drive_parameters_drops_recorded_offset():
 def test_resolve_drive_parameters_takes_duty_cycle_only():
     params = resolve_drive_parameters(
         detector_config=make_detector_config(),
-        heater_channel='HeaterChan',
+        channel='ChanA',
         duty_cycle=0.25,
     )
     assert params['duty_cycle'] == pytest.approx(0.25)
@@ -149,35 +183,35 @@ def test_resolve_drive_parameters_rejects_recorded_overrides():
 
 def test_resolve_drive_parameters_raises_on_nan():
     detector_config = make_detector_config()
-    detector_config['HeaterChan']['signal_gen_current'] = float('nan')
+    detector_config['ChanA']['signal_gen_current'] = float('nan')
 
     with pytest.raises(ValueError, match='signal_gen_current'):
         resolve_drive_parameters(
             detector_config=detector_config,
-            heater_channel='HeaterChan',
+            channel='ChanA',
         )
 
 
 def test_resolve_drive_parameters_accepts_rshunt_alias():
     detector_config = make_detector_config()
-    detector_config['HeaterChan'].pop('shunt_resistance')
-    detector_config['HeaterChan']['rshunt'] = 0.006
+    detector_config['ChanA'].pop('shunt_resistance')
+    detector_config['ChanA']['rshunt'] = 0.006
 
     params = resolve_drive_parameters(
         detector_config=detector_config,
-        heater_channel='HeaterChan',
+        channel='ChanA',
     )
     assert params['rshunt_ohms'] == pytest.approx(0.006)
 
 
 def test_resolve_drive_parameters_raises_on_missing_key():
     detector_config = make_detector_config()
-    detector_config['HeaterChan'].pop('signal_gen_frequency')
+    detector_config['ChanA'].pop('signal_gen_frequency')
 
     with pytest.raises(ValueError, match='signal_gen_frequency'):
         resolve_drive_parameters(
             detector_config=detector_config,
-            heater_channel='HeaterChan',
+            channel='ChanA',
         )
 
 
@@ -508,6 +542,251 @@ def test_three_pole_falltimes_are_stable_across_starting_points():
     assert spread < 0.01
 
 
+# a genuine slow thermal pole an order of magnitude above the electrical one,
+# which is the case qetpy's own starting point cannot reach. Taken from a
+# measured run 75 channel with every tau scaled down by ten, so the poles stay
+# well inside a 4 Hz drive period
+SYNTHETIC_3POLE_TRUE_PARAMS = {'A': 1582.18,
+                               'B': -1590.16,
+                               'C': -1.129e-3,
+                               'tau1': -9.276e-6,
+                               'tau2': 4.821e-6,
+                               'tau3': 1.293e-2}
+
+
+def make_synthetic_3pole_traces(n_periods=4, n_traces=25,
+                                noise_fraction=1.0e-3, seed=1234):
+    """
+    Build synthetic dIdQ traces from a known three-pole model.
+
+    Parameters
+    ----------
+    n_periods : int, optional
+        Number of square wave periods in each trace.
+    n_traces : int, optional
+        Number of traces in the ensemble.
+    noise_fraction : float, optional
+        White noise amplitude as a fraction of the clean trace peak-to-peak.
+    seed : int, optional
+        Seed for the random number generator.
+
+    Return
+    ------
+    traces : ndarray
+        Array of shape (n_traces, n_samples).
+    """
+    n_samples = int(n_periods * SYNTHETIC_FS / SYNTHETIC_SGFREQ)
+    times = np.arange(n_samples) / SYNTHETIC_FS
+
+    clean = qp.squarewaveresponse(
+        times,
+        SYNTHETIC_SGAMP,
+        SYNTHETIC_SGFREQ,
+        SYNTHETIC_3POLE_TRUE_PARAMS,
+        dutycycle=SYNTHETIC_DUTY,
+        rsh=SYNTHETIC_RSHUNT,
+    )
+    assert np.all(np.isfinite(clean)), 'synthetic trace must be finite'
+
+    generator = np.random.default_rng(seed)
+    noise = generator.normal(
+        0.0,
+        noise_fraction * np.ptp(clean),
+        size=(n_traces, n_samples),
+    )
+
+    return clean[None, :] + noise
+
+
+def synthetic_3pole_true_falltimes():
+    """
+    Fall times of the synthetic three-pole model, descending by magnitude.
+
+    Parameters
+    ----------
+    None
+
+    Return
+    ------
+    falltimes : ndarray
+        The three fall times, in seconds.
+    """
+    params_array = np.array(
+        [SYNTHETIC_3POLE_TRUE_PARAMS[name]
+         for name in ('A', 'B', 'C', 'tau1', 'tau2', 'tau3')] + [0.0]
+    )
+    falltimes = qp.DIDV._findpolefalltimes(params_array)
+
+    return np.sort(falltimes)[::-1]
+
+
+def test_build_3pole_seeds_carries_the_two_pole_scale():
+    params_2poles = {'A': 1.0e3, 'B': 9.0e2, 'tau1': 2.0e-2,
+                     'tau2': 1.0e-5, 'dt': -1.5e-3}
+
+    seeds = build_3pole_seeds(params_2poles=params_2poles)
+
+    assert len(seeds) == 4
+    for seed in seeds:
+        a, b, c, tau1, tau2, tau3, dt = seed
+        assert a == 1.0e3
+        # the fit wants the loop gain branch signs, whatever the fit returned
+        assert b == -9.0e2
+        assert tau1 == -2.0e-2
+        assert tau2 == 1.0e-5
+        assert dt == -1.5e-3
+        # any small C reaches the slow pole, qetpy's own -0.05 does not
+        assert abs(c) < 1.0e-2
+
+    assert len(set(seed[5] for seed in seeds)) == len(seeds)
+
+
+def test_build_3pole_seeds_floors_a_zero_starting_value():
+    """No element of a starting guess may be zero, and a converged two-pole
+    tau2 or dt can land on numerical zero."""
+    params_2poles = {'A': 1.0e3, 'B': -9.0e2, 'tau1': -2.0e-2,
+                     'tau2': 0.0, 'dt': 0.0}
+
+    for seed in build_3pole_seeds(params_2poles=params_2poles):
+        assert all(value != 0.0 for value in seed)
+
+
+def test_three_pole_improves_on_two_pole_compares_chi_square_not_cost():
+    """The models do not share a degree of freedom count, so a three-pole fit
+    with the same chi square reports a slightly larger cost per degree of
+    freedom. Comparing the costs directly would reject it."""
+    n_bins_fit = 100
+    chisq = 250.0
+
+    cost_2poles = chisq / (n_bins_fit - DIDQ_NB_FREE_PARAMS[2])
+    cost_3poles = chisq / (n_bins_fit - DIDQ_NB_FREE_PARAMS[3])
+
+    assert cost_3poles > cost_2poles
+    assert three_pole_improves_on_two_pole(
+        cost_3poles=cost_3poles,
+        cost_2poles=cost_2poles,
+        n_bins_fit=n_bins_fit,
+    )
+
+
+def test_three_pole_improves_on_two_pole_rejects_a_stalled_fit():
+    n_bins_fit = 100
+
+    assert not three_pole_improves_on_two_pole(
+        cost_3poles=50.0,
+        cost_2poles=2.0,
+        n_bins_fit=n_bins_fit,
+    )
+
+
+def test_three_pole_fit_recovers_a_slow_pole_without_a_hand_seed():
+    """The whole point of seeding from the two-pole fit: qetpy's own starting
+    point stalls on data with a slow thermal pole."""
+    analysis = DIDQAnalysis(verbose=False)
+    analysis.set_traces(
+        traces=make_synthetic_3pole_traces(),
+        fs=SYNTHETIC_FS,
+        drive_params=make_synthetic_drive_params(),
+        series_name='synthetic',
+    )
+    analysis.dofit(list_of_poles=(2, 3), fcutoff_hz=np.inf, max_nfev=20000)
+
+    results = analysis.get_fit_results('synthetic', 3)
+    falltimes = np.sort(results['falltimes'])[::-1]
+    truth = synthetic_3pole_true_falltimes()
+
+    assert results['seeded_from_2pole']
+    for index in (0, 1):
+        assert falltimes[index] == pytest.approx(truth[index], rel=1.0e-2)
+
+
+def test_three_pole_fit_never_costs_more_than_the_two_pole_fit():
+    """Zeroing C and tau3 recovers the two-pole model, so a three-pole fit
+    that costs more has stalled rather than found a worse model."""
+    for traces in (make_synthetic_traces(), make_synthetic_3pole_traces()):
+        analysis = DIDQAnalysis(verbose=False)
+        analysis.set_traces(
+            traces=traces,
+            fs=SYNTHETIC_FS,
+            drive_params=make_synthetic_drive_params(),
+            series_name='synthetic',
+        )
+        analysis.dofit(list_of_poles=(2, 3), fcutoff_hz=np.inf,
+                       max_nfev=20000)
+
+        results_2poles = analysis.get_fit_results('synthetic', 2)
+        results_3poles = analysis.get_fit_results('synthetic', 3)
+
+        assert three_pole_improves_on_two_pole(
+            cost_3poles=results_3poles['cost'],
+            cost_2poles=results_2poles['cost'],
+            n_bins_fit=results_3poles['n_freq_bins_fit'],
+        )
+
+
+def test_three_pole_fit_seeds_itself_when_only_three_poles_are_asked_for():
+    analysis = DIDQAnalysis(verbose=False)
+    analysis.set_traces(
+        traces=make_synthetic_3pole_traces(),
+        fs=SYNTHETIC_FS,
+        drive_params=make_synthetic_drive_params(),
+        series_name='synthetic',
+    )
+    analysis.dofit(list_of_poles=(3,), fcutoff_hz=np.inf, max_nfev=20000)
+
+    results = analysis.get_fit_results('synthetic', 3)
+    truth = synthetic_3pole_true_falltimes()
+
+    assert results['seeded_from_2pole']
+    assert np.sort(results['falltimes'])[::-1][0] == pytest.approx(
+        truth[0], rel=1.0e-2
+    )
+
+    # the two-pole fit was a means to a starting point, not a requested result
+    assert not analysis.get_fit_results('synthetic', 2)
+
+
+def test_explicit_three_pole_guess_is_used_as_given():
+    """An explicit guess is the escape hatch, so it must not be quietly
+    replaced by a seeded start."""
+    guess = (1.0e3, -9.0e2, -0.5, -2.0e-2, 1.0e-5, 1.0e-3, 1.0e-6)
+
+    analysis = DIDQAnalysis(verbose=False)
+    analysis.set_traces(
+        traces=make_synthetic_traces(),
+        fs=SYNTHETIC_FS,
+        drive_params=make_synthetic_drive_params(),
+        series_name='synthetic',
+    )
+    analysis.dofit(list_of_poles=(3,), fcutoff_hz=np.inf, max_nfev=20000,
+                   guess_params_3poles=guess)
+
+    results = analysis.get_fit_results('synthetic', 3)
+
+    assert 'seeded_from_2pole' not in results
+    assert 'nb_starts_tried' not in results
+
+
+def test_ndof_counts_the_free_parameters_of_each_model():
+    """The stored parameter vector is seven long whatever the model, so it
+    cannot be used to count degrees of freedom."""
+    analysis = DIDQAnalysis(verbose=False)
+    analysis.set_traces(
+        traces=make_synthetic_traces(),
+        fs=SYNTHETIC_FS,
+        drive_params=make_synthetic_drive_params(),
+        series_name='synthetic',
+    )
+    analysis.dofit(list_of_poles=(2, 3), fcutoff_hz=np.inf)
+
+    for poles in (2, 3):
+        results = analysis.get_fit_results('synthetic', poles)
+        assert len(results['params_array']) == 7
+        assert results['ndof'] == (
+            results['n_freq_bins_fit'] - DIDQ_NB_FREE_PARAMS[poles]
+        )
+
+
 def test_fit_results_never_contain_small_signal_parameters():
     analysis = DIDQAnalysis(verbose=False)
     analysis.set_traces(
@@ -756,18 +1035,18 @@ def test_rows_to_dataframe_builds_rectangular_frame_with_missing_columns():
 
     row_1 = {
         'series_name': 'series_one',
-        'heater_channel': 'ChanA',
+        'thermometer_channel': 'ChanA',
         'falltime': 1.0,
     }
     row_2 = {
         'series_name': 'series_two',
-        # heater_channel intentionally omitted: mixes a string column with
+        # thermometer_channel intentionally omitted: mixes a string column with
         # the NaN fallback used for a missing key
         'falltime': 2.0,
     }
     row_3 = {
         'series_name': 'series_three',
-        'heater_channel': 'ChanC',
+        'thermometer_channel': 'ChanC',
         # falltime intentionally omitted: ordinary numeric NaN fallback
     }
 
@@ -775,14 +1054,14 @@ def test_rows_to_dataframe_builds_rectangular_frame_with_missing_columns():
 
     # rectangular: every row-derived key becomes a column shared by all rows
     assert dataframe.shape[0] == 3
-    for column in ('series_name', 'heater_channel', 'falltime'):
+    for column in ('series_name', 'thermometer_channel', 'falltime'):
         assert column in dataframe.get_column_names()
 
     # the mixed string/NaN column must land on a genuine missing value at
     # the row that omitted it, not a coerced literal string "nan"
-    heater_channel = dataframe['heater_channel']
-    assert heater_channel.tolist() == ['ChanA', None, 'ChanC']
-    assert heater_channel.isna().tolist() == [False, True, False]
+    thermometer_channel = dataframe['thermometer_channel']
+    assert thermometer_channel.tolist() == ['ChanA', None, 'ChanC']
+    assert thermometer_channel.isna().tolist() == [False, True, False]
 
     # an ordinary all-numeric column keeps a real NaN at the omitted row
     falltime = dataframe['falltime'].tolist()
@@ -993,9 +1272,7 @@ def make_loaded_analysis_with_series(series_specs, seed_base=1000):
         metadata = {'group_name': 'exttrig_I2_D20260731_T121720',
                     'nb_dumps': 2,
                     'nb_traces_read': 40,
-                    'heater_channel': 'heater',
-                    'thermometer_channel': 'thermometer',
-                    'tes_bias_heater': 1.2e-4,
+                    'thermometer_channel': 'ChanA',
                     'tes_bias_thermometer': 1.9e-5}
         metadata.update(spec.get('metadata', dict()))
 
@@ -1019,10 +1296,23 @@ def test_build_pooled_series_name_strips_the_acquisition_prefix():
     """The pooled name reads as an identifier, not as a directory name."""
 
     assert build_pooled_series_name(
-        'exttrig_I2_D20260731_T121720') == 'I2_D20260731_T121720_pooled'
+        'exttrig_I2_D20260731_T121720', 'ChanA'
+    ) == 'I2_D20260731_T121720_ChanA_pooled'
     assert build_pooled_series_name(
-        'cont_I2_D20260731_T121720') == 'I2_D20260731_T121720_pooled'
-    assert build_pooled_series_name('I2_D20260731') == 'I2_D20260731_pooled'
+        'cont_I2_D20260731_T121720', 'ChanA'
+    ) == 'I2_D20260731_T121720_ChanA_pooled'
+    assert build_pooled_series_name(
+        'I2_D20260731', 'ChanA') == 'I2_D20260731_ChanA_pooled'
+
+
+def test_build_pooled_series_name_separates_the_channels():
+    """Two channels of one group must not be stored under one name."""
+
+    assert build_pooled_series_name(
+        'exttrig_I2_D20260731_T121720', 'ChanA'
+    ) != build_pooled_series_name(
+        'exttrig_I2_D20260731_T121720', 'ChanB'
+    )
 
 
 def test_build_pooled_metadata_sums_counts_and_records_the_pool():
@@ -1053,7 +1343,9 @@ def test_pool_series_concatenates_every_trace():
         [{'n_traces': 7}, {'n_traces': 5}, {'n_traces': 9}]
     )
 
-    pooled_name = analysis.pool_series()
+    pooled_names = analysis.pool_series()
+    assert len(pooled_names) == 1
+    pooled_name = pooled_names[0]
 
     data = analysis.get_didq_data(pooled_name)
     assert data['n_traces_used'] == 7 + 5 + 9
@@ -1068,9 +1360,9 @@ def test_pool_series_drops_the_individual_series_by_default():
         [{'n_traces': 4}, {'n_traces': 4}]
     )
 
-    pooled_name = analysis.pool_series()
+    pooled_names = analysis.pool_series()
 
-    assert analysis.get_series_names() == [pooled_name]
+    assert analysis.get_series_names() == pooled_names
     for series_name in series_names:
         with pytest.raises(ValueError, match='no dIdQ data'):
             analysis.get_didq_data(series_name)
@@ -1083,9 +1375,11 @@ def test_pool_series_can_keep_the_individual_series():
         [{'n_traces': 4}, {'n_traces': 4}]
     )
 
-    pooled_name = analysis.pool_series(drop_series=False)
+    pooled_names = analysis.pool_series(drop_series=False)
 
-    assert set(analysis.get_series_names()) == set(series_names + [pooled_name])
+    assert set(analysis.get_series_names()) == set(
+        series_names + pooled_names
+    )
 
 
 def test_pool_series_averages_traces_not_per_series_means():
@@ -1100,7 +1394,7 @@ def test_pool_series_averages_traces_not_per_series_means():
     specs = [{'n_traces': 6}, {'n_traces': 6}, {'n_traces': 6}]
 
     pooled_analysis, _ = make_loaded_analysis_with_series(specs)
-    pooled_name = pooled_analysis.pool_series()
+    pooled_name = pooled_analysis.pool_series()[0]
     pooled = pooled_analysis.get_didq_data(pooled_name)
 
     single_analysis, single_names = make_loaded_analysis_with_series(
@@ -1130,10 +1424,10 @@ def test_pool_series_rejects_a_different_bias_point():
 
     analysis, _ = make_loaded_analysis_with_series([
         {'n_traces': 4},
-        {'n_traces': 4, 'metadata': {'tes_bias_heater': 9.9e-4}},
+        {'n_traces': 4, 'metadata': {'tes_bias_thermometer': 9.9e-4}},
     ])
 
-    with pytest.raises(ValueError, match='tes_bias_heater'):
+    with pytest.raises(ValueError, match='tes_bias_thermometer'):
         analysis.pool_series()
 
 
@@ -1149,16 +1443,30 @@ def test_pool_series_rejects_a_different_drive():
         analysis.pool_series()
 
 
-def test_pool_series_rejects_a_different_thermometer():
+def test_pool_series_pools_each_thermometer_separately():
     """Two thermometers are two measurements, whatever the bias point."""
 
     analysis, _ = make_loaded_analysis_with_series([
         {'n_traces': 4},
-        {'n_traces': 4, 'metadata': {'thermometer_channel': 'other'}},
+        {'n_traces': 6, 'metadata': {'thermometer_channel': 'ChanB'}},
+        {'n_traces': 5},
     ])
 
-    with pytest.raises(ValueError, match='thermometer_channel'):
-        analysis.pool_series()
+    pooled_names = analysis.pool_series()
+
+    assert len(pooled_names) == 2
+
+    pooled_by_channel = {
+        analysis.get_didq_data(name)['metadata']['thermometer_channel']: name
+        for name in pooled_names
+    }
+    assert set(pooled_by_channel) == {'ChanA', 'ChanB'}
+
+    # ChanA pooled its two series, ChanB kept its own traces to itself
+    assert analysis.get_didq_data(
+        pooled_by_channel['ChanA'])['n_traces_used'] == 4 + 5
+    assert analysis.get_didq_data(
+        pooled_by_channel['ChanB'])['n_traces_used'] == 6
 
 
 def test_validate_series_are_poolable_accepts_repeat_measurements():
@@ -1166,11 +1474,11 @@ def test_validate_series_are_poolable_accepts_repeat_measurements():
 
     series_data = [
         {'drive_params': make_synthetic_drive_params(),
-         'metadata': {'tes_bias_heater': 1.2e-4},
+         'metadata': {'tes_bias_thermometer': 1.2e-4},
          'fs': SYNTHETIC_FS,
          'nb_samples': 1000},
         {'drive_params': make_synthetic_drive_params(),
-         'metadata': {'tes_bias_heater': 1.2e-4},
+         'metadata': {'tes_bias_thermometer': 1.2e-4},
          'fs': SYNTHETIC_FS,
          'nb_samples': 1000},
     ]
@@ -1226,7 +1534,7 @@ def test_pooled_row_carries_the_pool_provenance():
     analysis, series_names = make_loaded_analysis_with_series(
         [{'n_traces': 5}, {'n_traces': 5}]
     )
-    pooled_name = analysis.pool_series()
+    pooled_name = analysis.pool_series()[0]
     analysis.dofit(list_of_poles=(2,), series_names=[pooled_name])
 
     row = build_didq_row(
@@ -1240,3 +1548,196 @@ def test_pooled_row_carries_the_pool_provenance():
     assert row['nb_series_pooled'] == 2
     assert row['pooled_series'] == ','.join(series_names)
     assert row['nb_traces_used'] == 10
+
+
+class StubH5Reader:
+    """
+    Stand-in for the pytesio reader, returning a fixed two-channel ensemble.
+
+    Records every read_many_events call so a test can assert the raw files
+    were passed over once however many channels were requested.
+    """
+
+    calls = list()
+    traces_by_channel = dict()
+
+    def get_metadata(self, file_name):
+        return {'series_num': 220260731135414,
+                'adc_list': ['adc1'],
+                'groups': {'adc1': {'sample_rate': SYNTHETIC_FS,
+                                    'nb_samples': STUB_NB_SAMPLES,
+                                    'nb_events': STUB_NB_TRACES}}}
+
+    def get_detector_config(self, file_name):
+        return make_detector_config()
+
+    def read_many_events(self, **kwargs):
+        StubH5Reader.calls.append(dict(kwargs))
+
+        channels = kwargs['detector_chans']
+        traces = np.stack(
+            [StubH5Reader.traces_by_channel[channel] for channel in channels],
+            axis=1,
+        )
+        nevents = kwargs.get('nevents', traces.shape[0])
+
+        return traces[:nevents], [{'series_num': 220260731135414}]
+
+
+STUB_NB_TRACES = 4
+STUB_NB_PERIODS = 2
+STUB_NB_SAMPLES = int(STUB_NB_PERIODS * SYNTHETIC_FS / SYNTHETIC_SGFREQ)
+STUB_SERIES = 'I2_D20260731_T135414'
+
+
+@pytest.fixture
+def stub_raw_group(tmp_path, monkeypatch):
+    """
+    Point the reader at a fake two-channel group and return its directory.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Pytest temporary directory.
+    monkeypatch : MonkeyPatch
+        Pytest monkeypatch fixture.
+
+    Return
+    ------
+    group_dir : Path
+        Directory holding the placeholder dump files.
+    """
+
+    from detprocess.core import didq as didq_module
+
+    base = make_synthetic_traces(
+        n_periods=STUB_NB_PERIODS, n_traces=STUB_NB_TRACES, seed=7,
+    )
+
+    StubH5Reader.calls = list()
+    StubH5Reader.traces_by_channel = {'ChanA': base, 'ChanB': 2.0 * base}
+
+    group_dir = tmp_path / 'raw' / 'exttrig_I2_D20260731_T135403'
+    group_dir.mkdir(parents=True)
+    for index in (1, 2):
+        (group_dir / f'exttrig_I2_D20260731_T135414_F{index:04d}.hdf5').touch()
+
+    monkeypatch.setattr(didq_module.h5io, 'H5Reader', StubH5Reader)
+
+    return group_dir
+
+
+def test_process_raw_data_stores_one_entry_per_channel(stub_raw_group):
+    """Each requested channel becomes its own entry, keyed by channel."""
+
+    analysis = DIDQAnalysis(verbose=False)
+    analysis.process_raw_data(
+        raw_path=str(stub_raw_group),
+        thermometer_channels='ChanA,ChanB',
+        apply_autocuts=False,
+    )
+
+    assert analysis.get_series_names() == [
+        build_didq_key(STUB_SERIES, 'ChanA'),
+        build_didq_key(STUB_SERIES, 'ChanB'),
+    ]
+
+
+def test_process_raw_data_reads_the_dumps_once_for_every_channel(
+        stub_raw_group):
+    """Two channels must not cost two passes over the raw files."""
+
+    analysis = DIDQAnalysis(verbose=False)
+    analysis.process_raw_data(
+        raw_path=str(stub_raw_group),
+        thermometer_channels='ChanA,ChanB',
+        apply_autocuts=False,
+    )
+
+    # two dumps, read once each, with both channels asked for together
+    assert len(StubH5Reader.calls) == 2
+    for call in StubH5Reader.calls:
+        assert call['detector_chans'] == ['ChanA', 'ChanB']
+
+
+def test_process_raw_data_gives_each_channel_its_own_traces(stub_raw_group):
+    """A channel must be fitted on its own plane of the ensemble."""
+
+    analysis = DIDQAnalysis(verbose=False)
+    analysis.process_raw_data(
+        raw_path=str(stub_raw_group),
+        thermometer_channels='ChanA,ChanB',
+        apply_autocuts=False,
+    )
+
+    for channel in ('ChanA', 'ChanB'):
+        data = analysis.get_didq_data(build_didq_key(STUB_SERIES, channel))
+
+        # the stub hands back its whole ensemble for each of the two dumps
+        expected = np.concatenate(
+            [StubH5Reader.traces_by_channel[channel]] * 2, axis=0
+        )
+        np.testing.assert_allclose(data['didvobj']._rawtraces, expected)
+        assert data['metadata']['thermometer_channel'] == channel
+
+    # the fixture scales ChanB, so a swapped plane would fail the check above
+    assert not np.allclose(
+        StubH5Reader.traces_by_channel['ChanA'],
+        StubH5Reader.traces_by_channel['ChanB'],
+        atol=0.0,
+    )
+
+
+def test_process_raw_data_records_the_channel_bias_not_the_other(
+        stub_raw_group):
+    """Metadata describes the channel it belongs to, and no other."""
+
+    analysis = DIDQAnalysis(verbose=False)
+    analysis.process_raw_data(
+        raw_path=str(stub_raw_group),
+        thermometer_channels='ChanA,ChanB',
+        apply_autocuts=False,
+    )
+
+    detector_config = make_detector_config()
+
+    for channel in ('ChanA', 'ChanB'):
+        metadata = analysis.get_didq_data(
+            build_didq_key(STUB_SERIES, channel)
+        )['metadata']
+
+        assert metadata['tes_bias_thermometer'] == pytest.approx(
+            float(detector_config[channel]['tes_bias'])
+        )
+        assert 'heater_channel' not in metadata
+        assert 'tes_bias_heater' not in metadata
+
+
+def test_process_raw_data_fits_a_driven_channel_like_any_other(
+        stub_raw_group):
+    """The channel the square wave is injected into is not treated apart."""
+
+    analysis = DIDQAnalysis(verbose=False)
+    analysis.process_raw_data(
+        raw_path=str(stub_raw_group),
+        thermometer_channels='ChanA',
+        apply_autocuts=False,
+    )
+
+    # ChanA is the fixture's signal_gen_source "tes" channel
+    assert analysis.get_series_names() == [build_didq_key(STUB_SERIES, 'ChanA')]
+
+
+def test_process_raw_data_raises_on_a_channel_that_was_not_recorded(
+        stub_raw_group):
+    """A misspelt channel is caught before any trace is read."""
+
+    analysis = DIDQAnalysis(verbose=False)
+
+    with pytest.raises(ValueError, match='NoSuchChannel'):
+        analysis.process_raw_data(
+            raw_path=str(stub_raw_group),
+            thermometer_channels='ChanA,NoSuchChannel',
+        )
+
+    assert StubH5Reader.calls == []

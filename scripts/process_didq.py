@@ -1,18 +1,25 @@
 """
 process_didq — Fits the thermal response of a dIdQ measurement.
 
-A dIdQ measurement injects a large-amplitude square wave into one TES on a chip,
-the heater, and measures the heat response in another TES on the same chip, the
-thermometer. This script fits the thermometer response in the frequency domain
-using the same two-pole and three-pole models used for dIdV, and reports the raw
-fitted parameters and poles. No small signal parameters are calculated.
+A dIdQ measurement drives a large-amplitude square wave across a chip and
+measures the heat response in a TES on that chip, the thermometer. This script
+fits the thermometer response in the frequency domain using the same two-pole
+and three-pole models used for dIdV, and reports the raw fitted parameters and
+poles. No small signal parameters are calculated.
+
+The channel the square wave is injected into plays no part in the analysis and
+is never identified. The thermometer channels to fit are named with --channels
+(or -c), which is required. Several may be given, separated by commas or
+spaces, and each is read, cut and fitted on its own, giving one row apiece. All
+of them come out of a single pass over the raw files.
 
 The series of a dIdQ group are repeat measurements at one bias point, so by
-default the traces of every series are pooled into a single ensemble, averaged
-together and fitted once. The output is one row describing the whole group.
-Pooling happens at the trace level rather than by averaging the per-series mean
-traces, so the ensemble standard deviation that weights the fit is built from
-every trace at once.
+default the traces of every series are pooled into a single ensemble per
+channel, averaged together and fitted once. The output is one row per channel
+describing the whole group. Pooling happens at the trace level rather than by
+averaging the per-series mean traces, so the ensemble standard deviation that
+weights the fit is built from every trace at once. Channels never pool
+together, however well their bias points agree.
 
 Series that disagree on their bias point, drive or sample rate are not repeat
 measurements, and pooling them is rejected rather than silently averaged. Pass
@@ -21,15 +28,23 @@ the older one-row-per-series output.
 
 Example usage
 -------------
-Process every series in a raw group:
+Process every series in a raw group, fitting one channel:
 
     python scripts/process_didq.py
         --raw_path /sdata1/runs/run74/raw/exttrig_I2_D20260719_T145253
+        --channels Mv6Si4pcBigFinsRight
+
+Fit both channels of a chip in one pass over the data:
+
+    python scripts/process_didq.py
+        --raw_path /sdata1/runs/run74/raw/exttrig_I2_D20260719_T145253
+        --channels Mv6Si4pcBigFinsRight,Mv6Si4pcBigFinsLeft
 
 Restrict to one series and cap the number of traces, for a quick check:
 
     python scripts/process_didq.py
         --raw_path /sdata1/runs/run74/raw/exttrig_I2_D20260719_T145253
+        --channels Mv6Si4pcBigFinsRight
         --series I2_D20260719_T145304
         --nb_events 100
 
@@ -41,18 +56,21 @@ about 5 kHz is generally too aggressive:
         --fcutoff_hz 50000
 
 The drive frequency, amplitude and shunt resistance are always read from the
-acquisition metadata and cannot be overridden. The duty cycle is the exception,
+thermometer channel's own acquisition metadata and cannot be overridden. The duty cycle is the exception,
 since the acquisition does not record it:
 
     python scripts/process_didq.py
         --raw_path /sdata1/runs/run74/raw/exttrig_I2_D20260719_T145253
         --duty_cycle 0.25
 
-Seed the three-pole fit by hand, in the order A B C tau1 tau2 tau3 dt. qetpy
-starts C at -0.05 and tau3 at 1 ms whatever the data looks like, which leaves a
-channel whose slow thermal pole is tens of ms stuck in a bad minimum. Taking C
-and tau3 from a reciprocal channel that did converge, and the rest from this
-channel's own two-pole fit, is the usual way out:
+The three-pole fit starts from the converged two-pole fit of the same channel,
+over a short ladder of tau3 values, and keeps the first start that costs no
+more than the two-pole fit. Left to itself qetpy starts C at -0.05 and tau3 at
+1 ms whatever the data looks like, which leaves a channel whose slow thermal
+pole is tens of ms stuck in a bad minimum, so no hand seeding should be needed.
+
+A starting guess can still be given by hand, in the order A B C tau1 tau2 tau3
+dt. It is then used exactly as given and nothing else is tried:
 
     python scripts/process_didq.py
         --raw_path /sdata1/runs/run74/raw/exttrig_I2_D20260731_T135403
@@ -78,9 +96,10 @@ tree rather than a directory inside it:
     didq_<processing_id>_F0001.hdf5          vaex dataframe, one row per fit
     didq_results_<processing_id>.hdf5        FilterData object with full results
 
-A pooled run writes one row, named after the group with a "_pooled" suffix, and
-records which series went into it under pooled_series. A --per_series run
-writes one row per series, named after each.
+A pooled run writes one row per channel, named after the group and the channel
+with a "_pooled" suffix, and records which series went into it under
+pooled_series. A --per_series run writes one row per series per channel, named
+after each series, with the channel in the thermometer_channel column.
 
 The dataframe leads with fall times. For the three-pole model the raw A, B, C
 and tau parameters are start-point dependent and must not be compared across
@@ -105,6 +124,7 @@ from detprocess.core.didq import (
     build_pooled_metadata,
     build_pooled_series_name,
     count_progress_stages,
+    parse_thermometer_channels,
     rows_to_dataframe,
     validate_series_are_poolable,
 )
@@ -346,9 +366,10 @@ def read_series_worker(worker_args):
 
     Return
     ------
-    spill : dict or None
-        Dictionary with keys trace_file, series_name, metadata, drive_params,
-        fs and nb_samples. None when every trace of the series was cut.
+    spills : list of dict
+        One entry per thermometer channel that survived the cuts, each with
+        keys trace_file, series_name, metadata, drive_params, fs and
+        nb_samples. Empty when every trace of the series was cut.
     """
 
     series_name = worker_args['series_name']
@@ -379,21 +400,23 @@ def read_series_worker(worker_args):
         **worker_args['read_kwargs'],
     )
 
-    loaded = analysis.get_series_names()
-    if not loaded:
-        return None
+    spills = list()
 
-    data = analysis.get_didq_data(loaded[0])
+    for key in analysis.get_series_names():
 
-    trace_file = Path(worker_args['spill_dir']) / f'{series_name}.npy'
-    np.save(trace_file, data['didvobj']._rawtraces)
+        data = analysis.get_didq_data(key)
 
-    return {'trace_file': str(trace_file),
-            'series_name': loaded[0],
-            'metadata': dict(data['metadata']),
-            'drive_params': dict(data['drive_params']),
-            'fs': data['fs'],
-            'nb_samples': data['nb_samples']}
+        trace_file = Path(worker_args['spill_dir']) / f'{key}.npy'
+        np.save(trace_file, data['didvobj']._rawtraces)
+
+        spills.append({'trace_file': str(trace_file),
+                       'series_name': key,
+                       'metadata': dict(data['metadata']),
+                       'drive_params': dict(data['drive_params']),
+                       'fs': data['fs'],
+                       'nb_samples': data['nb_samples']})
+
+    return spills
 
 
 def process_series_worker(worker_args):
@@ -415,16 +438,11 @@ def process_series_worker(worker_args):
 
     Return
     ------
-    row : dict
-        Flattened dataframe row.
-    fit_results : dict
-        Fit result dictionaries keyed by pole count.
-    metadata : dict
-        Series metadata, combined with the drive parameters.
-    traces : dict
-        Dictionary with keys tmean, didv_mean, didv_std and freq.
-    snr_diagnostic : dict
-        Dictionary with keys f_max_snr3_hz and n_freq_bins_snr3.
+    outputs : list of dict
+        One entry per thermometer channel that survived the cuts, each with
+        keys key (the name the channel is stored under), row, fit_results,
+        metadata and snr_diagnostic, plus traces holding tmean, didv_mean,
+        didv_std and freq. Empty when every trace of the series was cut.
     """
 
     series_name = worker_args['series_name']
@@ -457,14 +475,19 @@ def process_series_worker(worker_args):
     )
 
     loaded = analysis.get_series_names()
-    if not loaded:
-        # the read stages were reported, but no fit will run, so account for
-        # the fit stages here or the parent's total is never reached
+    nb_channels = len(parse_thermometer_channels(
+        worker_args['read_kwargs']['thermometer_channels']
+    ))
+
+    # a channel whose traces were all cut reported its read stages but will
+    # never reach its fit stages, so account for them here or the parent's
+    # total is never reached
+    for _ in range(nb_channels - len(loaded)):
         for poles in list_of_poles:
             report(series_name, 'fit ' + str(poles) + '-pole')
-        return None, None, None, None, None
 
-    loaded_name = loaded[0]
+    if not loaded:
+        return list()
 
     analysis.dofit(
         list_of_poles=list_of_poles,
@@ -474,40 +497,51 @@ def process_series_worker(worker_args):
         guess_params_3poles=worker_args['guess_params_3poles'],
     )
 
-    row = build_didq_row(
-        analysis=analysis,
-        series_name=loaded_name,
-        processing_id=worker_args['processing_id'],
-        list_of_poles=list_of_poles,
-        save_covariance=worker_args['save_covariance'],
-    )
+    outputs = list()
 
-    fit_results = dict()
-    for poles in list_of_poles:
-        results = analysis.get_fit_results(loaded_name, poles)
-        if results:
-            fit_results[poles] = results
+    for key in loaded:
 
-    data = analysis.get_didq_data(loaded_name)
-    metadata = dict(data['metadata'])
-    metadata.update(data['drive_params'])
-    metadata['fs'] = data['fs']
-    metadata['nb_samples'] = data['nb_samples']
-    metadata['n_traces_used'] = data['n_traces_used']
+        row = build_didq_row(
+            analysis=analysis,
+            series_name=key,
+            processing_id=worker_args['processing_id'],
+            list_of_poles=list_of_poles,
+            save_covariance=worker_args['save_covariance'],
+        )
 
-    didvobj = data['didvobj']
-    traces = {'tmean': didvobj._tmean,
-             'didv_mean': didvobj._didvmean,
-             'didv_std': didvobj._didvstd,
-             'freq': didvobj._freq}
+        fit_results = dict()
+        for poles in list_of_poles:
+            results = analysis.get_fit_results(key, poles)
+            if results:
+                fit_results[poles] = results
 
-    return row, fit_results, metadata, traces, data['snr_diagnostic']
+        data = analysis.get_didq_data(key)
+        metadata = dict(data['metadata'])
+        metadata.update(data['drive_params'])
+        metadata['fs'] = data['fs']
+        metadata['nb_samples'] = data['nb_samples']
+        metadata['n_traces_used'] = data['n_traces_used']
+
+        didvobj = data['didvobj']
+        traces = {'tmean': didvobj._tmean,
+                  'didv_mean': didvobj._didvmean,
+                  'didv_std': didvobj._didvstd,
+                  'freq': didvobj._freq}
+
+        outputs.append({'key': key,
+                        'row': row,
+                        'fit_results': fit_results,
+                        'metadata': metadata,
+                        'traces': traces,
+                        'snr_diagnostic': data['snr_diagnostic']})
+
+    return outputs
 
 
 def build_pooled_ensemble_in_parallel(analysis, group_name, worker_args_list,
                                       progress_total, ncores, verbose):
     """
-    Read every series in parallel and pool the result into one ensemble.
+    Read every series in parallel and pool the result, one ensemble per channel.
 
     The traces are the product of the read, and a full ensemble is far too
     large to pickle back from a worker, so each worker spills its cut traces
@@ -531,8 +565,8 @@ def build_pooled_ensemble_in_parallel(analysis, group_name, worker_args_list,
 
     Return
     ------
-    pooled_name : str
-        Name the pooled ensemble is stored under.
+    pooled_names : list of str
+        Names the pooled ensembles are stored under, one per channel.
     """
 
     nb_workers = resolve_worker_count(
@@ -557,7 +591,9 @@ def build_pooled_ensemble_in_parallel(analysis, group_name, worker_args_list,
                 nb_workers=nb_workers,
             )
 
-        spills = [entry for entry in outputs if entry is not None]
+        spills = list()
+        for entry in outputs:
+            spills.extend(entry)
 
         if not spills:
             raise ValueError(
@@ -565,52 +601,73 @@ def build_pooled_ensemble_in_parallel(analysis, group_name, worker_args_list,
                 'nothing to pool.'
             )
 
-        pooled_series_names = [entry['series_name'] for entry in spills]
+        # a channel is pooled only with itself, so the spills are grouped
+        # before anything is concatenated
+        spills_by_channel = dict()
+        for entry in spills:
+            channel = str(entry['metadata']['thermometer_channel'])
+            spills_by_channel.setdefault(channel, list()).append(entry)
 
-        validate_series_are_poolable(
-            series_names=pooled_series_names, series_data=spills,
-        )
+        pooled_names = list()
 
-        pooled_name = build_pooled_series_name(group_name=group_name)
-        pooled_metadata = build_pooled_metadata(
-            series_metadata=[entry['metadata'] for entry in spills],
-            series_names=pooled_series_names,
-            pooled_name=pooled_name,
-        )
+        for channel, channel_spills in spills_by_channel.items():
 
-        # memory mapped so the spilled traces are read straight into the
-        # concatenated ensemble, rather than every series being held in full
-        # alongside it
-        pooled_traces = np.concatenate(
-            [np.load(entry['trace_file'], mmap_mode='r') for entry in spills],
-            axis=0,
-        )
+            pooled_series_names = [
+                entry['series_name'] for entry in channel_spills
+            ]
 
-        if verbose:
-            print(f'INFO: pooling {len(spills)} series into '
-                  f'{pooled_traces.shape[0]} traces, stored as {pooled_name}')
+            validate_series_are_poolable(
+                series_names=pooled_series_names, series_data=channel_spills,
+            )
 
-        analysis.set_traces(
-            traces=pooled_traces,
-            fs=spills[0]['fs'],
-            drive_params=spills[0]['drive_params'],
-            series_name=pooled_name,
-            metadata=pooled_metadata,
-        )
+            pooled_name = build_pooled_series_name(
+                group_name=group_name, channel=channel,
+            )
+            pooled_metadata = build_pooled_metadata(
+                series_metadata=[
+                    entry['metadata'] for entry in channel_spills
+                ],
+                series_names=pooled_series_names,
+                pooled_name=pooled_name,
+            )
+
+            # memory mapped so the spilled traces are read straight into the
+            # concatenated ensemble, rather than every series being held in
+            # full alongside it
+            pooled_traces = np.concatenate(
+                [np.load(entry['trace_file'], mmap_mode='r')
+                 for entry in channel_spills],
+                axis=0,
+            )
+
+            if verbose:
+                print(f'INFO: pooling {len(channel_spills)} series of channel '
+                      f'{channel} into {pooled_traces.shape[0]} traces, '
+                      f'stored as {pooled_name}')
+
+            analysis.set_traces(
+                traces=pooled_traces,
+                fs=channel_spills[0]['fs'],
+                drive_params=channel_spills[0]['drive_params'],
+                series_name=pooled_name,
+                metadata=pooled_metadata,
+            )
+
+            pooled_names.append(pooled_name)
 
     finally:
         shutil.rmtree(spill_dir, ignore_errors=True)
 
-    return pooled_name
+    return pooled_names
 
 
 def finish_pooled_run(analysis, group_name, worker_args_list, processing_id,
                       poles, fcutoff_hz, max_nfev, guess_params_3poles,
-                      save_covariance, ncores,
+                      save_covariance, ncores, nb_channels,
                       serial_bar, progress_total, output_file, results_file,
                       verbose):
     """
-    Pool every series into one ensemble, fit it once and write the output.
+    Pool every series per channel, fit each once and write the output.
 
     Parameters
     ----------
@@ -635,6 +692,8 @@ def finish_pooled_run(analysis, group_name, worker_args_list, processing_id,
         Write the flattened covariance matrix.
     ncores : int
         Requested number of worker processes.
+    nb_channels : int
+        Number of thermometer channels being fitted.
     serial_bar : tqdm or None
         Progress bar of the serial read, already advanced through it.
     progress_total : int
@@ -652,13 +711,14 @@ def finish_pooled_run(analysis, group_name, worker_args_list, processing_id,
         Path to the written dataframe file.
     """
 
-    nb_read_stages = progress_total - len(poles)
+    nb_fit_stages = len(poles) * nb_channels
+    nb_read_stages = progress_total - nb_fit_stages
 
     if ncores == 1:
         # the serial path already read every series into the analysis object
-        pooled_name = analysis.pool_series()
+        pooled_names = analysis.pool_series()
     else:
-        pooled_name = build_pooled_ensemble_in_parallel(
+        pooled_names = build_pooled_ensemble_in_parallel(
             analysis=analysis,
             group_name=group_name,
             worker_args_list=worker_args_list,
@@ -669,7 +729,7 @@ def finish_pooled_run(analysis, group_name, worker_args_list, processing_id,
 
     fit_bar = serial_bar
     if fit_bar is None:
-        fit_bar = tqdm(total=len(poles), desc='dIdQ (pooled fit)')
+        fit_bar = tqdm(total=nb_fit_stages, desc='dIdQ (pooled fit)')
 
     def report_fit(stage_series_name, stage):
         """
@@ -691,7 +751,7 @@ def finish_pooled_run(analysis, group_name, worker_args_list, processing_id,
 
     analysis.dofit(
         list_of_poles=poles,
-        series_names=[pooled_name],
+        series_names=pooled_names,
         fcutoff_hz=fcutoff_hz,
         max_nfev=max_nfev,
         guess_params_3poles=guess_params_3poles,
@@ -703,35 +763,39 @@ def finish_pooled_run(analysis, group_name, worker_args_list, processing_id,
         fit_bar.update(remaining_stages)
     fit_bar.close()
 
-    if verbose:
-        fit_results = {
-            fit_poles: analysis.get_fit_results(pooled_name, fit_poles)
-            for fit_poles in poles
-        }
-        data = analysis.get_didq_data(pooled_name)
-        print_series_summary(
+    rows = list()
+
+    for pooled_name in pooled_names:
+
+        if verbose:
+            fit_results = {
+                fit_poles: analysis.get_fit_results(pooled_name, fit_poles)
+                for fit_poles in poles
+            }
+            data = analysis.get_didq_data(pooled_name)
+            print_series_summary(
+                series_name=pooled_name,
+                n_traces_used=data['n_traces_used'],
+                snr_diagnostic=data['snr_diagnostic'],
+                fit_results=fit_results,
+                list_of_poles=poles,
+            )
+
+        rows.append(build_didq_row(
+            analysis=analysis,
             series_name=pooled_name,
-            n_traces_used=data['n_traces_used'],
-            snr_diagnostic=data['snr_diagnostic'],
-            fit_results=fit_results,
+            processing_id=processing_id,
             list_of_poles=poles,
-        )
+            save_covariance=save_covariance,
+        ))
 
-    row = build_didq_row(
-        analysis=analysis,
-        series_name=pooled_name,
-        processing_id=processing_id,
-        list_of_poles=poles,
-        save_covariance=save_covariance,
-    )
-
-    dataframe = rows_to_dataframe(rows=[row])
+    dataframe = rows_to_dataframe(rows=rows)
     dataframe.export_hdf5(str(output_file), mode='w')
 
-    # only the pooled ensemble is registered, so the individual series never
+    # only the pooled ensembles are registered, so the individual series never
     # reach the output and cannot be read back as if they had been fitted
     analysis.save_didq_data(
-        series_names=[pooled_name],
+        series_names=pooled_names,
         file_path_name=str(results_file),
         save_hdf5=True,
     )
@@ -744,9 +808,8 @@ def finish_pooled_run(analysis, group_name, worker_args_list, processing_id,
     return output_file
 
 
-def process_didq(raw_path, series=None, nb_events=None, poles=(2, 3),
-                 fcutoff_hz=np.inf, heater_channel=None,
-                 thermometer_channel=None, duty_cycle=0.5,
+def process_didq(raw_path, thermometer_channels, series=None, nb_events=None,
+                 poles=(2, 3), fcutoff_hz=np.inf, duty_cycle=0.5,
                  max_nfev=5000, guess_params_3poles=None,
                  output_path=None, save_covariance=False,
                  apply_autocuts=True, ncores=1, pool_series=True,
@@ -758,6 +821,9 @@ def process_didq(raw_path, series=None, nb_events=None, poles=(2, 3),
     ----------
     raw_path : str
         Raw group directory, series directory, or a single raw data file.
+    thermometer_channels : str or list of str
+        Thermometer channels to fit, separated by commas or spaces when given
+        as one string. Each is fitted on its own and produces its own rows.
     series : str or list of str, optional
         Restrict to these series names.
     nb_events : int, optional
@@ -766,10 +832,6 @@ def process_didq(raw_path, series=None, nb_events=None, poles=(2, 3),
         Pole models to fit. Default is (2, 3).
     fcutoff_hz : float, optional
         Fit cutoff, in Hz. Default is infinity, matching dIdV.
-    heater_channel : str, optional
-        Override heater auto-detection.
-    thermometer_channel : str, optional
-        Override thermometer auto-detection.
     duty_cycle : float, optional
         Square wave duty cycle. Default is 0.5.
     max_nfev : int, optional
@@ -786,9 +848,10 @@ def process_didq(raw_path, series=None, nb_events=None, poles=(2, 3),
     ncores : int, optional
         Number of series read in parallel. Default is 1.
     pool_series : bool, optional
-        Pool the traces of every series into one ensemble and fit it once,
-        giving a single row. Default is True. Set False to average and fit
-        each series on its own, giving one row per series.
+        Pool the traces of every series into one ensemble per channel and fit
+        each once, giving one row per channel. Default is True. Set False to
+        average and fit each series on its own, giving one row per series per
+        channel.
     verbose : bool, optional
         Print progress. Default is True.
 
@@ -797,6 +860,8 @@ def process_didq(raw_path, series=None, nb_events=None, poles=(2, 3),
     output_file : Path
         Path to the written dataframe file.
     """
+
+    channels = parse_thermometer_channels(thermometer_channels)
 
     raw_dir = Path(raw_path).expanduser().resolve()
     if not (raw_dir.is_dir() or raw_dir.is_file()):
@@ -831,8 +896,7 @@ def process_didq(raw_path, series=None, nb_events=None, poles=(2, 3),
     # one wrapped in a worker traceback minutes into the run
     analysis.validate_drive_configuration(
         series_files=series_files,
-        heater_channel=heater_channel,
-        thermometer_channel=thermometer_channel,
+        thermometer_channels=channels,
         duty_cycle=duty_cycle,
     )
 
@@ -846,11 +910,13 @@ def process_didq(raw_path, series=None, nb_events=None, poles=(2, 3),
         progress_total = count_progress_stages(
             nb_dumps_per_series=nb_dumps_per_series,
             list_of_poles=(),
-        ) + len(tuple(poles))
+            nb_channels=len(channels),
+        ) + len(tuple(poles)) * len(channels)
     else:
         progress_total = count_progress_stages(
             nb_dumps_per_series=nb_dumps_per_series,
             list_of_poles=tuple(poles),
+            nb_channels=len(channels),
         )
 
     serial_bar = None
@@ -881,17 +947,17 @@ def process_didq(raw_path, series=None, nb_events=None, poles=(2, 3),
 
         analysis.process_raw_data(
             raw_path=str(raw_dir),
+            thermometer_channels=channels,
             series=series,
             nb_events=nb_events,
-            heater_channel=heater_channel,
-            thermometer_channel=thermometer_channel,
             duty_cycle=duty_cycle,
             apply_autocuts=apply_autocuts,
             progress_callback=report_serial,
         )
-        series_names = analysis.get_series_names()
+        # the loaded names are per-channel keys, not bare series names
+        loaded_keys = analysis.get_series_names()
 
-        if not series_names:
+        if not loaded_keys:
             raise ValueError('ERROR: no series were loaded.')
 
     worker_args_list = list()
@@ -899,9 +965,8 @@ def process_didq(raw_path, series=None, nb_events=None, poles=(2, 3),
         # each worker is given only its own dump files, so process_raw_data
         # does not reread the header of every file in the group
         read_kwargs = {'raw_path': list(series_files[series_name]),
+                       'thermometer_channels': channels,
                        'nb_events': nb_events,
-                       'heater_channel': heater_channel,
-                       'thermometer_channel': thermometer_channel,
                        'duty_cycle': duty_cycle,
                        'apply_autocuts': apply_autocuts}
 
@@ -930,6 +995,7 @@ def process_didq(raw_path, series=None, nb_events=None, poles=(2, 3),
             guess_params_3poles=guess_params_3poles,
             save_covariance=save_covariance,
             ncores=ncores,
+            nb_channels=len(channels),
             serial_bar=serial_bar,
             progress_total=progress_total,
             output_file=output_file,
@@ -964,37 +1030,42 @@ def process_didq(raw_path, series=None, nb_events=None, poles=(2, 3),
                 nb_workers=nb_workers,
             )
 
-        for row, fit_results, metadata, traces, snr_diagnostic in outputs:
-            if row is None:
-                continue
-            rows.append(row)
-            for fit_poles, results in fit_results.items():
-                analysis.set_didq_results(
-                    row['series_name'], results, fit_poles,
-                    metadata=dict(metadata),
-                )
+        for worker_output in outputs:
+            for entry in worker_output:
 
-            # traces are saved alongside the fit output they support, so a
-            # series with no successful fit does not gain an orphaned entry
-            if fit_results:
-                analysis.set_didq_traces(
-                    row['series_name'],
-                    metadata=dict(metadata),
-                    **traces,
-                )
+                rows.append(entry['row'])
+                fit_results = entry['fit_results']
+                metadata = entry['metadata']
 
-            if verbose:
-                print_series_summary(
-                    series_name=row['series_name'],
-                    n_traces_used=metadata['n_traces_used'],
-                    snr_diagnostic=snr_diagnostic,
-                    fit_results=fit_results,
-                    list_of_poles=tuple(poles),
-                )
+                # keyed by the per-channel name, or the two channels of one
+                # series would overwrite each other in the results file
+                for fit_poles, results in fit_results.items():
+                    analysis.set_didq_results(
+                        entry['key'], results, fit_poles,
+                        metadata=dict(metadata),
+                    )
+
+                # traces are saved alongside the fit output they support, so a
+                # series with no successful fit does not gain an orphaned entry
+                if fit_results:
+                    analysis.set_didq_traces(
+                        entry['key'],
+                        metadata=dict(metadata),
+                        **entry['traces'],
+                    )
+
+                if verbose:
+                    print_series_summary(
+                        series_name=entry['key'],
+                        n_traces_used=metadata['n_traces_used'],
+                        snr_diagnostic=entry['snr_diagnostic'],
+                        fit_results=fit_results,
+                        list_of_poles=tuple(poles),
+                    )
     else:
         # serial_bar already counted this run's read and cut stages while
         # process_raw_data ran; the fits continue on the same bar
-        for series_name in series_names:
+        for series_name in loaded_keys:
             analysis.dofit(
                 list_of_poles=tuple(poles),
                 fcutoff_hz=fcutoff_hz,
@@ -1120,55 +1191,64 @@ def parse_args():
     parser.add_argument('--raw_path', type=str, required=True,
                         help='Raw group directory, series directory, or a '
                              'single raw data file.')
+    parser.add_argument('-c', '--channels', type=str, nargs='+',
+                        required=True,
+                        help=('Thermometer channels to fit, separated by '
+                              'commas or spaces. Each is read, cut and '
+                              'fitted on its own and produces its own row. '
+                              'The channel the square wave is injected into '
+                              'is never named and plays no part in the '
+                              'analysis.'))
     parser.add_argument('--series', type=str, nargs='+', default=None,
-                        help='Restrict processing to these series names.')
+                        help='(optional) Restrict processing to these series '
+                             'names.')
     parser.add_argument('--nb_events', type=int, default=None,
-                        help='Cap the traces read per series.')
+                        help='(optional) Cap the traces read per series.')
     parser.add_argument('--poles', type=int, nargs='+', default=[2, 3],
                         choices=[1, 2, 3],
-                        help='Pole models to fit. Default is 2 and 3.')
+                        help=('(optional) Pole models to fit. Default is 2 '
+                              'and 3.'))
     parser.add_argument('--fcutoff_hz', type=float, default=np.inf,
-                        help=('Fit cutoff in Hz. Default is infinity, '
-                              'matching dIdV. A cutoff below about 5 kHz is '
-                              'generally too aggressive.'))
-    parser.add_argument('--heater_channel', type=str, default=None,
-                        help='Override heater channel auto-detection.')
-    parser.add_argument('--thermometer_channel', type=str, default=None,
-                        help='Override thermometer channel auto-detection.')
+                        help=('(optional) Fit cutoff in Hz. Default is '
+                              'infinity, matching dIdV. A cutoff below about '
+                              '5 kHz is generally too aggressive.'))
     parser.add_argument('--duty_cycle', type=float, default=0.5,
-                        help=('Square wave duty cycle. Default is 0.5. This '
-                              'is the only drive parameter not recorded by '
-                              'the acquisition.'))
+                        help=('(optional) Square wave duty cycle. Default is '
+                              '0.5. This is the only drive parameter not '
+                              'recorded by the acquisition.'))
     parser.add_argument('--max_nfev', type=int, default=5000,
-                        help='Maximum fit iterations. Default is 5000.')
+                        help=('(optional) Maximum fit iterations. Default is '
+                              '5000.'))
     parser.add_argument('--guess_3poles', type=parse_guess_3poles,
                         default=None, metavar='A,B,C,TAU1,TAU2,TAU3,DT',
-                        help=('Starting guess for the three-pole fit, given '
-                              'as seven comma separated values in the order '
-                              'A,B,C,tau1,tau2,tau3,dt. Commas rather than '
-                              'spaces, because a negative value in '
-                              'scientific notation is otherwise read as an '
-                              'option. The default guess is built by qetpy '
-                              'and starts C at -0.05 and tau3 at 1 ms, which '
-                              'strands a channel whose slow thermal pole is '
-                              'tens of ms. Supplying the converged values of '
-                              'a reciprocal channel is the usual way out.'))
+                        help=('(optional) Starting guess for the three-pole '
+                              'fit, given as seven comma separated values in '
+                              'the order A,B,C,tau1,tau2,tau3,dt. Commas '
+                              'rather than spaces, because a negative value '
+                              'in scientific notation is otherwise read as an '
+                              'option. Given one, the fit starts there and '
+                              'nowhere else. The default is to start from the '
+                              'converged two-pole fit of the same channel, '
+                              'which reaches a slow thermal pole that qetpy\'s '
+                              'own starting point strands.'))
     parser.add_argument('--output_path', type=str, default=None,
-                        help='Override the output directory.')
+                        help='(optional) Override the output directory.')
     parser.add_argument('--save_covariance', action='store_true',
-                        help='Write the flattened covariance matrix.')
+                        help=('(optional) Write the flattened covariance '
+                              'matrix.'))
     parser.add_argument('--no_autocuts', action='store_true',
-                        help='Skip the dIdV pile-up cuts.')
+                        help='(optional) Skip the dIdV pile-up cuts.')
     parser.add_argument('--ncores', type=int, default=1,
-                        help=('Number of series read in parallel. '
+                        help=('(optional) Number of series read in parallel. '
                               'One core reads one series, so a value '
                               'above the number of series is capped. '
                               'Default is 1.'))
     parser.add_argument('--per_series', action='store_true',
-                        help=('Average and fit each series on its own, '
-                              'giving one row per series. The default pools '
-                              'the traces of every series into one ensemble '
-                              'and fits it once, giving a single row.'))
+                        help=('(optional) Average and fit each series on its '
+                              'own, giving one row per series per channel. '
+                              'The default pools the traces of every series '
+                              'into one ensemble per channel and fits each '
+                              'once, giving one row per channel.'))
 
     return parser.parse_args()
 
@@ -1194,8 +1274,7 @@ def main():
         nb_events=args.nb_events,
         poles=tuple(args.poles),
         fcutoff_hz=args.fcutoff_hz,
-        heater_channel=args.heater_channel,
-        thermometer_channel=args.thermometer_channel,
+        thermometer_channels=args.channels,
         duty_cycle=args.duty_cycle,
         max_nfev=args.max_nfev,
         guess_params_3poles=args.guess_3poles,

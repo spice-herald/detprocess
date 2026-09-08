@@ -116,21 +116,28 @@ Use `scripts/process_transducer_sweep.py` to process transducer sweep data. Find
 
 ## dIdQ processing
 
-A dIdQ measurement injects a large-amplitude square wave into one TES on a chip
-(the heater) and measures the heat response in another TES on the same chip (the
-thermometer). `scripts/process_didq.py` fits the thermometer response in the
-frequency domain using the same two-pole and three-pole models as dIdV, and
-reports the raw fitted parameters and poles without converting them to TES small
-signal parameters.
+A dIdQ measurement drives a large-amplitude square wave across a chip and measures
+the heat response in a TES on that chip (the thermometer).
+`scripts/process_didq.py` fits the thermometer response in the frequency domain
+using the same two-pole and three-pole models as dIdV, and reports the raw fitted
+parameters and poles without converting them to TES small signal parameters.
+
+The channel the square wave is injected into plays no part in the analysis and is
+never identified. Name the channels to fit with `--channels` (or `-c`), which is
+required. Several may be given, separated by commas or spaces, and each is read,
+cut and fitted on its own, giving one row apiece. All of them come out of a single
+pass over the raw files. Every other argument is optional.
 
 ```bash
-python scripts/process_didq.py --raw_path /path/to/exttrig_group
+python scripts/process_didq.py --raw_path /path/to/exttrig_group \
+    --channels ChanRight,ChanLeft
 ```
 
 The series of a dIdQ group are repeat measurements at one bias point, so by default
-the traces of every series are pooled into one ensemble and fitted once, giving a
-single output row named after the group. Pass `--per_series` to average and fit each
-series on its own instead. Series that disagree on their bias point, drive or sample
+the traces of every series are pooled into one ensemble per channel and each is
+fitted once, giving one output row per channel named after the group and the
+channel. Channels never pool together, however well their bias points agree. Pass
+`--per_series` to average and fit each series on its own instead. Series that disagree on their bias point, drive or sample
 rate are not repeat measurements, and pooling them is rejected rather than silently
 averaged. Two files are written: a vaex dataframe for detanalysis, and
 a `didq_results` object holding the full fit output including covariances, plus
@@ -141,3 +148,9 @@ Use the fall time columns rather than the raw `A`, `B`, `C` and `tau` parameters
 For the three-pole model the raw parameters are degenerate: fits from different
 starting points reach the same cost while the raw parameters move by more than an
 order of magnitude, and only the fall times are reproducible.
+
+The three-pole fit starts from the converged two-pole fit of the same channel,
+since qetpy's own starting point strands a slow thermal pole and returns a
+three-pole cost above the two-pole cost, which a nested model cannot honestly
+do. `didq_3pole_seeded_from_2pole` and `didq_3pole_nb_starts_tried` record how
+the winning fit was started. `--guess_3poles` overrides the whole mechanism.
