@@ -232,6 +232,8 @@ class TriggerProcessing:
                 output_group_name=None,
                 ncores=1,
                 edge_exclusion_msec=None,
+                edge_exclusion_start_msec=None,
+                edge_exclusion_end_msec=None,
                 livetime=None,
                 memory_limit='1GB'):
         
@@ -261,6 +263,19 @@ class TriggerProcessing:
            number of cores that will be used for processing
            default: 1
 
+        edge_exclusion_msec : float, optional
+           exclude triggers within edge_exclusion_msec of beginning and end
+           of the trace
+
+        edge_exclusion_start_msec : float, optional
+           exclude triggers within edge_exclusion_start_msec of the beginning
+           of the trace only. Use for a-causal RQs computed from a pre-trigger
+           window, which need room before the trigger but none after
+
+        edge_exclusion_end_msec : float, optional
+           exclude triggers within edge_exclusion_end_msec of the end of the
+           trace only
+
         memory_limit : str or float, optional
            memory limit per file, example '2GB', '2MB'
            if float, then unit is byte
@@ -282,6 +297,8 @@ class TriggerProcessing:
 
         # edge exclusion and livetime
         self._edge_exclusion_msec = edge_exclusion_msec
+        self._edge_exclusion_start_msec = edge_exclusion_start_msec
+        self._edge_exclusion_end_msec = edge_exclusion_end_msec
         self._livetime = livetime
                 
         # create output directory
@@ -770,6 +787,10 @@ class TriggerProcessing:
                         run_residual=run_residual,
                         sat_amps_50kHz=sat_amps_50kHz,
                         edge_exclusion_msec=self._edge_exclusion_msec,
+                        edge_exclusion_start_msec=(
+                            self._edge_exclusion_start_msec
+                        ),
+                        edge_exclusion_end_msec=self._edge_exclusion_end_msec,
                         livetime=self._livetime
                     )
 

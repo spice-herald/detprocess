@@ -18,6 +18,7 @@ import copy
 from humanfriendly import parse_size
 import pyarrow as pa
 from detprocess.core.rawdata import RawData
+from detprocess.utils import utils
 
 warnings.filterwarnings('ignore')
 
@@ -176,6 +177,10 @@ class Randoms:
                 min_separation_msec=0,
                 edge_exclusion_msec=0,
                 edge_exclusion_samples=None,
+                edge_exclusion_start_msec=None,
+                edge_exclusion_start_samples=None,
+                edge_exclusion_end_msec=None,
+                edge_exclusion_end_samples=None,
                 ncores=1,
                 lgc_save=False,
                 lgc_output=False,
@@ -198,17 +203,47 @@ class Randoms:
                 print('INFO: Changing number cores to '
                       + str(ncores) + ' (maximum possible)')
         
-        if edge_exclusion_samples is not None:
+        # exclusion in samples takes precedence over msec for the same side
+        if (edge_exclusion_samples is not None
+            or edge_exclusion_start_samples is not None
+            or edge_exclusion_end_samples is not None):
+
             #get sampling_rate
             series_metadata = self._series_metadata_dict
             metadata_keys = list(series_metadata.keys())
             sample_rate = series_metadata[metadata_keys[0]]['overall']['sample_rate']
-            
-            edge_exclusion_sec = edge_exclusion_samples/sample_rate
-        else:
-            # convert to seconds
-            edge_exclusion_sec = edge_exclusion_msec/1000
-            
+
+            if edge_exclusion_samples is not None:
+                edge_exclusion_msec = 1e3*edge_exclusion_samples/sample_rate
+
+            if edge_exclusion_start_samples is not None:
+                edge_exclusion_start_msec = (
+                    1e3*edge_exclusion_start_samples/sample_rate
+                )
+
+            if edge_exclusion_end_samples is not None:
+                edge_exclusion_end_msec = (
+                    1e3*edge_exclusion_end_samples/sample_rate
+                )
+
+        edge_exclusion_start_msec, edge_exclusion_end_msec = (
+            utils.resolve_edge_exclusion(
+                edge_exclusion_msec=edge_exclusion_msec,
+                edge_exclusion_start_msec=edge_exclusion_start_msec,
+                edge_exclusion_end_msec=edge_exclusion_end_msec
+            )
+        )
+
+        if edge_exclusion_start_msec is None:
+            edge_exclusion_start_msec = 0
+
+        if edge_exclusion_end_msec is None:
+            edge_exclusion_end_msec = 0
+
+        # convert to seconds
+        edge_exclusion_start_sec = edge_exclusion_start_msec/1000
+        edge_exclusion_end_sec = edge_exclusion_end_msec/1000
+
         min_separation_sec = min_separation_msec/1000
         self._livetime = livetime
         
@@ -237,9 +272,6 @@ class Randoms:
                   + ' milliseconds to allow requested (high) '
                   + 'random rate!')
 
-
-        #if min_separation_sec > edge_exclusion_sec:
-        #    edge_exclusion_sec = min_separation_sec
 
         # If rate is low, we can increase minimum seperation
         # (up to 50% time between randoms) 
@@ -292,7 +324,8 @@ class Randoms:
                                       series_list,
                                       random_length_sec,
                                       min_separation_sec,
-                                      edge_exclusion_sec,
+                                      edge_exclusion_start_sec,
+                                      edge_exclusion_end_sec,
                                       output_series_num,
                                       output_group_path,
                                       lgc_save,
@@ -318,7 +351,8 @@ class Randoms:
                                                   series_list_split,
                                                   repeat(random_length_sec),
                                                   repeat(min_separation_sec),
-                                                  repeat(edge_exclusion_sec),
+                                                  repeat(edge_exclusion_start_sec),
+                                                  repeat(edge_exclusion_end_sec),
                                                   repeat(output_series_num),
                                                   repeat(output_group_path),
                                                   repeat(lgc_save),
@@ -347,7 +381,8 @@ class Randoms:
                  series_list,
                  random_length_sec,
                  min_separation_sec,
-                 edge_exclusion_sec,
+                 edge_exclusion_start_sec,
+                 edge_exclusion_end_sec,
                  output_series_num,
                  output_group_path,
                  lgc_save,
@@ -357,6 +392,11 @@ class Randoms:
         Acquire random trigger using specified rate (and minimum
         separation)
         """
+
+        # NaN unless both sides match, a one sided exclusion cannot be doubled
+        symmetric_edge_exclusion_sec = np.nan
+        if edge_exclusion_start_sec == edge_exclusion_end_sec:
+            symmetric_edge_exclusion_sec = edge_exclusion_start_sec
 
         # disable multithreading
         vx.settings.main.thread_count = 1
@@ -461,15 +501,31 @@ class Randoms:
                 ceil(sample_rate*min_separation_sec)
             )
 
-            edge_exclusion_samples = int(
-                ceil(sample_rate*edge_exclusion_sec)
+            edge_exclusion_start_samples = int(
+                ceil(sample_rate*edge_exclusion_start_sec)
+            )
+
+            edge_exclusion_end_samples = int(
+                ceil(sample_rate*edge_exclusion_end_sec)
             )
             
             nb_samples_reduced = (
-                nb_samples - 2*edge_exclusion_samples -(
+                nb_samples - edge_exclusion_start_samples
+                - edge_exclusion_end_samples -(
                     (nb_rand_trig_per_event-1)*min_separation_samples
                 )
             )
+
+            if nb_samples_reduced < nb_rand_trig_per_event:
+                raise ValueError(
+                    f'ERROR: Edge exclusion of '
+                    f'{edge_exclusion_start_samples} samples at the beginning '
+                    f'and {edge_exclusion_end_samples} samples at the end, '
+                    f'with {min_separation_samples} samples of minimum '
+                    f'separation, leaves no room for '
+                    f'{nb_rand_trig_per_event} randoms in a {nb_samples} '
+                    f'sample trace!'
+                )
             
             # build list with samples  
             samples_list =  list(range(nb_samples_reduced))
@@ -508,6 +564,8 @@ class Randoms:
                                 'trigger_prod_group_name':list(),
                                 'randoms_min_separation_time':list(),
                                 'randoms_edge_exclusion_time':list(),
+                                'randoms_edge_exclusion_start_time':list(),
+                                'randoms_edge_exclusion_end_time':list(),
                                 'randoms_livetime':list()}
                 
                 # get file metadata 
@@ -584,7 +642,7 @@ class Randoms:
 
                     # add min space between randoms
                     trigger_indices = trigger_indices + (
-                        edge_exclusion_samples + (
+                        edge_exclusion_start_samples + (
                             np.arange(nb_rand_trig_per_event)
                             * min_separation_samples
                         )
@@ -624,7 +682,15 @@ class Randoms:
                         feature_dict['trigger_prod_group_name'].append(trigger_prod_group_name)
                         feature_dict['group_name'].append(metadata['group_name'])
                         feature_dict['randoms_min_separation_time'].append(min_separation_sec)
-                        feature_dict['randoms_edge_exclusion_time'].append(edge_exclusion_sec)
+                        feature_dict['randoms_edge_exclusion_time'].append(
+                            symmetric_edge_exclusion_sec
+                        )
+                        feature_dict['randoms_edge_exclusion_start_time'].append(
+                            edge_exclusion_start_sec
+                        )
+                        feature_dict['randoms_edge_exclusion_end_time'].append(
+                            edge_exclusion_end_sec
+                        )
                         feature_dict['randoms_livetime'].append(self._livetime)
                         processing_id = np.nan
                         if self._processing_id is not None:

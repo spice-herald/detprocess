@@ -12,6 +12,7 @@ import copy
 import warnings
 import pyarrow as pa
 from pprint import pprint
+from detprocess.utils import utils
 vx.settings.main.thread_count = 1
 vx.settings.main.thread_count_io = 1
 pa.set_cpu_count(1)
@@ -685,6 +686,8 @@ class OptimumFilterTrigger:
                       dynamic_threshold_function=None, residual=False,
                       saturation_amplitudes_LPF_50kHz=None,
                       edge_exclusion_msec=None,
+                      edge_exclusion_start_msec=None,
+                      edge_exclusion_end_msec=None,
                       livetime=None,
                       return_trigger_data=False):
         """
@@ -736,7 +739,16 @@ class OptimumFilterTrigger:
             negative inf, based on positive_pulses; equivalently,
             disabling the check saturation.
         edge_exclusion_msec: float, optional
-            exclude trigger within edge_exclusion_msec or beginning and end trace
+            exclude trigger within edge_exclusion_msec of beginning and end trace
+        edge_exclusion_start_msec : float, optional
+            exclude trigger within edge_exclusion_start_msec of beginning of
+            trace only
+        edge_exclusion_end_msec : float, optional
+            exclude trigger within edge_exclusion_end_msec of end of trace only
+            Each side uses the largest of the values defined for it. The
+            "trigger_edge_exclusion_time" column holds the exclusion when both
+            sides match and NaN when they differ, since a one sided exclusion
+            cannot be doubled into a livetime.
 
         return_trigger_data : bool, optional
             If True, return four objects: the first-pass trigger dictionary,
@@ -851,11 +863,39 @@ class OptimumFilterTrigger:
 
     
         # remove trigger from edge exlusion
-        if edge_exclusion_msec is not None:
-            
-            threshold_min = edge_exclusion_msec*1e-3
-            threshold_max = (self._filtered_trace.shape[-1]/self._fs) - (edge_exclusion_msec*1e-3)
-          
+        start_msec, end_msec = utils.resolve_edge_exclusion(
+            edge_exclusion_msec=edge_exclusion_msec,
+            edge_exclusion_start_msec=edge_exclusion_start_msec,
+            edge_exclusion_end_msec=edge_exclusion_end_msec
+        )
+
+        if (start_msec is not None or end_msec is not None):
+
+            start_sec = 0.0
+            if start_msec is not None:
+                start_sec = start_msec*1e-3
+
+            end_sec = 0.0
+            if end_msec is not None:
+                end_sec = end_msec*1e-3
+
+            threshold_min = start_sec
+            threshold_max = (self._filtered_trace.shape[-1]/self._fs) - end_sec
+
+            # exclusions longer than the trace leave nothing to trigger on
+            if threshold_max <= threshold_min:
+                raise ValueError(
+                    f'ERROR: Edge exclusion of {start_sec*1e3} msec at the '
+                    f'beginning and {end_sec*1e3} msec at the end leaves no '
+                    f'room in a '
+                    f'{1e3*self._filtered_trace.shape[-1]/self._fs} msec '
+                    f'trace!'
+                )
+
+            symmetric_time = np.nan
+            if start_sec == end_sec:
+                symmetric_time = start_sec
+
             trigger_data_copy  = copy.deepcopy(self._trigger_data)
         
             for chan, data in trigger_data_copy.items():
@@ -875,7 +915,9 @@ class OptimumFilterTrigger:
                 }
                 
                 n = len(indices_to_keep)
-                filtered_data[f'trigger_edge_exclusion_time_{chan}'] = [edge_exclusion_msec*1e-3] * n
+                filtered_data[f'trigger_edge_exclusion_time_{chan}'] = [symmetric_time] * n
+                filtered_data[f'trigger_edge_exclusion_start_time_{chan}'] = [start_sec] * n
+                filtered_data[f'trigger_edge_exclusion_end_time_{chan}'] = [end_sec] * n
                 if livetime is not None:
                     filtered_data[f'trigger_livetime_{chan}'] = [livetime] * n
                 self._trigger_data[chan] = copy.deepcopy(filtered_data)

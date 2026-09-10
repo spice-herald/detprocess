@@ -21,7 +21,7 @@ __all__ = ['split_channel_name', 'extract_window_indices',
            'find_linear_segment', 'create_directory', 'create_series_name',
            'get_dataframe_series_list', 'get_ind_freq_ranges',
            'is_empty','unique_list','estimate_sampling_rate' ,'find_psd_peaks',
-           'get_trigger_template_info']
+           'get_trigger_template_info', 'resolve_edge_exclusion']
 
 
     
@@ -710,6 +710,47 @@ def find_psd_peaks(
     # results.sort(key=lambda d: d['freq'])
     return results
 
+
+
+def resolve_edge_exclusion(edge_exclusion_msec=None,
+                           edge_exclusion_start_msec=None,
+                           edge_exclusion_end_msec=None):
+    """
+    Resolve symmetric and one sided edge exclusion into a start/end pair
+
+    Parameters
+    ----------
+
+    edge_exclusion_msec : float, optional
+       symmetric exclusion, applies to both sides of the trace
+
+    edge_exclusion_start_msec : float, optional
+       exclusion at the beginning of the trace only
+
+    edge_exclusion_end_msec : float, optional
+       exclusion at the end of the trace only
+
+    Return
+    ------
+
+    start_msec : float or None
+       exclusion applied at the beginning of the trace
+
+    end_msec : float or None
+       exclusion applied at the end of the trace
+
+    """
+
+    # each side takes the largest of the values defined for it
+    start_values = [value for value in (edge_exclusion_msec,
+                                        edge_exclusion_start_msec)
+                    if value is not None]
+
+    end_values = [value for value in (edge_exclusion_msec,
+                                      edge_exclusion_end_msec)
+                  if value is not None]
+
+    return max(start_values, default=None), max(end_values, default=None)
 
 
 def get_trigger_template_info(trigger_config, filter_data_inst):

@@ -130,6 +130,8 @@ class EventBuilder:
                          run_residual=False,
                          sat_amps_50kHz=None,
                          edge_exclusion_msec=None,
+                         edge_exclusion_start_msec=None,
+                         edge_exclusion_end_msec=None,
                          livetime=None):
         """
         calc
@@ -156,6 +158,8 @@ class EventBuilder:
             residual=run_residual,
             saturation_amplitudes_LPF_50kHz=sat_amps_50kHz,
             edge_exclusion_msec=edge_exclusion_msec,
+            edge_exclusion_start_msec=edge_exclusion_start_msec,
+            edge_exclusion_end_msec=edge_exclusion_end_msec,
             livetime=livetime
         )
 

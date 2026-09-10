@@ -59,6 +59,15 @@ trigger:
 
     coincident_window_msec: 0
 
+    # Triggers closer than this to a trace edge are dropped. Each side takes the
+    # largest of "edge_exclusion_msec" and its own one sided value, and never
+    # falls below what the trigger templates need. Set the one sided values for
+    # RQs computed from a pre-trigger window only.
+    #
+    # edge_exclusion_msec: 10
+    # edge_exclusion_start_msec: 500
+    # edge_exclusion_end_msec: 10
+
     Melange025pcLeft|Melange025pcRight:
 
         trigger_channel: Melange025pc

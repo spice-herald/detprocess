@@ -52,7 +52,10 @@ class YamlConfig:
         self._overall_parameters  = {
             'global': ['filter_file', 'didv_file'],
             'trigger': ['coincident_window_msec',
-                        'coincident_window_samples'] ,
+                        'coincident_window_samples',
+                        'edge_exclusion_msec',
+                        'edge_exclusion_start_msec',
+                        'edge_exclusion_end_msec'] ,
             'salting': ['dm_pdf_file',
                         'coincident_salts',
                         'energies',

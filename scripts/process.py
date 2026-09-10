@@ -369,6 +369,10 @@ if __name__ == "__main__":
 
     yaml_obj = None
     trigger_template_info = None
+    edge_exclusion_msec = None
+    edge_exclusion_start_msec = None
+    edge_exclusion_end_msec = None
+
     if processing_setup is not None:
         yaml_obj = YamlConfig(processing_setup, available_channels,
                               sample_rate=sample_rate)
@@ -383,7 +387,49 @@ if __name__ == "__main__":
             trigger_template_info = utils.get_trigger_template_info(
                 trigger_config, filter_data_inst
             )
-            
+
+            # a configured value can only raise the exclusion the templates require
+            edge_exclusion_msec = trigger_template_info['max_edge_exclusion']
+            overall_config = trigger_config['overall']
+
+            if 'edge_exclusion_msec' in overall_config:
+                edge_exclusion_msec = max(
+                    edge_exclusion_msec,
+                    float(overall_config['edge_exclusion_msec'])
+                )
+
+            if 'edge_exclusion_start_msec' in overall_config:
+                edge_exclusion_start_msec = float(
+                    overall_config['edge_exclusion_start_msec']
+                )
+
+            if 'edge_exclusion_end_msec' in overall_config:
+                edge_exclusion_end_msec = float(
+                    overall_config['edge_exclusion_end_msec']
+                )
+
+    edge_exclusion_start_msec, edge_exclusion_end_msec = (
+        utils.resolve_edge_exclusion(
+            edge_exclusion_msec=edge_exclusion_msec,
+            edge_exclusion_start_msec=edge_exclusion_start_msec,
+            edge_exclusion_end_msec=edge_exclusion_end_msec
+        )
+    )
+
+    # livetime accounting needs numbers even when no exclusion is configured
+    excluded_start_msec = 0
+    if edge_exclusion_start_msec is not None:
+        excluded_start_msec = edge_exclusion_start_msec
+
+    excluded_end_msec = 0
+    if edge_exclusion_end_msec is not None:
+        excluded_end_msec = edge_exclusion_end_msec
+
+    if trigger_template_info is not None:
+        print(f'INFO: Edge exclusion = {excluded_start_msec} msec at the '
+              f'beginning and {excluded_end_msec} msec at the end of each '
+              f'trace')
+
         
     # ====================================
     # Calc Filter
@@ -457,8 +503,8 @@ if __name__ == "__main__":
         # livetime
         salting_livetime = duration
         if not do_salt_deadtime:
-            edge_exclusion_msec = trigger_template_info['max_edge_exclusion']
-            salting_livetime = duration -(nb_events*2*edge_exclusion_msec*1e-3)
+            salt_edge_exclusion_msec = trigger_template_info['max_edge_exclusion']
+            salting_livetime = duration -(nb_events*2*salt_edge_exclusion_msec*1e-3)
 
         print(f'INFO: Total salting livetime = {salting_livetime/60} minutes')
                                        
@@ -635,13 +681,8 @@ if __name__ == "__main__":
                          verbose=True)
 
 
-        # edge exclusion
-        edge_exclusion_msec = 0     
-        if trigger_template_info is not None:
-            edge_exclusion_msec = trigger_template_info['max_edge_exclusion']
-
         # livetime randoms
-        randoms_livetime = duration -(nb_events*2*edge_exclusion_msec*1e-3)
+        randoms_livetime = duration -(nb_events*(excluded_start_msec + excluded_end_msec)*1e-3)
         print(f'INFO: Total livetime for randoms = {randoms_livetime/60} minutes')
         
         # process randoms
@@ -649,7 +690,8 @@ if __name__ == "__main__":
                        nrandoms=nrandoms,
                        ncores=ncores,
                        min_separation_msec=0,
-                       edge_exclusion_msec=edge_exclusion_msec,
+                       edge_exclusion_start_msec=edge_exclusion_start_msec,
+                       edge_exclusion_end_msec=edge_exclusion_end_msec,
                        lgc_save=True,
                        lgc_output=False,
                        save_path=save_path,
@@ -685,11 +727,9 @@ if __name__ == "__main__":
 
 
         # edge exclusion
-        edge_exclusion_msec = None
         trigger_livetime = None
         if trigger_template_info is not None:
-            edge_exclusion_msec = trigger_template_info['max_edge_exclusion']
-            trigger_livetime = duration -(nb_events*2*edge_exclusion_msec*1e-3)
+            trigger_livetime = duration -(nb_events*(excluded_start_msec + excluded_end_msec)*1e-3)
             print(f'INFO: Total livetime for each trigger channels = '
                   f'{trigger_livetime/60} minutes')
                         
@@ -721,7 +761,8 @@ if __name__ == "__main__":
                            output_group_name=trigger_group_name,
                            ncores=ncores,
                            save_path=save_path,
-                           edge_exclusion_msec=edge_exclusion_msec,
+                           edge_exclusion_start_msec=edge_exclusion_start_msec,
+                           edge_exclusion_end_msec=edge_exclusion_end_msec,
                            livetime=trigger_livetime)
 
             trigger_group_path_list.append(myproc.get_output_path())
